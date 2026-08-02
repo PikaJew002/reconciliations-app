@@ -1,58 +1,345 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Reconciliations App
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A financial reconciliation engine that imports **bank transactions** and **merchant order history** separately, then reconciles them into categorized spending.
 
-## About Laravel
+> **Bank transactions represent how money moved. Orders represent what was purchased. Transaction allocations connect the two.**
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Tech Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **Backend:** Laravel 13, PHP 8.3+
+- **Frontend:** Vue 3, Inertia.js, Tailwind CSS 4, Vite
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Getting Started
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer setup
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+This installs dependencies, creates `.env`, generates an app key, runs migrations, and builds frontend assets.
 
-## Contributing
+Start the development environment (server, queue, logs, and Vite):
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+composer dev
+```
 
-## Code of Conduct
+Run tests:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+composer test
+```
 
-## Security Vulnerabilities
+## Domain Model
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### ImportBatch
+
+Represents a single import operation.
+
+Examples:
+
+- Chase Checking CSV import
+- Walmart Orders CSV import
+- Amazon Order History import
+
+```
+ImportBatch
+    hasMany BankTransactions
+    hasMany Orders
+```
+
+### Merchant
+
+Represents a canonical merchant (e.g. Walmart, Amazon, Kroger, Target). Used by both orders and bank transactions after merchant normalization.
+
+```
+Merchant
+    hasMany Orders
+    hasMany ProductAliases
+    hasMany BankTransactions (nullable until matched)
+```
+
+### BankTransaction
+
+Represents one transaction imported from a financial institution.
+
+Examples:
+
+```
+-249.71 Walmart
+-31.94 Walmart
+1850.00 Payroll
+```
+
+Bank transactions never contain categories or purchased products.
+
+```
+BankTransaction
+    belongsTo Account
+    belongsTo Merchant (nullable)
+    belongsTo ImportBatch
+    hasMany TransactionAllocations
+```
+
+Example raw import:
+
+```
+Checking Account
+
+-249.71
+WAL-MART SUPERCENTER
+```
+
+### Order
+
+Represents one logical purchase from a merchant. An order exists independently of how it was paid.
+
+Example:
+
+```
+Walmart Order #12345
+
+Total: 249.71
+```
+
+```
+Order
+    belongsTo Merchant
+    belongsTo ImportBatch
+    hasMany OrderItems
+    hasMany OrderComponents
+```
+
+### OrderItem
+
+Represents one purchased product (merchandise only — never tax, delivery, tip, or discounts).
+
+Examples: Milk, Eggs, Shoes, Dog Food
+
+```
+OrderItem
+    belongsTo Order
+    belongsTo Product (nullable)
+    hasMany OrderComponents
+```
+
+### Product
+
+Represents a canonical product. Many merchant descriptions may map to one product.
+
+Example product: **Great Value Whole Milk**
+
+Aliases:
+
+- GV Whole Milk
+- Great Value Milk 1 Gal
+- Great Value Whole Milk 128 oz
+
+```
+Product
+    belongsTo ExpenseCategory
+    hasMany OrderItems
+    hasMany ProductAliases
+```
+
+### ProductAlias
+
+Maps merchant-specific descriptions to canonical products.
+
+```
+Merchant: Walmart
+Description: GV Whole Milk 128 oz
+    ↓
+Product: Great Value Whole Milk
+```
+
+```
+ProductAlias
+    belongsTo Merchant
+    belongsTo Product
+```
+
+### ExpenseCategory
+
+Reporting categories such as Groceries, Household, Clothing, Dining Out, Delivery Fees, and Delivery Tips.
+
+```
+ExpenseCategory
+    hasMany Products
+    hasMany OrderComponents
+```
+
+### OrderComponent
+
+Represents every dollar within an order — the financial representation of an order. Each component has an amount, type, and category. Every component is eventually allocated to bank transactions.
+
+Examples:
+
+```
+Milk           3.49
+Shoes         16.98
+Dog Food      27.99
+Sales Tax      2.70
+Delivery Fee   7.95
+Driver Tip     5.00
+Discount      -3.50
+```
+
+```
+OrderComponent
+    belongsTo Order
+    belongsTo OrderItem (nullable)
+    belongsTo ExpenseCategory
+    hasMany TransactionAllocations
+```
+
+### TransactionAllocation
+
+Connects bank transactions to order components. This is the reconciliation table.
+
+Supports:
+
+- one bank transaction → many components
+- many bank transactions → one component
+- many-to-many
+
+```
+TransactionAllocation
+    belongsTo BankTransaction
+    belongsTo OrderComponent
+```
+
+Example:
+
+```
+Transaction: -31.94
+    → Milk        3.49
+    → Eggs        5.20
+    → Bread       4.10
+    → Shoes      16.98
+    → Tax         2.17
+```
+
+Another transaction can fund the remaining components of the same order.
+
+## Relationship Diagrams
+
+### Import and reconciliation flow
+
+```
+ImportBatch
+    │
+    ├──────────────┐
+    │              │
+    ▼              ▼
+BankTransaction   Order
+                      │
+                      ▼
+                 OrderItem
+                      │
+                      ▼
+                OrderComponent
+                      ▲
+                      │
+            TransactionAllocation
+                      │
+                      ▼
+               BankTransaction
+```
+
+### Product hierarchy
+
+```
+Merchant
+     │
+     ▼
+ProductAlias
+     │
+     ▼
+Product
+     │
+     ▼
+ExpenseCategory
+```
+
+### Order hierarchy
+
+```
+Order
+├── Milk
+│      ├── Product Component
+│      └── Tax Component
+├── Shoes
+│      ├── Product Component
+│      └── Tax Component
+├── Dog Food
+│      ├── Product Component
+│      └── Tax Component
+├── Delivery Fee
+├── Driver Tip
+└── Discount
+```
+
+## End-to-End Example
+
+**Bank imports:**
+
+```
+Checking
+
+-31.94 Walmart
+-217.77 Walmart
+```
+
+**Walmart order:**
+
+```
+Milk            3.49
+Shoes          16.98
+Dog Food       27.99
+Tax             2.70
+Delivery        7.95
+Tip             5.00
+```
+
+**Generated components:**
+
+```
+Milk              Grocery         3.49
+Shoes             Clothing       16.98
+Dog Food          Pet Supplies   27.99
+Tax (Milk)        Grocery         0.00
+Tax (Shoes)       Clothing        1.02
+Tax (Dog Food)    Pet Supplies    1.68
+Delivery Fee      Delivery Fees   7.95
+Driver Tip        Delivery Tips   5.00
+```
+
+**Reconciliation:**
+
+```
+Transaction 1 (-31.94)
+    → Milk
+    → Shoes
+    → Shoes Tax
+    → Partial Dog Food
+
+Transaction 2 (-217.77)
+    → Remaining Dog Food
+    → Dog Food Tax
+    → Delivery Fee
+    → Driver Tip
+    → Remaining order components
+```
+
+## Reporting and Verification
+
+Reports are produced by summing `OrderComponent.amount` grouped by `ExpenseCategory`.
+
+Reconciliation is verified by ensuring:
+
+- The sum of `TransactionAllocation.allocated_amount` equals each `BankTransaction.amount`
+- The sum of `TransactionAllocation.allocated_amount` equals each `OrderComponent.amount`
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+MIT
