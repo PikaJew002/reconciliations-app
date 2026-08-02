@@ -1,0 +1,36 @@
+<?php
+
+use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Imports\BankTransactionImportController;
+use App\Http\Controllers\Imports\ImportBatchController;
+use App\Http\Controllers\Imports\WalmartOrderImportController;
+use Illuminate\Support\Facades\Route;
+
+Route::redirect('/', '/imports');
+
+Route::middleware('guest')->group(function () {
+    Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
+    Route::post('/register', [RegisteredUserController::class, 'store']);
+
+    Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('login');
+    Route::post('/login', [AuthenticatedSessionController::class, 'store']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::get('/imports', [ImportBatchController::class, 'index'])->name('imports.index');
+
+    Route::get('/imports/bank-transactions/create', [BankTransactionImportController::class, 'create'])
+        ->name('imports.bank-transactions.create');
+    Route::post('/imports/bank-transactions', [BankTransactionImportController::class, 'store'])
+        ->name('imports.bank-transactions.store');
+
+    Route::get('/imports/walmart-orders/create', [WalmartOrderImportController::class, 'create'])
+        ->name('imports.walmart-orders.create');
+    Route::post('/imports/walmart-orders', [WalmartOrderImportController::class, 'store'])
+        ->name('imports.walmart-orders.store');
+
+    Route::get('/imports/{importBatch}', [ImportBatchController::class, 'show'])->name('imports.show');
+});
