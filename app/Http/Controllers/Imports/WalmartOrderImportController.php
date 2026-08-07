@@ -36,7 +36,7 @@ class WalmartOrderImportController extends Controller
         }
 
         $file = $request->file('file');
-        $storagePath = 'imports/'.Str::uuid().'.csv';
+        $storagePath = 'imports/'.Str::uuid().'.json';
 
         Storage::disk('local')->put($storagePath, file_get_contents($file->getRealPath()));
 

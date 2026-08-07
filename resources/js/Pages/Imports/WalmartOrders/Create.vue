@@ -17,16 +17,16 @@ let submit = () => {
         <div>
             <Link href="/imports" class="text-sm underline">Back to imports</Link>
             <h1 class="mt-2 text-2xl font-semibold">Import Walmart orders</h1>
-            <p class="text-sm text-neutral-600">Upload a CSV. Column mapping will be added later.</p>
+            <p class="text-sm text-neutral-600">Upload a Walmart orders JSON export.</p>
         </div>
 
         <form class="space-y-4" @submit.prevent="submit">
             <div>
-                <label class="mb-1 block text-sm" for="file">CSV file</label>
+                <label class="mb-1 block text-sm" for="file">JSON file</label>
                 <input
                     id="file"
                     type="file"
-                    accept=".csv,text/csv"
+                    accept=".json,application/json"
                     class="w-full text-sm"
                     required
                     @input="form.file = $event.target.files[0]"

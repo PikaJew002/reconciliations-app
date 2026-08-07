@@ -5,6 +5,7 @@ namespace App\Services\Imports\Banks;
 use App\Services\Imports\BankTransactionImporter;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
+use Throwable;
 
 class CumberlandValleyNationalBankTransactionImporter extends BankTransactionImporter
 {
@@ -25,9 +26,9 @@ class CumberlandValleyNationalBankTransactionImporter extends BankTransactionImp
             return null;
         }
 
-        $postedAt = Carbon::createFromFormat('n/j/y', $processedDate);
+        $postedAtDate = $this->parseDate($processedDate);
 
-        if ($postedAt === false) {
+        if ($postedAtDate === null) {
             return null;
         }
 
@@ -40,8 +41,6 @@ class CumberlandValleyNationalBankTransactionImporter extends BankTransactionImp
         if ($signedAmount === null) {
             return null;
         }
-
-        $postedAtDate = $postedAt->toDateString();
 
         return [
             'external_id' => $this->fingerprintExternalId($postedAtDate, $signedAmount, $description),
@@ -60,8 +59,26 @@ class CumberlandValleyNationalBankTransactionImporter extends BankTransactionImp
             return null;
         }
 
-        $date = Carbon::createFromFormat('m/d/y', $matches[1]);
+        return $this->parseDate($matches[1]);
+    }
 
-        return $date === false ? null : $date->toDateString();
+    /**
+     * CVNB exports use either M/D/YY or YYYY-MM-DD depending on download source.
+     */
+    protected function parseDate(string $value): ?string
+    {
+        foreach (['Y-m-d', 'n/j/y', 'n/j/Y', 'm/d/y', 'm/d/Y'] as $format) {
+            try {
+                $date = Carbon::createFromFormat('!'.$format, $value);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if ($date !== false) {
+                return $date->toDateString();
+            }
+        }
+
+        return null;
     }
 }

@@ -29,8 +29,20 @@ class WalmartOrderImportTest extends TestCase
         $user = User::factory()->create();
 
         $file = UploadedFile::fake()->createWithContent(
-            'walmart-orders.csv',
-            "Order #,Item,Amount\n12345,Milk,3.49\n",
+            'walmart-orders.json',
+            json_encode([
+                [
+                    'orderNumber' => '70188890864903553777',
+                    'orderDate' => 'Jul 25, 2026 purchase',
+                    'orderSubtotal' => '$71.77',
+                    'orderTotal' => '$71.98',
+                    'tax' => '$0.21',
+                    'deliveryCharges' => '$0.00',
+                    'tip' => '$0.00',
+                    'savings' => '',
+                    'items' => [],
+                ],
+            ]),
         );
 
         $response = $this->actingAs($user)->post(route('imports.walmart-orders.store'), [
@@ -44,6 +56,7 @@ class WalmartOrderImportTest extends TestCase
         $this->assertSame('walmart', $batch->source);
         $this->assertSame('orders', $batch->type);
         $this->assertSame('pending', $batch->status);
+        $this->assertStringEndsWith('.json', $batch->storage_path);
         Storage::disk('local')->assertExists($batch->storage_path);
 
         Queue::assertPushed(ProcessImportBatch::class, function (ProcessImportBatch $job) use ($batch) {

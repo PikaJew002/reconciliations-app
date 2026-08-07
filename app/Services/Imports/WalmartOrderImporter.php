@@ -6,42 +6,52 @@ use App\Models\ImportBatch;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Services\Imports\Concerns\ReadsCsv;
 use App\Services\Imports\Contracts\Importer;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class WalmartOrderImporter implements Importer
 {
-    use ReadsCsv;
-
     public function import(ImportBatch $batch): int
     {
         $merchant = $this->resolveMerchant($batch);
         $created = 0;
 
-        foreach ($this->rows($batch->storage_path) as $row) {
-            $orderAttributes = $this->mapOrderRow($row);
+        foreach ($this->orders($batch->storage_path) as $orderData) {
+            $orderAttributes = $this->mapOrder($orderData);
 
             if ($orderAttributes === null) {
                 continue;
             }
 
-            $order = Order::create([
-                ...$orderAttributes,
-                'user_id' => $batch->user_id,
-                'import_batch_id' => $batch->id,
-                'merchant_id' => $merchant->id,
-                'status' => 'imported',
-                'metadata' => $row,
-            ]);
+            $orderMetadata = $orderData;
+            unset($orderMetadata['items']);
 
-            $itemAttributes = $this->mapItemRow($row);
+            $order = Order::query()->firstOrCreate(
+                [
+                    'merchant_id' => $merchant->id,
+                    'order_number' => $orderAttributes['order_number'],
+                ],
+                [
+                    ...$orderAttributes,
+                    'user_id' => $batch->user_id,
+                    'import_batch_id' => $batch->id,
+                    'status' => 'imported',
+                    'metadata' => $orderMetadata,
+                ],
+            );
 
-            if ($itemAttributes !== null) {
+            if (! $order->wasRecentlyCreated) {
+                continue;
+            }
+
+            foreach ($this->mapItems($orderData['items'] ?? []) as $lineNumber => $itemAttributes) {
                 OrderItem::create([
                     ...$itemAttributes,
                     'order_id' => $order->id,
-                    'metadata' => $row,
+                    'line_number' => $lineNumber,
                 ]);
             }
 
@@ -85,35 +95,158 @@ class WalmartOrderImporter implements Importer
     }
 
     /**
-     * Map a CSV row to Order attributes.
-     *
-     * Field matching is intentionally left empty until Walmart column
-     * mapping is implemented.
-     *
-     * Expected keys when implemented: order_number, ordered_at, fulfilled_at,
-     * delivered_at, subtotal, tax, delivery_fee, tip, discount, total, currency.
-     *
-     * @param  array<string, string|null>  $row
-     * @return array<string, mixed>|null
+     * @return list<array<string, mixed>>
      */
-    protected function mapOrderRow(array $row): ?array
+    protected function orders(string $storagePath): array
     {
-        // TODO: Map CSV columns to order fields.
-        return null;
+        $contents = Storage::disk('local')->get($storagePath);
+
+        if ($contents === null) {
+            throw new RuntimeException("Import file is not readable: {$storagePath}");
+        }
+
+        $decoded = json_decode($contents, true);
+
+        if (! is_array($decoded)) {
+            throw new RuntimeException('Walmart order import file must contain a JSON array.');
+        }
+
+        if ($decoded !== [] && array_is_list($decoded) === false) {
+            throw new RuntimeException('Walmart order import file must contain a JSON array of orders.');
+        }
+
+        return $decoded;
     }
 
     /**
-     * Map a CSV row to OrderItem attributes.
-     *
-     * Field matching is intentionally left empty until Walmart line-item
-     * column mapping is implemented.
-     *
-     * @param  array<string, string|null>  $row
+     * @param  array<string, mixed>  $order
      * @return array<string, mixed>|null
      */
-    protected function mapItemRow(array $row): ?array
+    protected function mapOrder(array $order): ?array
     {
-        // TODO: Map CSV columns to order item fields.
-        return null;
+        $orderNumber = trim((string) ($order['orderNumber'] ?? ''));
+        $subtotal = $this->parseMoney($order['orderSubtotal'] ?? null);
+        $total = $this->parseMoney($order['orderTotal'] ?? null);
+
+        if ($orderNumber === '' || $subtotal === null || $total === null) {
+            return null;
+        }
+
+        return [
+            'order_number' => $orderNumber,
+            'ordered_at' => $this->parseOrderDate($order['orderDate'] ?? null),
+            'delivered_at' => $this->parseOrderDate($order['deliveredDate'] ?? null),
+            'subtotal' => $subtotal,
+            'tax' => $this->parseMoney($order['tax'] ?? null) ?? 0,
+            'delivery_fee' => $this->parseMoney($order['deliveryCharges'] ?? null) ?? 0,
+            'tip' => $this->parseMoney($order['tip'] ?? null) ?? 0,
+            'discount' => $this->parseMoney($order['savings'] ?? null) ?? 0,
+            'total' => $total,
+            'currency' => 'USD',
+        ];
+    }
+
+    /**
+     * @param  mixed  $items
+     * @return array<int, array<string, mixed>>
+     */
+    protected function mapItems(mixed $items): array
+    {
+        if (! is_array($items)) {
+            return [];
+        }
+
+        $mapped = [];
+        $lineNumber = 1;
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $attributes = $this->mapItem($item);
+
+            if ($attributes === null) {
+                continue;
+            }
+
+            $mapped[$lineNumber] = $attributes;
+            $lineNumber++;
+        }
+
+        return $mapped;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    protected function mapItem(array $item): ?array
+    {
+        $description = trim((string) ($item['productName'] ?? ''));
+        $quantity = $this->parseQuantity($item['quantity'] ?? null);
+        $extendedPrice = $this->parseMoney($item['price'] ?? null);
+
+        if ($description === '' || $quantity === null || $quantity <= 0 || $extendedPrice === null) {
+            return null;
+        }
+
+        $unitPrice = round($extendedPrice / $quantity, 2);
+        $sku = trim((string) ($item['usItemId'] ?? ''));
+
+        return [
+            'sku' => $sku !== '' ? $sku : null,
+            'description' => $description,
+            'normalized_description' => Str::of($description)->lower()->squish()->toString(),
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'extended_price' => $extendedPrice,
+            'metadata' => $item,
+        ];
+    }
+
+    protected function parseMoney(mixed $value): ?float
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        $normalized = str_replace([',', '$'], '', $value);
+
+        if (! is_numeric($normalized)) {
+            return null;
+        }
+
+        return round((float) $normalized, 2);
+    }
+
+    protected function parseQuantity(mixed $value): ?float
+    {
+        $value = trim((string) $value);
+
+        if ($value === '' || ! is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
+    protected function parseOrderDate(mixed $value): ?Carbon
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/\s+purchase$/i', '', $value) ?? $value;
+
+        try {
+            return Carbon::parse($value);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

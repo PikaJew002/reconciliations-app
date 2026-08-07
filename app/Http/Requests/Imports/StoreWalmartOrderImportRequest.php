@@ -18,7 +18,7 @@ class StoreWalmartOrderImportRequest extends FormRequest
     {
         return [
             'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
+            'file' => ['required', 'file', 'extensions:json', 'max:10240'],
         ];
     }
 }
