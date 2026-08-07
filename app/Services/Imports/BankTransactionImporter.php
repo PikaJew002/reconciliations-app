@@ -8,7 +8,7 @@ use App\Services\Imports\Concerns\ReadsCsv;
 use App\Services\Imports\Contracts\Importer;
 use RuntimeException;
 
-class BankTransactionImporter implements Importer
+abstract class BankTransactionImporter implements Importer
 {
     use ReadsCsv;
 
@@ -29,36 +29,52 @@ class BankTransactionImporter implements Importer
                 continue;
             }
 
-            BankTransaction::create([
-                ...$attributes,
-                'user_id' => $batch->user_id,
-                'import_batch_id' => $batch->id,
-                'account_id' => $accountId,
-                'status' => 'unmatched',
-                'metadata' => $row,
-            ]);
+            $externalId = $attributes['external_id'] ?? null;
 
-            $created++;
+            if ($externalId === null || $externalId === '') {
+                throw new RuntimeException('Bank transaction imports require an external_id for deduplication.');
+            }
+
+            $transaction = BankTransaction::query()->firstOrCreate(
+                [
+                    'account_id' => $accountId,
+                    'external_id' => $externalId,
+                ],
+                [
+                    ...$attributes,
+                    'user_id' => $batch->user_id,
+                    'import_batch_id' => $batch->id,
+                    'status' => 'unmatched',
+                    'metadata' => $row,
+                ],
+            );
+
+            if ($transaction->wasRecentlyCreated) {
+                $created++;
+            }
         }
 
         return $created;
     }
 
     /**
+     * Stable fingerprint used as external_id when the bank does not supply one.
+     */
+    protected function fingerprintExternalId(string $postedAt, float|string $amount, string $description): string
+    {
+        $normalizedAmount = number_format((float) $amount, 2, '.', '');
+
+        return hash('sha256', implode('|', [$postedAt, $normalizedAmount, $description]));
+    }
+
+    /**
      * Map a CSV row to BankTransaction attributes.
      *
-     * Field matching is intentionally left empty until bank-specific
-     * column mapping (e.g. Chase) is implemented.
-     *
-     * Expected keys when implemented: external_id, posted_at, transaction_date,
+     * Expected keys: external_id, posted_at, transaction_date,
      * description, normalized_description, amount, currency.
      *
      * @param  array<string, string|null>  $row
      * @return array<string, mixed>|null
      */
-    protected function mapRow(array $row): ?array
-    {
-        // TODO: Map CSV columns to bank transaction fields.
-        return null;
-    }
+    abstract protected function mapRow(array $row): ?array;
 }
