@@ -24,6 +24,7 @@ class Order extends Model
         'discount',
         'total',
         'currency',
+        'payment_last_four',
         'shipping_state',
         'shipping_zip',
         'status',

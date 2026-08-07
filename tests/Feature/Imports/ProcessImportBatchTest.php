@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
+use App\Services\Imports\ImporterResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -46,7 +47,7 @@ CSV);
             'metadata' => ['account_id' => $account->id],
         ]);
 
-        (new ProcessImportBatch($batch))->handle(app(\App\Services\Imports\ImporterResolver::class));
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
 
         $batch->refresh();
 
@@ -64,6 +65,7 @@ CSV);
         $this->assertSame('2026-04-30', $transactions[1]->posted_at->toDateString());
         $this->assertSame('2026-04-29', $transactions[1]->transaction_date->toDateString());
         $this->assertSame('-6.75', $transactions[1]->amount);
+        $this->assertSame('2195', $transactions[1]->card_last_four);
         $this->assertNotEmpty($transactions[1]->external_id);
         $this->assertNotSame($transactions[0]->external_id, $transactions[1]->external_id);
     }
@@ -96,7 +98,7 @@ CSV);
             'metadata' => ['account_id' => $account->id],
         ]);
 
-        (new ProcessImportBatch($batch))->handle(app(\App\Services\Imports\ImporterResolver::class));
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
 
         $batch->refresh();
         $transactions = BankTransaction::query()->orderBy('id')->get();
@@ -108,6 +110,7 @@ CSV);
         $this->assertSame('2026-07-30', $transactions[1]->posted_at->toDateString());
         $this->assertSame('2026-07-28', $transactions[1]->transaction_date->toDateString());
         $this->assertSame('-199.33', $transactions[1]->amount);
+        $this->assertSame('2525', $transactions[1]->card_last_four);
     }
 
     public function test_job_skips_duplicate_bank_transactions_on_reimport(): void
@@ -152,7 +155,7 @@ CSV;
             'metadata' => ['account_id' => $account->id],
         ]);
 
-        $resolver = app(\App\Services\Imports\ImporterResolver::class);
+        $resolver = app(ImporterResolver::class);
 
         (new ProcessImportBatch($firstBatch))->handle($resolver);
         (new ProcessImportBatch($secondBatch))->handle($resolver);
@@ -188,7 +191,7 @@ CSV;
             'metadata' => [],
         ]);
 
-        (new ProcessImportBatch($batch))->handle(app(\App\Services\Imports\ImporterResolver::class));
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
 
         $batch->refresh();
 
@@ -215,6 +218,13 @@ CSV;
                 'tip' => '$0.00',
                 'savings' => '',
                 'deliveredDate' => '',
+                'paymentMethods' => 'Mastercard ending in 2195',
+                'paymentMethodDetails' => [
+                    [
+                        'ending' => 'Mastercard ending in 2195',
+                        'amount' => '',
+                    ],
+                ],
                 'items' => [
                     [
                         'productName' => 'Klondike Reese\'s Peanut Butter Ice Cream Sandwiches Frozen Desserts, 6 Count',
@@ -244,7 +254,7 @@ CSV;
             'metadata' => [],
         ]);
 
-        (new ProcessImportBatch($batch))->handle(app(\App\Services\Imports\ImporterResolver::class));
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
 
         $batch->refresh();
 
@@ -260,6 +270,7 @@ CSV;
         $this->assertSame('71.77', $order->subtotal);
         $this->assertSame('0.21', $order->tax);
         $this->assertSame('71.98', $order->total);
+        $this->assertSame('2195', $order->payment_last_four);
         $this->assertSame('walmart', $order->merchant->normalized_name);
 
         $items = OrderItem::query()->orderBy('line_number')->get();
@@ -332,7 +343,7 @@ CSV;
             'metadata' => [],
         ]);
 
-        (new ProcessImportBatch($batch))->handle(app(\App\Services\Imports\ImporterResolver::class));
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
 
         $batch->refresh();
 
@@ -402,7 +413,7 @@ CSV;
             'metadata' => [],
         ]);
 
-        $resolver = app(\App\Services\Imports\ImporterResolver::class);
+        $resolver = app(ImporterResolver::class);
 
         (new ProcessImportBatch($firstBatch))->handle($resolver);
         (new ProcessImportBatch($secondBatch))->handle($resolver);

@@ -18,7 +18,7 @@ class TransactionAllocationFactory extends Factory
 
             'order_component_id' => OrderComponent::factory(),
 
-            'allocated_amount' => fake()->randomFloat(2, -100, -1),
+            'allocated_amount' => fake()->randomFloat(2, 1, 100),
 
             'allocation_type' => fake()->randomElement([
                 'automatic',

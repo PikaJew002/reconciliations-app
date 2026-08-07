@@ -6,6 +6,7 @@ use App\Models\ImportBatch;
 use App\Services\Imports\ImporterResolver;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Bus;
 use Throwable;
 
 class ProcessImportBatch implements ShouldQueue
@@ -32,6 +33,14 @@ class ProcessImportBatch implements ShouldQueue
             $batch->markCompleted();
         } catch (Throwable $exception) {
             $batch->markFailed($exception->getMessage());
+
+            return;
         }
+
+        Bus::chain([
+            new GenerateOrderComponents($batch),
+            new MatchMerchants($batch->user_id),
+            new RunReconciliation($batch->user_id),
+        ])->dispatch();
     }
 }

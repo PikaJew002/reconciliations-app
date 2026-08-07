@@ -48,9 +48,19 @@ class CumberlandValleyNationalBankTransactionImporter extends BankTransactionImp
             'transaction_date' => $this->extractTransactionDate($description),
             'description' => $description,
             'normalized_description' => Str::of($description)->lower()->squish()->toString(),
+            'card_last_four' => $this->extractCardLastFour($description),
             'amount' => $signedAmount,
             'currency' => 'USD',
         ];
+    }
+
+    protected function extractCardLastFour(string $description): ?string
+    {
+        if (preg_match('/C#(\d{4})\b/', $description, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
     }
 
     protected function extractTransactionDate(string $description): ?string

@@ -29,6 +29,13 @@ class WalmartOrderImporter implements Importer
             $orderMetadata = $orderData;
             unset($orderMetadata['items']);
 
+            $metadataPayments = $orderAttributes['metadata_payments'] ?? [];
+            unset($orderAttributes['metadata_payments']);
+
+            if ($metadataPayments !== []) {
+                $orderMetadata['payments'] = $metadataPayments;
+            }
+
             $order = Order::query()->firstOrCreate(
                 [
                     'merchant_id' => $merchant->id,
@@ -132,6 +139,8 @@ class WalmartOrderImporter implements Importer
             return null;
         }
 
+        $payments = $this->parsePaymentMethods($order);
+
         return [
             'order_number' => $orderNumber,
             'ordered_at' => $this->parseOrderDate($order['orderDate'] ?? null),
@@ -143,11 +152,84 @@ class WalmartOrderImporter implements Importer
             'discount' => $this->parseMoney($order['savings'] ?? null) ?? 0,
             'total' => $total,
             'currency' => 'USD',
+            'payment_last_four' => $this->resolvePaymentLastFour($payments),
+            'metadata_payments' => $payments,
         ];
     }
 
     /**
-     * @param  mixed  $items
+     * @param  array<string, mixed>  $order
+     * @return list<array{ending: string|null, last_four: string|null, amount: float|null}>
+     */
+    protected function parsePaymentMethods(array $order): array
+    {
+        $details = $order['paymentMethodDetails'] ?? [];
+
+        if (! is_array($details) || $details === []) {
+            $fallback = trim((string) ($order['paymentMethods'] ?? ''));
+
+            if ($fallback === '') {
+                return [];
+            }
+
+            return [[
+                'ending' => $fallback,
+                'last_four' => $this->extractLastFour($fallback),
+                'amount' => null,
+            ]];
+        }
+
+        $payments = [];
+
+        foreach ($details as $detail) {
+            if (! is_array($detail)) {
+                continue;
+            }
+
+            $ending = trim((string) ($detail['ending'] ?? ''));
+
+            if ($ending === '') {
+                continue;
+            }
+
+            $amount = $this->parseMoney($detail['amount'] ?? null);
+
+            $payments[] = [
+                'ending' => $ending,
+                'last_four' => $this->extractLastFour($ending),
+                'amount' => $amount,
+            ];
+        }
+
+        return $payments;
+    }
+
+    /**
+     * @param  list<array{ending: string|null, last_four: string|null, amount: float|null}>  $payments
+     */
+    protected function resolvePaymentLastFour(array $payments): ?string
+    {
+        if ($payments === []) {
+            return null;
+        }
+
+        if (count($payments) > 1) {
+            return null;
+        }
+
+        return $payments[0]['last_four'];
+    }
+
+    protected function extractLastFour(string $value): ?string
+    {
+        if (preg_match('/(\d{4})\s*$/', $value, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     protected function mapItems(mixed $items): array

@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Account;
 use App\Models\User;
+use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -16,27 +17,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
         User::factory()->create([
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
 
         Account::create([
-            'name' => 'Chase Checking',
-            'institution_name' => 'Chase',
-            'account_name' => 'Total Checking',
+            'name' => 'Joint Account 2',
+            'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
+            'account_name' => 'Joint Account 2',
             'account_type' => Account::CHECKING,
-            'last_four' => '1234',
-        ]);
-
-        Account::create([
-            'name' => 'Discover Card',
-            'institution_name' => 'Discover',
-            'account_name' => 'Cashback',
-            'account_type' => Account::CREDIT_CARD,
-            'last_four' => '9876',
+            'last_four' => '6218',
         ]);
     }
 }

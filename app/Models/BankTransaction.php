@@ -19,6 +19,7 @@ class BankTransaction extends Model
         'transaction_date',
         'description',
         'normalized_description',
+        'card_last_four',
         'amount',
         'currency',
         'status',
@@ -65,7 +66,14 @@ class BankTransaction extends Model
 
     public function getRemainingAmountAttribute(): float
     {
-        return (float) $this->amount - $this->allocated_amount;
+        $amount = (float) $this->amount;
+        $allocated = $this->allocated_amount;
+
+        if ($amount < 0) {
+            return -(abs($amount) - $allocated);
+        }
+
+        return $amount - $allocated;
     }
 
     public function getIsFullyAllocatedAttribute(): bool
