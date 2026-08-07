@@ -149,6 +149,14 @@ class ReconciliationService
     /**
      * @param  Collection<int, BankTransaction>  $transactions
      */
+    public function allocateExactTransactions(Collection $transactions, Order $order): bool
+    {
+        return $this->allocateTransactionsToOrder($transactions, $order);
+    }
+
+    /**
+     * @param  Collection<int, BankTransaction>  $transactions
+     */
     protected function allocateTransactionsToOrder(Collection $transactions, Order $order): bool
     {
         $transactions = $transactions->sortBy('id')->values();

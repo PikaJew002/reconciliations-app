@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 class ReconciliationReviewService
 {
     public function __construct(
+        protected OrderPaymentResolutionService $paymentResolution,
         protected int $listLimit = 50,
     ) {}
 
@@ -17,14 +18,29 @@ class ReconciliationReviewService
      * @return array{
      *     summary: array<string, int>,
      *     unmatchedOrders: list<array<string, mixed>>,
+     *     unmatchedTransactions: list<array<string, mixed>>,
+     *     unbalancedOrders: list<array<string, mixed>>,
+     *     paymentReviewOrders: list<array<string, mixed>>,
      *     matchedPairs: list<array<string, mixed>>
      * }
      */
     public function forUser(int $userId): array
     {
+        $unbalancedOrders = $this->unbalancedOrders($userId);
+        $paymentReviewOrders = $this->paymentReviewOrders($userId);
+
+        $needsReviewIds = collect($unbalancedOrders)
+            ->pluck('id')
+            ->merge(collect($paymentReviewOrders)->pluck('id'))
+            ->unique()
+            ->count();
+
         return [
-            'summary' => $this->summary($userId),
+            'summary' => $this->summary($userId, count($unbalancedOrders), count($paymentReviewOrders), $needsReviewIds),
             'unmatchedOrders' => $this->unmatchedOrders($userId),
+            'unmatchedTransactions' => $this->unmatchedTransactions($userId),
+            'unbalancedOrders' => $unbalancedOrders,
+            'paymentReviewOrders' => $paymentReviewOrders,
             'matchedPairs' => $this->matchedPairs($userId),
         ];
     }
@@ -32,8 +48,12 @@ class ReconciliationReviewService
     /**
      * @return array<string, int>
      */
-    protected function summary(int $userId): array
-    {
+    protected function summary(
+        int $userId,
+        int $unbalancedOrdersCount,
+        int $paymentReviewOrdersCount,
+        int $needsReviewCount,
+    ): array {
         return [
             'unmatched_orders' => Order::query()
                 ->where('user_id', $userId)
@@ -52,6 +72,9 @@ class ReconciliationReviewService
                 ->where('status', 'partial')
                 ->count(),
             'matched_pairs' => $this->matchedPairCount($userId),
+            'unbalanced_orders' => $unbalancedOrdersCount,
+            'payment_review_orders' => $paymentReviewOrdersCount,
+            'needs_review' => $needsReviewCount,
         ];
     }
 
@@ -83,6 +106,134 @@ class ReconciliationReviewService
                 'payment_last_four' => $order->payment_last_four,
                 'status' => $order->status,
                 'merchant' => $order->merchant?->name,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function unbalancedOrders(int $userId): array
+    {
+        return Order::query()
+            ->where('user_id', $userId)
+            ->where('status', '!=', 'reconciled')
+            ->with([
+                'merchant:id,name,normalized_name',
+                'components' => fn ($query) => $query
+                    ->withCount('allocations')
+                    ->orderBy('id'),
+            ])
+            ->orderByDesc('ordered_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(function (Order $order): ?array {
+                $componentSum = round((float) $order->components->sum('amount'), 2);
+                $total = round((float) $order->total, 2);
+                $gap = round($total - $componentSum, 2);
+
+                if (abs($gap) < 0.01) {
+                    return null;
+                }
+
+                return [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'ordered_at' => $order->ordered_at?->toDateString(),
+                    'total' => $total,
+                    'component_sum' => $componentSum,
+                    'gap' => $gap,
+                    'payment_last_four' => $order->payment_last_four,
+                    'status' => $order->status,
+                    'merchant' => $order->merchant?->name,
+                    'components' => $order->components
+                        ->map(fn ($component): array => [
+                            'id' => $component->id,
+                            'type' => $component->type,
+                            'description' => $component->description,
+                            'amount' => (float) $component->amount,
+                            'is_user_modified' => (bool) $component->is_user_modified,
+                            'can_delete' => (int) $component->allocations_count === 0,
+                        ])
+                        ->all(),
+                ];
+            })
+            ->filter()
+            ->take($this->listLimit)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function paymentReviewOrders(int $userId): array
+    {
+        return Order::query()
+            ->where('user_id', $userId)
+            ->where('status', '!=', 'reconciled')
+            ->with(['merchant:id,name,normalized_name', 'components'])
+            ->orderByDesc('ordered_at')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (Order $order): bool => $this->paymentResolution->needsPaymentReview($order))
+            ->take($this->listLimit)
+            ->values()
+            ->map(function (Order $order): array {
+                $payments = $this->paymentResolution->normalizedPayments($order);
+                $componentSum = round((float) $order->components->sum('amount'), 2);
+                $componentsBalanced = abs($componentSum - (float) $order->total) < 0.01;
+
+                return [
+                    'id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'ordered_at' => $order->ordered_at?->toDateString(),
+                    'total' => (float) $order->total,
+                    'payment_last_four' => $order->payment_last_four,
+                    'status' => $order->status,
+                    'merchant' => $order->merchant?->name,
+                    'components_balanced' => $componentsBalanced,
+                    'payments' => collect($payments)
+                        ->values()
+                        ->map(fn (array $payment, int $index): array => [
+                            'index' => $index,
+                            'ending' => $payment['ending'],
+                            'last_four' => $payment['last_four'],
+                            'amount' => $payment['amount'],
+                            'kind' => $payment['kind'],
+                            'requires_bank_transaction' => in_array($payment['kind'], ['card', 'unknown'], true),
+                            'candidate_transactions' => $componentsBalanced
+                                ? $this->paymentResolution->candidateTransactionsForPayment($order, $payment)
+                                : [],
+                        ])
+                        ->all(),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function unmatchedTransactions(int $userId): array
+    {
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('status', 'unmatched')
+            ->with('merchant:id,name,normalized_name')
+            ->orderByDesc('posted_at')
+            ->orderByDesc('id')
+            ->limit($this->listLimit)
+            ->get()
+            ->map(fn (BankTransaction $transaction): array => [
+                'id' => $transaction->id,
+                'posted_at' => $transaction->posted_at?->toDateString(),
+                'transaction_date' => $transaction->transaction_date?->toDateString(),
+                'description' => $transaction->description,
+                'amount' => (float) $transaction->amount,
+                'card_last_four' => $transaction->card_last_four,
+                'status' => $transaction->status,
+                'merchant' => $transaction->merchant?->name,
             ])
             ->all();
     }

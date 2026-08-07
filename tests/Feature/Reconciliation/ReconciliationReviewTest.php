@@ -2,13 +2,16 @@
 
 namespace Tests\Feature\Reconciliation;
 
+use App\Jobs\RunUserReconciliationPipeline;
 use App\Models\BankTransaction;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Models\ReconciliationRun;
 use App\Models\TransactionAllocation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -42,6 +45,29 @@ class ReconciliationReviewTest extends TestCase
             'status' => 'imported',
         ]);
 
+        OrderComponent::factory()->create([
+            'order_id' => $unmatchedOrder->id,
+            'amount' => 40.00,
+            'order_item_id' => null,
+        ]);
+
+        $unbalancedOrder = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => 'UNBALANCED-1',
+            'total' => 199.33,
+            'payment_last_four' => '2525',
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $unbalancedOrder->id,
+            'type' => 'product',
+            'description' => 'Groceries',
+            'amount' => 194.33,
+            'order_item_id' => null,
+        ]);
+
         $reconciledOrder = Order::factory()->create([
             'user_id' => $user->id,
             'merchant_id' => $merchant->id,
@@ -66,7 +92,7 @@ class ReconciliationReviewTest extends TestCase
             'status' => 'matched',
         ]);
 
-        BankTransaction::factory()->create([
+        $unmatchedTransaction = BankTransaction::factory()->create([
             'user_id' => $user->id,
             'merchant_id' => $merchant->id,
             'description' => 'Unmatched purchase',
@@ -99,18 +125,93 @@ class ReconciliationReviewTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Reconciliation/Index')
-                ->where('summary.unmatched_orders', 1)
+                ->where('summary.unmatched_orders', 2)
                 ->where('summary.reconciled_orders', 1)
                 ->where('summary.unmatched_transactions', 1)
                 ->where('summary.partial_transactions', 1)
                 ->where('summary.matched_pairs', 1)
-                ->has('unmatchedOrders', 1)
-                ->where('unmatchedOrders.0.id', $unmatchedOrder->id)
-                ->where('unmatchedOrders.0.order_number', 'UNMATCHED-1')
+                ->where('summary.unbalanced_orders', 1)
+                ->where('summary.payment_review_orders', 0)
+                ->where('summary.needs_review', 1)
+                ->where('activeRun', null)
+                ->has('unmatchedOrders', 2)
+                ->has('unbalancedOrders', 1)
+                ->has('paymentReviewOrders', 0)
+                ->where('unbalancedOrders.0.id', $unbalancedOrder->id)
+                ->where('unbalancedOrders.0.gap', 5)
+                ->has('unmatchedTransactions', 1)
+                ->where('unmatchedTransactions.0.id', $unmatchedTransaction->id)
+                ->where('unmatchedTransactions.0.description', 'Unmatched purchase')
                 ->has('matchedPairs', 1)
                 ->where('matchedPairs.0.transaction.id', $matchedTransaction->id)
                 ->where('matchedPairs.0.order.id', $reconciledOrder->id)
                 ->where('matchedPairs.0.allocated_amount', 71.98)
             );
+    }
+
+    public function test_guests_cannot_run_reconciliation(): void
+    {
+        $this->post(route('reconciliation.run'))
+            ->assertRedirect('/login');
+    }
+
+    public function test_authenticated_user_can_queue_reconciliation_for_existing_data(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.run'))
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHas('success');
+
+        $run = ReconciliationRun::query()->where('user_id', $user->id)->sole();
+
+        $this->assertSame('pending', $run->status);
+
+        Queue::assertPushed(RunUserReconciliationPipeline::class, function (RunUserReconciliationPipeline $job) use ($run) {
+            return $job->reconciliationRunId === $run->id;
+        });
+    }
+
+    public function test_index_includes_active_run_while_processing(): void
+    {
+        $user = User::factory()->create();
+
+        $run = ReconciliationRun::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reconciliation/Index')
+                ->where('activeRun.id', $run->id)
+                ->where('activeRun.status', 'processing')
+            );
+    }
+
+    public function test_does_not_queue_second_run_while_one_is_in_progress(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        ReconciliationRun::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'processing',
+            'started_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.run'))
+            ->assertRedirect(route('reconciliation.index'));
+
+        $this->assertSame(1, ReconciliationRun::query()->where('user_id', $user->id)->count());
+        Queue::assertNothingPushed();
     }
 }

@@ -216,7 +216,7 @@ CSV;
                 'deliveryCharges' => '$0.00',
                 'tax' => '$0.21',
                 'tip' => '$0.00',
-                'savings' => '',
+                'savings' => '$5.03',
                 'deliveredDate' => '',
                 'paymentMethods' => 'Mastercard ending in 2195',
                 'paymentMethodDetails' => [
@@ -269,9 +269,11 @@ CSV;
         $this->assertSame('2026-07-25', $order->ordered_at->toDateString());
         $this->assertSame('71.77', $order->subtotal);
         $this->assertSame('0.21', $order->tax);
+        $this->assertSame('0.00', $order->discount);
         $this->assertSame('71.98', $order->total);
         $this->assertSame('2195', $order->payment_last_four);
         $this->assertSame('walmart', $order->merchant->normalized_name);
+        $this->assertSame('$5.03', $order->metadata['savings'] ?? null);
 
         $items = OrderItem::query()->orderBy('line_number')->get();
 

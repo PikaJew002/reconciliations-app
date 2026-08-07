@@ -1,0 +1,34 @@
+<?php
+
+namespace App\Http\Controllers\Reconciliation;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Reconciliation\ResolveOrderPaymentsRequest;
+use App\Models\Order;
+use App\Services\Reconciliation\OrderPaymentResolutionService;
+use Illuminate\Http\RedirectResponse;
+use InvalidArgumentException;
+use RuntimeException;
+
+class OrderPaymentResolutionController extends Controller
+{
+    public function store(
+        ResolveOrderPaymentsRequest $request,
+        Order $order,
+        OrderPaymentResolutionService $resolution,
+    ): RedirectResponse {
+        abort_unless($order->user_id === $request->user()->id, 403);
+
+        try {
+            $resolution->resolve($order, $request->input('payments', []));
+        } catch (InvalidArgumentException|RuntimeException $exception) {
+            return redirect()
+                ->route('reconciliation.index')
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('reconciliation.index')
+            ->with('success', 'Multi-payment order reconciled.');
+    }
+}

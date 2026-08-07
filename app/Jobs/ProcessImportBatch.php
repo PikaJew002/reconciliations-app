@@ -41,6 +41,7 @@ class ProcessImportBatch implements ShouldQueue
             new GenerateOrderComponents($batch),
             new MatchMerchants($batch->user_id),
             new RunReconciliation($batch->user_id),
+            new ReconcileSyntheticBankSpend($batch->user_id),
         ])->dispatch();
     }
 }

@@ -149,7 +149,8 @@ class WalmartOrderImporter implements Importer
             'tax' => $this->parseMoney($order['tax'] ?? null) ?? 0,
             'delivery_fee' => $this->parseMoney($order['deliveryCharges'] ?? null) ?? 0,
             'tip' => $this->parseMoney($order['tip'] ?? null) ?? 0,
-            'discount' => $this->parseMoney($order['savings'] ?? null) ?? 0,
+            // Walmart "savings" is informational only (amount saved), not a payable discount.
+            'discount' => 0,
             'total' => $total,
             'currency' => 'USD',
             'payment_last_four' => $this->resolvePaymentLastFour($payments),
@@ -159,7 +160,7 @@ class WalmartOrderImporter implements Importer
 
     /**
      * @param  array<string, mixed>  $order
-     * @return list<array{ending: string|null, last_four: string|null, amount: float|null}>
+     * @return list<array{ending: string, last_four: string|null, amount: float|null, kind: string}>
      */
     protected function parsePaymentMethods(array $order): array
     {
@@ -172,11 +173,28 @@ class WalmartOrderImporter implements Importer
                 return [];
             }
 
-            return [[
-                'ending' => $fallback,
-                'last_four' => $this->extractLastFour($fallback),
-                'amount' => null,
-            ]];
+            // Split "A; B" style paymentMethods strings into separate tenders.
+            $parts = preg_split('/\s*;\s*/', $fallback) ?: [$fallback];
+            $payments = [];
+
+            foreach ($parts as $part) {
+                $ending = trim((string) $part);
+
+                if ($ending === '') {
+                    continue;
+                }
+
+                $lastFour = $this->extractLastFour($ending);
+
+                $payments[] = [
+                    'ending' => $ending,
+                    'last_four' => $lastFour,
+                    'amount' => null,
+                    'kind' => $this->classifyPaymentKind($ending, $lastFour),
+                ];
+            }
+
+            return $payments;
         }
 
         $payments = [];
@@ -193,15 +211,45 @@ class WalmartOrderImporter implements Importer
             }
 
             $amount = $this->parseMoney($detail['amount'] ?? null);
+            $lastFour = $this->extractLastFour($ending);
 
             $payments[] = [
                 'ending' => $ending,
-                'last_four' => $this->extractLastFour($ending),
+                'last_four' => $lastFour,
                 'amount' => $amount,
+                'kind' => $this->classifyPaymentKind($ending, $lastFour),
             ];
         }
 
         return $payments;
+    }
+
+    protected function classifyPaymentKind(string $ending, ?string $lastFour): string
+    {
+        $lower = Str::of($ending)->lower()->squish()->toString();
+
+        if (str_contains($lower, 'walmart balance') || $lower === 'balance') {
+            return 'walmart_balance';
+        }
+
+        if (str_contains($lower, 'gift')) {
+            return 'gift_card';
+        }
+
+        if (preg_match('/\b(mastercard|visa|amex|american express|discover)\b/', $lower) === 1) {
+            return 'card';
+        }
+
+        // Bare "Ending in 1234" from Walmart is typically a gift card.
+        if ($lastFour !== null && preg_match('/^ending in \d{4}$/', $lower) === 1) {
+            return 'gift_card';
+        }
+
+        if ($lastFour !== null) {
+            return 'card';
+        }
+
+        return 'unknown';
     }
 
     /**

@@ -45,6 +45,8 @@ Target
 
 Used by both orders and bank transactions after merchant normalization.
 
+Card/POS bank descriptions are normalized into a merchant name, then fuzzy-matched to an existing merchant or used to create one (`supports_order_import = false`). Explicit rules still cover Walmart. Amazon, internal transfers, Venmo, deposits, and ATM lines are left untagged for later importers or manual handling.
+
 Relationships:
 
 ```
@@ -499,3 +501,7 @@ Transaction 2 (-217.77)
 ```
 
 Reports are produced by summing `OrderComponent.amount` grouped by `ExpenseCategory`, while reconciliation is verified by ensuring that the sum of `TransactionAllocation.allocated_amount` equals each `BankTransaction.amount` and each `OrderComponent.amount`.
+
+## Bank-derived synthetic orders
+
+For card/POS spend at merchants that do not support order import, reconciliation creates a synthetic `Order` + single `OrderComponent` and allocates the bank transaction 1:1. These orders are marked with `metadata.source = bank_synthetic` and `metadata.bank_transaction_id` so a future real order import does not double-count. `expense_category_id` stays null until categorization is implemented. Merchants with `supports_order_import = true` (e.g. Walmart) are never synthesized — they wait for real order matching.
