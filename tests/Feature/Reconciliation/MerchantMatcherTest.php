@@ -7,6 +7,8 @@ use App\Models\BankTransaction;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
 use App\Models\User;
+use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
+use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use App\Services\Reconciliation\MerchantMatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -136,7 +138,9 @@ class MerchantMatcherTest extends TestCase
     public function test_creates_merchant_for_card_pos_spend(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create();
+        $account = Account::factory()->create([
+            'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
+        ]);
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
 
         $transaction = BankTransaction::factory()->create([
@@ -161,6 +165,65 @@ class MerchantMatcherTest extends TestCase
         $this->assertFalse($merchant->supports_order_import);
         $this->assertSame(Merchant::OTHER, $merchant->type);
         $this->assertSame($merchant->id, $transaction->fresh()->merchant_id);
+    }
+
+    public function test_creates_merchant_for_capital_one_spend(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => null,
+            'amount' => -27.12,
+            'description' => 'TACO BELL 021543',
+            'normalized_description' => 'taco bell 021543',
+            'status' => 'unmatched',
+        ]);
+
+        $matcher = app(MerchantMatcher::class);
+
+        $this->assertTrue($matcher->matchTransaction($transaction, $user->id));
+
+        $merchant = Merchant::query()->where('user_id', $user->id)->first();
+
+        $this->assertNotNull($merchant);
+        $this->assertSame('taco bell', $merchant->normalized_name);
+        $this->assertFalse($merchant->supports_order_import);
+        $this->assertSame($merchant->id, $transaction->fresh()->merchant_id);
+    }
+
+    public function test_does_not_create_merchant_for_capital_one_interest_charge(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => null,
+            'amount' => -271.04,
+            'description' => 'INTEREST CHARGE:PURCHASES',
+            'normalized_description' => 'interest charge:purchases',
+            'status' => 'unmatched',
+        ]);
+
+        $matcher = app(MerchantMatcher::class);
+
+        $this->assertFalse($matcher->matchTransaction($transaction, $user->id));
+        $this->assertNull($transaction->fresh()->merchant_id);
+        $this->assertDatabaseCount('merchants', 0);
     }
 
     public function test_fuzzy_matches_similar_card_pos_descriptions_to_existing_merchant(): void

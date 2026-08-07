@@ -2,9 +2,10 @@
 
 namespace App\Services\Reconciliation;
 
+use App\Services\Reconciliation\Contracts\MerchantNameExtractor;
 use Illuminate\Support\Str;
 
-class BankMerchantNameExtractor
+class BankMerchantNameExtractor implements MerchantNameExtractor
 {
     /**
      * @var list<string>
@@ -29,6 +30,11 @@ class BankMerchantNameExtractor
         'dc',
     ];
 
+    public function canExtract(string $normalizedDescription): bool
+    {
+        return $this->isCardPosDescription($normalizedDescription);
+    }
+
     public function isCardPosDescription(string $normalizedDescription): bool
     {
         $description = $this->normalize($normalizedDescription);
@@ -49,7 +55,7 @@ class BankMerchantNameExtractor
     {
         $description = $this->normalize($normalizedDescription);
 
-        if ($description === '' || ! $this->isCardPosDescription($description)) {
+        if ($description === '' || ! $this->canExtract($description)) {
             return null;
         }
 

@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 class MerchantMatcher
 {
     public function __construct(
-        protected BankMerchantNameExtractor $nameExtractor,
+        protected MerchantNameExtractorResolver $extractorResolver,
         protected float $fuzzyMatchThreshold = 0.85,
     ) {}
 
@@ -57,6 +57,7 @@ class MerchantMatcher
             ->where('user_id', $userId)
             ->whereNull('merchant_id')
             ->where('status', 'unmatched')
+            ->with('account')
             ->orderBy('id')
             ->each(function (BankTransaction $transaction) use ($userId, &$count): void {
                 if ($this->matchTransaction($transaction, $userId)) {
@@ -103,11 +104,14 @@ class MerchantMatcher
             return false;
         }
 
-        if (! $this->nameExtractor->isCardPosDescription($description)) {
+        $transaction->loadMissing('account');
+        $extractor = $this->extractorResolver->resolve($transaction->account?->institution_name);
+
+        if (! $extractor->canExtract($description)) {
             return false;
         }
 
-        $extracted = $this->nameExtractor->extract($description);
+        $extracted = $extractor->extract($description);
 
         if ($extracted === null) {
             return false;

@@ -9,6 +9,7 @@ use App\Models\ImportBatch;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use App\Services\Imports\ImporterResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -111,6 +112,66 @@ CSV);
         $this->assertSame('2026-07-28', $transactions[1]->transaction_date->toDateString());
         $this->assertSame('-199.33', $transactions[1]->amount);
         $this->assertSame('2525', $transactions[1]->card_last_four);
+    }
+
+    public function test_job_imports_capital_one_credit_card_transactions(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        $path = 'imports/capital-one.csv';
+
+        Storage::disk('local')->put($path, <<<'CSV'
+Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit
+2026-07-13,2026-07-15,5394,TACO BELL 021543,Dining,27.12,
+2026-07-10,2026-07-10,5394,CAPITAL ONE MOBILE PYMT,Payment/Credit,,349.85
+2026-07-08,2026-07-09,5394,WAL-MART #1190,Merchandise,41.38,
+CSV);
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'storage_path' => $path,
+            'status' => 'pending',
+            'record_count' => 0,
+            'started_at' => null,
+            'completed_at' => null,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $batch->refresh();
+
+        $this->assertSame('completed', $batch->status);
+        $this->assertSame(3, $batch->record_count);
+        $this->assertNotNull($batch->completed_at);
+
+        $transactions = BankTransaction::query()->orderBy('id')->get();
+
+        $this->assertCount(3, $transactions);
+
+        $this->assertSame('2026-07-15', $transactions[0]->posted_at->toDateString());
+        $this->assertSame('2026-07-13', $transactions[0]->transaction_date->toDateString());
+        $this->assertSame('-27.12', $transactions[0]->amount);
+        $this->assertSame('5394', $transactions[0]->card_last_four);
+        $this->assertSame('TACO BELL 021543', $transactions[0]->description);
+        $this->assertNotEmpty($transactions[0]->external_id);
+
+        $this->assertSame('2026-07-10', $transactions[1]->posted_at->toDateString());
+        $this->assertSame('2026-07-10', $transactions[1]->transaction_date->toDateString());
+        $this->assertSame('349.85', $transactions[1]->amount);
+        $this->assertSame('CAPITAL ONE MOBILE PYMT', $transactions[1]->description);
+
+        $this->assertSame('2026-07-09', $transactions[2]->posted_at->toDateString());
+        $this->assertSame('2026-07-08', $transactions[2]->transaction_date->toDateString());
+        $this->assertSame('-41.38', $transactions[2]->amount);
+        $this->assertSame('WAL-MART #1190', $transactions[2]->description);
     }
 
     public function test_job_skips_duplicate_bank_transactions_on_reimport(): void

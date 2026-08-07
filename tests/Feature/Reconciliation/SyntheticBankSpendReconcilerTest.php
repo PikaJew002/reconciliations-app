@@ -15,6 +15,7 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\TransactionAllocation;
 use App\Models\User;
+use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use App\Services\Imports\ImporterResolver;
 use App\Services\Reconciliation\MerchantMatcher;
@@ -203,5 +204,46 @@ CSV);
             RunReconciliation::class,
             ReconcileSyntheticBankSpend::class,
         ]);
+    }
+
+    public function test_match_and_synthesize_capital_one_spend(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => null,
+            'posted_at' => '2026-07-15',
+            'amount' => -27.12,
+            'card_last_four' => '5394',
+            'description' => 'TACO BELL 021543',
+            'normalized_description' => 'taco bell 021543',
+            'status' => 'unmatched',
+        ]);
+
+        app(MerchantMatcher::class)->matchForUser($user->id);
+        $count = app(SyntheticBankSpendReconciler::class)->reconcileForUser($user->id);
+
+        $transaction->refresh();
+
+        $this->assertSame(1, $count);
+        $this->assertSame('matched', $transaction->status);
+        $this->assertNotNull($transaction->merchant_id);
+
+        $order = Order::query()->where('merchant_id', $transaction->merchant_id)->first();
+
+        $this->assertNotNull($order);
+        $this->assertSame('bank_synthetic', $order->metadata['source']);
+        $this->assertSame($transaction->id, $order->metadata['bank_transaction_id']);
+        $this->assertEquals(27.12, (float) $order->total);
+        $this->assertSame('5394', $order->payment_last_four);
+        $this->assertSame('taco bell', $transaction->merchant->normalized_name);
     }
 }
