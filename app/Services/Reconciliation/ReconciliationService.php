@@ -7,160 +7,351 @@ use App\Models\Order;
 use App\Models\TransactionAllocation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class ReconciliationService
 {
     public function __construct(
         protected int $dateWindowDays = 7,
+        protected int $subsetCandidateCap = 12,
     ) {}
 
     /**
-     * @return int Number of bank transactions reconciled (fully or partially).
+     * @return int Number of bank transactions matched.
      */
     public function reconcileForUser(int $userId): int
     {
-        $count = 0;
+        $matchedTransactionIds = [];
 
-        BankTransaction::query()
-            ->where('user_id', $userId)
-            ->whereIn('status', ['unmatched', 'partial'])
-            ->whereNotNull('merchant_id')
-            ->where('amount', '<', 0)
-            ->with(['allocations'])
-            ->orderBy('posted_at')
-            ->orderBy('id')
-            ->each(function (BankTransaction $transaction) use ($userId, &$count): void {
-                if ($this->reconcileTransaction($transaction, $userId)) {
-                    $count++;
+        $matchedTransactionIds = array_merge(
+            $matchedTransactionIds,
+            $this->reconcileExactOneToOne($userId),
+        );
+
+        $matchedTransactionIds = array_merge(
+            $matchedTransactionIds,
+            $this->reconcileExactMultiTransaction($userId),
+        );
+
+        return count(array_unique($matchedTransactionIds));
+    }
+
+    /**
+     * @return list<int>
+     */
+    protected function reconcileExactOneToOne(int $userId): array
+    {
+        $matchedTransactionIds = [];
+
+        foreach ($this->openOrders($userId) as $order) {
+            $candidates = $this->candidateTransactions($userId, $order)
+                ->filter(fn (BankTransaction $transaction): bool => $this->amountsEqual(
+                    abs((float) $transaction->amount),
+                    (float) $order->total,
+                ))
+                ->values();
+
+            if ($candidates->count() !== 1) {
+                continue;
+            }
+
+            $transaction = $candidates->first();
+
+            if ($this->allocateTransactionsToOrder(collect([$transaction]), $order)) {
+                $matchedTransactionIds[] = $transaction->id;
+            }
+        }
+
+        return $matchedTransactionIds;
+    }
+
+    /**
+     * @return list<int>
+     */
+    protected function reconcileExactMultiTransaction(int $userId): array
+    {
+        $matchedTransactionIds = [];
+        $postedAtRange = $this->postedAtRange($userId);
+
+        foreach ($this->openOrders($userId) as $order) {
+            if ($this->isNearImportEdge($order, $postedAtRange)) {
+                continue;
+            }
+
+            $candidates = $this->candidateTransactions($userId, $order)->values();
+
+            if ($candidates->isEmpty() || $candidates->count() > $this->subsetCandidateCap) {
+                continue;
+            }
+
+            $subset = $this->findUniqueExactSubset($candidates, $this->toCents((float) $order->total));
+
+            if ($subset === null || $subset->count() < 2) {
+                continue;
+            }
+
+            if ($this->allocateTransactionsToOrder($subset, $order)) {
+                foreach ($subset as $transaction) {
+                    $matchedTransactionIds[] = $transaction->id;
                 }
-            });
+            }
+        }
 
-        return $count;
+        return $matchedTransactionIds;
     }
 
-    public function reconcileTransaction(BankTransaction $transaction, int $userId): bool
+    /**
+     * @return Collection<int, Order>
+     */
+    protected function openOrders(int $userId): Collection
     {
-        if ($transaction->merchant_id === null || (float) $transaction->amount >= 0) {
-            return false;
-        }
-
-        if (abs($transaction->remaining_amount) < 0.01) {
-            return false;
-        }
-
-        $order = $this->findMatchingOrder($transaction, $userId);
-
-        if (! $order) {
-            return false;
-        }
-
-        $this->allocateTransactionToOrder($transaction, $order);
-
-        return true;
-    }
-
-    protected function findMatchingOrder(BankTransaction $transaction, int $userId): ?Order
-    {
-        $transactionAmount = abs((float) $transaction->amount);
-        $transactionDate = $this->transactionDate($transaction);
-
-        $candidates = Order::query()
+        return Order::query()
             ->where('user_id', $userId)
-            ->where('merchant_id', $transaction->merchant_id)
             ->where('status', '!=', 'reconciled')
             ->with(['components.allocations'])
+            ->orderBy('ordered_at')
+            ->orderBy('id')
             ->get()
-            ->filter(function (Order $order) use ($transaction, $transactionAmount, $transactionDate): bool {
-                if (! $this->datesAlign($transactionDate, $order)) {
-                    return false;
-                }
+            ->filter(fn (Order $order): bool => $order->components->isNotEmpty())
+            ->values();
+    }
 
+    /**
+     * @return Collection<int, BankTransaction>
+     */
+    protected function candidateTransactions(int $userId, Order $order): Collection
+    {
+        $orderDate = $this->orderDate($order);
+
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('merchant_id', $order->merchant_id)
+            ->where('status', 'unmatched')
+            ->where('amount', '<', 0)
+            ->whereNotNull('merchant_id')
+            ->orderBy('posted_at')
+            ->orderBy('id')
+            ->get()
+            ->filter(function (BankTransaction $transaction) use ($order, $orderDate): bool {
                 if (! $this->paymentInstrumentsAlign($order, $transaction)) {
                     return false;
                 }
 
-                $remaining = $this->orderRemainingAmount($order);
-
-                if ($remaining < 0.01) {
-                    return false;
-                }
-
-                if ($this->amountsEqual($transactionAmount, (float) $order->total)) {
+                if ($orderDate === null) {
                     return true;
                 }
 
-                return $transactionAmount <= $remaining + 0.01;
-            });
+                return $this->datesAlign($this->postedAtDate($transaction), $orderDate);
+            })
+            ->values();
+    }
 
-        if ($candidates->isEmpty()) {
+    /**
+     * @param  Collection<int, BankTransaction>  $transactions
+     */
+    protected function allocateTransactionsToOrder(Collection $transactions, Order $order): bool
+    {
+        $transactions = $transactions->sortBy('id')->values();
+        $orderTotalCents = $this->toCents((float) $order->total);
+        $transactionTotalCents = $transactions->sum(
+            fn (BankTransaction $transaction): int => $this->toCents(abs((float) $transaction->amount)),
+        );
+
+        if ($transactions->isEmpty() || $transactionTotalCents !== $orderTotalCents) {
+            return false;
+        }
+
+        try {
+            DB::transaction(function () use ($transactions, $order): void {
+                $order->refresh();
+                $order->load(['components.allocations']);
+
+                if ($order->status === 'reconciled' || $this->orderRemainingAmount($order) < 0.01) {
+                    throw new \RuntimeException('Order is not allocatable.');
+                }
+
+                foreach ($transactions as $transaction) {
+                    $transaction->refresh();
+
+                    if ($transaction->status !== 'unmatched' || abs((float) $transaction->remaining_amount) < 0.01) {
+                        throw new \RuntimeException('Transaction is not allocatable.');
+                    }
+                }
+
+                foreach ($transactions as $transaction) {
+                    $remaining = abs((float) $transaction->amount);
+                    $order->load(['components.allocations']);
+
+                    foreach ($order->components->sortBy('id') as $component) {
+                        if ($remaining < 0.01) {
+                            break;
+                        }
+
+                        $componentRemaining = (float) $component->remaining_amount;
+
+                        if ($componentRemaining < 0.01) {
+                            continue;
+                        }
+
+                        $allocationAmount = min($remaining, $componentRemaining);
+
+                        TransactionAllocation::create([
+                            'bank_transaction_id' => $transaction->id,
+                            'order_component_id' => $component->id,
+                            'allocated_amount' => round($allocationAmount, 2),
+                            'allocation_type' => 'automatic',
+                            'match_confidence' => 100,
+                            'notes' => null,
+                            'metadata' => [],
+                        ]);
+
+                        $remaining = round($remaining - $allocationAmount, 2);
+                    }
+
+                    $transaction->refresh();
+
+                    if (abs($transaction->remaining_amount) >= 0.01) {
+                        throw new \RuntimeException('Transaction was not fully allocated.');
+                    }
+
+                    $transaction->markMatched();
+                }
+
+                $order->refresh();
+                $order->load(['components.allocations']);
+
+                if ($this->orderRemainingAmount($order) >= 0.01) {
+                    throw new \RuntimeException('Order was not fully allocated.');
+                }
+
+                $order->markReconciled();
+            });
+        } catch (\RuntimeException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  Collection<int, BankTransaction>  $candidates
+     * @return Collection<int, BankTransaction>|null
+     */
+    protected function findUniqueExactSubset(Collection $candidates, int $targetCents): ?Collection
+    {
+        $items = $candidates->values();
+        $solutions = [];
+
+        $this->searchExactSubsets($items, $targetCents, 0, [], $solutions);
+
+        if (count($solutions) !== 1) {
             return null;
         }
 
-        $exactMatches = $candidates->filter(
-            fn (Order $order): bool => $this->amountsEqual($transactionAmount, (float) $order->total),
-        );
-
-        if ($exactMatches->count() === 1) {
-            return $exactMatches->first();
-        }
-
-        if ($exactMatches->count() > 1) {
-            return $this->closestByDate($exactMatches, $transactionDate);
-        }
-
-        if ($candidates->count() === 1) {
-            return $candidates->first();
-        }
-
-        return $this->closestByDate($candidates, $transactionDate);
+        return collect($solutions[0])->values();
     }
 
-    protected function allocateTransactionToOrder(BankTransaction $transaction, Order $order): void
-    {
-        $remaining = abs((float) $transaction->remaining_amount);
+    /**
+     * @param  Collection<int, BankTransaction>  $items
+     * @param  list<BankTransaction>  $current
+     * @param  list<list<BankTransaction>>  $solutions
+     */
+    protected function searchExactSubsets(
+        Collection $items,
+        int $remainingCents,
+        int $startIndex,
+        array $current,
+        array &$solutions,
+    ): void {
+        if (count($solutions) > 1) {
+            return;
+        }
 
-        $order->loadMissing(['components.allocations']);
-
-        foreach ($order->components->sortBy('id') as $component) {
-            if ($remaining < 0.01) {
-                break;
+        if ($remainingCents === 0) {
+            if ($current !== []) {
+                $solutions[] = $current;
             }
 
-            $componentRemaining = (float) $component->remaining_amount;
+            return;
+        }
 
-            if ($componentRemaining < 0.01) {
+        if ($remainingCents < 0) {
+            return;
+        }
+
+        for ($index = $startIndex; $index < $items->count(); $index++) {
+            if (count($solutions) > 1) {
+                return;
+            }
+
+            $transaction = $items[$index];
+            $amountCents = $this->toCents(abs((float) $transaction->amount));
+
+            if ($amountCents > $remainingCents) {
                 continue;
             }
 
-            $allocationAmount = min($remaining, $componentRemaining);
+            $current[] = $transaction;
+            $this->searchExactSubsets(
+                $items,
+                $remainingCents - $amountCents,
+                $index + 1,
+                $current,
+                $solutions,
+            );
+            array_pop($current);
+        }
+    }
 
-            TransactionAllocation::create([
-                'bank_transaction_id' => $transaction->id,
-                'order_component_id' => $component->id,
-                'allocated_amount' => round($allocationAmount, 2),
-                'allocation_type' => 'automatic',
-                'match_confidence' => 100,
-                'notes' => null,
-                'metadata' => [],
-            ]);
+    /**
+     * @return array{min: Carbon, max: Carbon}|null
+     */
+    protected function postedAtRange(int $userId): ?array
+    {
+        $min = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('posted_at')
+            ->min('posted_at');
 
-            $remaining = round($remaining - $allocationAmount, 2);
+        $max = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('posted_at')
+            ->max('posted_at');
+
+        if ($min === null || $max === null) {
+            return null;
         }
 
-        $transaction->refresh();
-        $order->refresh();
+        return [
+            'min' => Carbon::parse($min)->startOfDay(),
+            'max' => Carbon::parse($max)->startOfDay(),
+        ];
+    }
 
-        if (abs($transaction->remaining_amount) < 0.01) {
-            $transaction->markMatched();
-        } else {
-            $transaction->markPartial();
+    /**
+     * @param  array{min: Carbon, max: Carbon}|null  $range
+     */
+    protected function isNearImportEdge(Order $order, ?array $range): bool
+    {
+        $orderDate = $this->orderDate($order);
+
+        if ($orderDate === null || $range === null) {
+            return true;
         }
 
-        $order->load(['components.allocations']);
-
-        if ($this->orderRemainingAmount($order) < 0.01) {
-            $order->markReconciled();
+        if ($orderDate->lt($range['min']) || $orderDate->gt($range['max'])) {
+            return true;
         }
+
+        if (abs($orderDate->diffInDays($range['min'], false)) <= $this->dateWindowDays) {
+            return true;
+        }
+
+        if (abs($orderDate->diffInDays($range['max'], false)) <= $this->dateWindowDays) {
+            return true;
+        }
+
+        return false;
     }
 
     protected function orderRemainingAmount(Order $order): float
@@ -168,11 +359,9 @@ class ReconciliationService
         return max(0, round((float) $order->total - (float) $order->allocated_amount, 2));
     }
 
-    protected function transactionDate(BankTransaction $transaction): Carbon
+    protected function postedAtDate(BankTransaction $transaction): Carbon
     {
-        $date = $transaction->transaction_date ?? $transaction->posted_at;
-
-        return Carbon::parse($date)->startOfDay();
+        return Carbon::parse($transaction->posted_at)->startOfDay();
     }
 
     protected function orderDate(Order $order): ?Carbon
@@ -182,15 +371,9 @@ class ReconciliationService
         return $date ? Carbon::parse($date)->startOfDay() : null;
     }
 
-    protected function datesAlign(Carbon $transactionDate, Order $order): bool
+    protected function datesAlign(Carbon $postedAt, Carbon $orderDate): bool
     {
-        $orderDate = $this->orderDate($order);
-
-        if (! $orderDate) {
-            return true;
-        }
-
-        return abs($transactionDate->diffInDays($orderDate, false)) <= $this->dateWindowDays;
+        return abs($postedAt->diffInDays($orderDate, false)) <= $this->dateWindowDays;
     }
 
     protected function paymentInstrumentsAlign(Order $order, BankTransaction $transaction): bool
@@ -207,38 +390,8 @@ class ReconciliationService
         return abs($left - $right) < 0.01;
     }
 
-    /**
-     * @param  Collection<int, Order>  $candidates
-     */
-    protected function closestByDate(Collection $candidates, Carbon $transactionDate): ?Order
+    protected function toCents(float $amount): int
     {
-        $scored = $candidates
-            ->map(function (Order $order) use ($transactionDate): array {
-                $orderDate = $this->orderDate($order);
-
-                if (! $orderDate) {
-                    return ['order' => $order, 'distance' => PHP_INT_MAX];
-                }
-
-                return [
-                    'order' => $order,
-                    'distance' => abs($transactionDate->diffInDays($orderDate, false)),
-                ];
-            })
-            ->sortBy('distance')
-            ->values();
-
-        if ($scored->count() < 2) {
-            return $scored->first()['order'] ?? null;
-        }
-
-        $best = $scored[0];
-        $second = $scored[1];
-
-        if ($best['distance'] === $second['distance']) {
-            return null;
-        }
-
-        return $best['order'];
+        return (int) round($amount * 100);
     }
 }

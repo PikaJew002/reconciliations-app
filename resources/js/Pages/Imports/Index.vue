@@ -49,6 +49,12 @@ let flashSuccess = computed(() => page.props.flash?.success);
             >
                 Import Walmart orders
             </Link>
+            <Link
+                href="/reconciliation"
+                class="rounded border px-4 py-2 text-sm"
+            >
+                Review reconciliation
+            </Link>
         </div>
 
         <div v-if="batches.length === 0" class="text-sm text-neutral-600">

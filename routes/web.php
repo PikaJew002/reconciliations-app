@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
+use App\Http\Controllers\Reconciliation\ReconciliationController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/imports');
@@ -21,6 +22,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/imports', [ImportBatchController::class, 'index'])->name('imports.index');
+
+    Route::get('/reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
 
     Route::get('/imports/bank-transactions/create', [BankTransactionImportController::class, 'create'])
         ->name('imports.bank-transactions.create');
