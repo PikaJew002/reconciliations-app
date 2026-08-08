@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
-    import { ref, watch } from 'vue';
+    import { Link, router, usePage } from '@inertiajs/vue3';
+    import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -19,6 +19,9 @@
             required: true,
         },
     });
+
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
 
     let search = ref(props.filters.q ?? '');
 
@@ -51,13 +54,28 @@
 
 <template>
     <div class="space-y-6">
-        <div>
-            <h1 class="text-2xl font-semibold">Accounts</h1>
-            <p class="text-sm text-neutral-600">
-                Accounts with imported bank activity and their posted-date
-                coverage.
-            </p>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-semibold">Accounts</h1>
+                <p class="text-sm text-neutral-600">
+                    Accounts with imported bank activity and their posted-date
+                    coverage.
+                </p>
+            </div>
+            <Link
+                href="/accounts/create"
+                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
+            >
+                Add account
+            </Link>
         </div>
+
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
 
         <div v-if="bankCoverage" class="rounded border px-4 py-3 text-sm">
             <p class="font-medium">All bank transactions</p>

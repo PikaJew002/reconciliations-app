@@ -257,6 +257,7 @@
                 index: payment.index,
                 amount: payment.amount ?? '',
                 bank_transaction_id: '',
+                kind: payment.kind,
             }));
         }
     }
@@ -272,6 +273,35 @@
         );
     }
 
+    function canMarkAsGiftCard(payment) {
+        return payment.kind === 'card' || payment.kind === 'unknown';
+    }
+
+    function paymentRequiresBankTransaction(order, paymentIndex) {
+        let kind =
+            paymentForms[order.id]?.[paymentIndex]?.kind ??
+            order.payments[paymentIndex]?.kind;
+
+        return kind === 'card' || kind === 'unknown';
+    }
+
+    function onGiftCardToggle(order, paymentIndex, event) {
+        let row = paymentForms[order.id]?.[paymentIndex];
+        let payment = order.payments[paymentIndex];
+
+        if (!row || !payment) {
+            return;
+        }
+
+        if (event.target.checked) {
+            row.kind = 'gift_card';
+            row.bank_transaction_id = '';
+            return;
+        }
+
+        row.kind = payment.kind === 'gift_card' ? 'card' : payment.kind;
+    }
+
     function amountsMatch(left, right) {
         return Math.abs(Number(left) - Number(right)) < 0.01;
     }
@@ -281,7 +311,7 @@
         let row = rows?.[paymentIndex];
         let payment = order.payments[paymentIndex];
 
-        if (!row || !payment?.requires_bank_transaction) {
+        if (!row || !paymentRequiresBankTransaction(order, paymentIndex)) {
             return;
         }
 
@@ -392,6 +422,7 @@
                     bank_transaction_id: row.bank_transaction_id
                         ? Number(row.bank_transaction_id)
                         : null,
+                    kind: row.kind,
                 })),
             },
             {
@@ -686,11 +717,34 @@
                                             <p class="text-neutral-600">
                                                 {{
                                                     paymentKindLabel(
-                                                        payment.kind,
+                                                        paymentForms[order.id][
+                                                            paymentIndex
+                                                        ].kind,
                                                     )
                                                 }}
                                             </p>
                                         </div>
+                                        <label
+                                            v-if="canMarkAsGiftCard(payment)"
+                                            class="flex items-center gap-2 text-neutral-700"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                :checked="
+                                                    paymentForms[order.id][
+                                                        paymentIndex
+                                                    ].kind === 'gift_card'
+                                                "
+                                                @change="
+                                                    onGiftCardToggle(
+                                                        order,
+                                                        paymentIndex,
+                                                        $event,
+                                                    )
+                                                "
+                                            />
+                                            <span>Mark as gift card</span>
+                                        </label>
                                     </div>
 
                                     <div class="grid gap-3 sm:grid-cols-2">
@@ -720,7 +774,10 @@
 
                                         <label
                                             v-if="
-                                                payment.requires_bank_transaction
+                                                paymentRequiresBankTransaction(
+                                                    order,
+                                                    paymentIndex,
+                                                )
                                             "
                                             class="block space-y-1"
                                         >

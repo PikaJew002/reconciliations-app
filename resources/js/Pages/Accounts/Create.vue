@@ -1,0 +1,186 @@
+<script setup>
+    import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import { useForm } from '@inertiajs/vue3';
+
+    defineOptions({ layout: AuthenticatedLayout });
+
+    defineProps({
+        institutions: {
+            type: Array,
+            required: true,
+        },
+        accountTypes: {
+            type: Array,
+            required: true,
+        },
+    });
+
+    let form = useForm({
+        name: '',
+        institution_name: '',
+        account_name: '',
+        account_type: '',
+        currency: 'USD',
+        last_four: '',
+    });
+
+    let accountTypeLabel = (type) => {
+        return type.replaceAll('_', ' ');
+    };
+
+    let submit = () => {
+        form.post('/accounts');
+    };
+</script>
+
+<template>
+    <div class="space-y-6">
+        <div>
+            <h1 class="text-2xl font-semibold">Add account</h1>
+            <p class="text-sm text-neutral-600">
+                Create an account so you can import bank transactions for it.
+            </p>
+        </div>
+
+        <form class="space-y-4" @submit.prevent="submit">
+            <div>
+                <label class="mb-1 block text-sm" for="name">Name</label>
+                <input
+                    id="name"
+                    v-model="form.name"
+                    type="text"
+                    class="w-full rounded border px-3 py-2"
+                    required
+                />
+                <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
+                    {{ form.errors.name }}
+                </p>
+            </div>
+
+            <div>
+                <label class="mb-1 block text-sm" for="institution_name"
+                    >Institution</label
+                >
+                <select
+                    id="institution_name"
+                    v-model="form.institution_name"
+                    class="w-full rounded border px-3 py-2"
+                    required
+                >
+                    <option disabled value="">Select an institution</option>
+                    <option
+                        v-for="institution in institutions"
+                        :key="institution"
+                        :value="institution"
+                    >
+                        {{ institution }}
+                    </option>
+                </select>
+                <p
+                    v-if="form.errors.institution_name"
+                    class="mt-1 text-sm text-red-600"
+                >
+                    {{ form.errors.institution_name }}
+                </p>
+            </div>
+
+            <div>
+                <label class="mb-1 block text-sm" for="account_type"
+                    >Account type</label
+                >
+                <select
+                    id="account_type"
+                    v-model="form.account_type"
+                    class="w-full rounded border px-3 py-2"
+                    required
+                >
+                    <option disabled value="">Select a type</option>
+                    <option
+                        v-for="type in accountTypes"
+                        :key="type"
+                        :value="type"
+                    >
+                        {{ accountTypeLabel(type) }}
+                    </option>
+                </select>
+                <p
+                    v-if="form.errors.account_type"
+                    class="mt-1 text-sm text-red-600"
+                >
+                    {{ form.errors.account_type }}
+                </p>
+            </div>
+
+            <div>
+                <label class="mb-1 block text-sm" for="account_name"
+                    >Account name
+                    <span class="text-neutral-500">(optional)</span></label
+                >
+                <input
+                    id="account_name"
+                    v-model="form.account_name"
+                    type="text"
+                    class="w-full rounded border px-3 py-2"
+                />
+                <p
+                    v-if="form.errors.account_name"
+                    class="mt-1 text-sm text-red-600"
+                >
+                    {{ form.errors.account_name }}
+                </p>
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="mb-1 block text-sm" for="currency"
+                        >Currency</label
+                    >
+                    <input
+                        id="currency"
+                        v-model="form.currency"
+                        type="text"
+                        maxlength="3"
+                        class="w-full rounded border px-3 py-2 uppercase"
+                        required
+                    />
+                    <p
+                        v-if="form.errors.currency"
+                        class="mt-1 text-sm text-red-600"
+                    >
+                        {{ form.errors.currency }}
+                    </p>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm" for="last_four"
+                        >Last four
+                        <span class="text-neutral-500">(optional)</span></label
+                    >
+                    <input
+                        id="last_four"
+                        v-model="form.last_four"
+                        type="text"
+                        inputmode="numeric"
+                        maxlength="4"
+                        pattern="[0-9]{4}"
+                        class="w-full rounded border px-3 py-2"
+                    />
+                    <p
+                        v-if="form.errors.last_four"
+                        class="mt-1 text-sm text-red-600"
+                    >
+                        {{ form.errors.last_four }}
+                    </p>
+                </div>
+            </div>
+
+            <button
+                type="submit"
+                class="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
+                :disabled="form.processing"
+            >
+                Create account
+            </button>
+        </form>
+    </div>
+</template>

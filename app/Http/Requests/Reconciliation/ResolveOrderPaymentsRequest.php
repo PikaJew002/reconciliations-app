@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Reconciliation;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class ResolveOrderPaymentsRequest extends FormRequest
 {
@@ -21,6 +22,7 @@ class ResolveOrderPaymentsRequest extends FormRequest
             'payments.*.index' => ['required', 'integer', 'min:0'],
             'payments.*.amount' => ['required', 'numeric', 'gt:0'],
             'payments.*.bank_transaction_id' => ['nullable', 'integer', 'exists:bank_transactions,id'],
+            'payments.*.kind' => ['nullable', 'string', Rule::in(['card', 'gift_card', 'walmart_balance', 'unknown'])],
         ];
     }
 }

@@ -18,7 +18,7 @@ class OrderPaymentResolutionService
     ) {}
 
     /**
-     * @param  list<array{index: int, amount: float|int|string, bank_transaction_id?: int|null}>  $resolutions
+     * @param  list<array{index: int, amount: float|int|string, bank_transaction_id?: int|null, kind?: string|null}>  $resolutions
      */
     public function resolve(Order $order, array $resolutions): void
     {
@@ -41,11 +41,20 @@ class OrderPaymentResolutionService
                 throw new InvalidArgumentException("Invalid payment index [{$index}].");
             }
 
+            $kind = isset($resolution['kind']) && is_string($resolution['kind']) && $resolution['kind'] !== ''
+                ? $resolution['kind']
+                : null;
+
+            if ($kind !== null) {
+                $this->assertKindOverrideAllowed($payments[$index]['kind'], $kind, $payments[$index]['ending']);
+            }
+
             $byIndex[$index] = [
                 'amount' => round((float) $resolution['amount'], 2),
                 'bank_transaction_id' => isset($resolution['bank_transaction_id'])
                     ? (int) $resolution['bank_transaction_id']
                     : null,
+                'kind' => $kind,
             ];
         }
 
@@ -81,7 +90,8 @@ class OrderPaymentResolutionService
                     throw new InvalidArgumentException('Each payment amount must be greater than zero.');
                 }
 
-                $kind = $payment['kind'];
+                $kind = $resolution['kind'] ?? $payment['kind'];
+                $payment = [...$payment, 'kind' => $kind];
                 $requiresBankTx = in_array($kind, ['card', 'unknown'], true);
 
                 if ($requiresBankTx) {
@@ -443,5 +453,26 @@ class OrderPaymentResolutionService
         }
 
         return 'unknown';
+    }
+
+    protected function assertKindOverrideAllowed(string $currentKind, string $newKind, string $ending): void
+    {
+        if ($currentKind === $newKind) {
+            return;
+        }
+
+        $allowedOverrides = [
+            'card' => ['gift_card'],
+            'unknown' => ['gift_card', 'card'],
+            'gift_card' => ['card'],
+        ];
+
+        $allowed = $allowedOverrides[$currentKind] ?? [];
+
+        if (! in_array($newKind, $allowed, true)) {
+            throw new InvalidArgumentException(
+                "Cannot change payment [{$ending}] from {$currentKind} to {$newKind}."
+            );
+        }
     }
 }

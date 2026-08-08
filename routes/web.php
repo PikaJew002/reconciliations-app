@@ -29,6 +29,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/imports', [ImportBatchController::class, 'index'])->name('imports.index');
 
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
+    Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');
+    Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');

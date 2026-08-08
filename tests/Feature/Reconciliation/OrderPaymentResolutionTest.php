@@ -315,4 +315,99 @@ class OrderPaymentResolutionTest extends TestCase
         $this->assertSame(0, $service->autoResolveNonBankOnlyOrders($user->id));
         $this->assertSame('imported', $order->fresh()->status);
     }
+
+    public function test_can_mark_branded_card_as_gift_card_when_resolving(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create(['is_active' => true]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+            'supports_order_import' => true,
+        ]);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => '114-0000000-0000000',
+            'ordered_at' => '2026-07-21',
+            'total' => 41.37,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 8463',
+                        'last_four' => '8463',
+                        'amount' => 7.21,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Amazon gift card balance',
+                        'last_four' => null,
+                        'amount' => 34.16,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Item',
+            'amount' => 41.37,
+            'order_item_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.orders.resolve-payments', $order), [
+                'payments' => [
+                    [
+                        'index' => 0,
+                        'amount' => 7.21,
+                        'bank_transaction_id' => null,
+                        'kind' => 'gift_card',
+                    ],
+                    [
+                        'index' => 1,
+                        'amount' => 34.16,
+                        'bank_transaction_id' => null,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+
+        $this->assertSame('reconciled', $order->status);
+        $this->assertNull($order->payment_last_four);
+        $this->assertSame('gift_card', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('Visa ending in 8463', $order->metadata['payments'][0]['ending']);
+        $this->assertSame('gift_card', $order->metadata['payments'][1]['kind']);
+
+        $this->assertDatabaseHas('bank_transactions', [
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'description' => 'Visa ending in 8463',
+            'amount' => -7.21,
+            'status' => 'matched',
+            'card_last_four' => '8463',
+        ]);
+
+        $this->assertDatabaseHas('bank_transactions', [
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'description' => 'Amazon gift card balance',
+            'amount' => -34.16,
+            'status' => 'matched',
+        ]);
+    }
 }

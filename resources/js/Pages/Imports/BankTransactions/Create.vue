@@ -1,6 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout.vue';
-    import { useForm } from '@inertiajs/vue3';
+    import { useForm, usePage } from '@inertiajs/vue3';
+    import { computed } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -10,6 +11,9 @@
             required: true,
         },
     });
+
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
 
     let form = useForm({
         account_id: '',
@@ -31,6 +35,13 @@
                 Upload a CSV. Column mapping will be added later.
             </p>
         </div>
+
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
 
         <form class="space-y-4" @submit.prevent="submit">
             <div>
