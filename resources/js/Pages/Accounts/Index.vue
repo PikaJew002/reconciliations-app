@@ -84,7 +84,7 @@
                 {{ formatDate(bankCoverage.max) }}
             </p>
             <p class="mt-1 text-neutral-600">
-                Multi-transaction matches skip orders within 7 days of these
+                Multi-transaction matches skip orders within 3 days of these
                 edges.
             </p>
         </div>

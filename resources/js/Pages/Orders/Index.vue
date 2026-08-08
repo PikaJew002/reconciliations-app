@@ -100,7 +100,7 @@
             v-if="nearImportEdge"
             class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
-            Some orders in this range sit within 7 days of the bank import edge,
+            Some orders in this range sit within 3 days of the bank import edge,
             so multi-transaction matching may skip them.
             <Link href="/imports/bank-transactions/create" class="underline">
                 Import more bank history

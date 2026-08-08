@@ -13,6 +13,7 @@ class ReconciliationService
 {
     public function __construct(
         protected int $dateWindowDays = 7,
+        protected int $importEdgeWindowDays = 3,
         protected int $subsetCandidateCap = 12,
     ) {}
 
@@ -351,11 +352,11 @@ class ReconciliationService
             return true;
         }
 
-        if (abs($orderDate->diffInDays($range['min'], false)) <= $this->dateWindowDays) {
+        if (abs($orderDate->diffInDays($range['min'], false)) <= $this->importEdgeWindowDays) {
             return true;
         }
 
-        if (abs($orderDate->diffInDays($range['max'], false)) <= $this->dateWindowDays) {
+        if (abs($orderDate->diffInDays($range['max'], false)) <= $this->importEdgeWindowDays) {
             return true;
         }
 

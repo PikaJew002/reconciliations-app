@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 class OrderBrowseService
 {
     public function __construct(
-        protected int $dateWindowDays = 7,
+        protected int $importEdgeWindowDays = 3,
         protected int $listLimit = 50,
     ) {}
 
@@ -176,11 +176,11 @@ class OrderBrowseService
             return true;
         }
 
-        if (abs($orderDate->diffInDays($min, false)) <= $this->dateWindowDays) {
+        if (abs($orderDate->diffInDays($min, false)) <= $this->importEdgeWindowDays) {
             return true;
         }
 
-        if (abs($orderDate->diffInDays($max, false)) <= $this->dateWindowDays) {
+        if (abs($orderDate->diffInDays($max, false)) <= $this->importEdgeWindowDays) {
             return true;
         }
 

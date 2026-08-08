@@ -64,8 +64,8 @@ class OrderBrowseTest extends TestCase
             'user_id' => $user->id,
             'merchant_id' => $walmart->id,
             'order_number' => 'NEAR-EDGE-1',
-            'ordered_at' => '2026-08-01 00:00:00',
-            'delivered_at' => '2026-08-02 00:00:00',
+            'ordered_at' => '2026-08-04 00:00:00',
+            'delivered_at' => '2026-08-05 00:00:00',
             'total' => 102.43,
             'payment_last_four' => '2525',
             'status' => 'imported',
@@ -110,7 +110,7 @@ class OrderBrowseTest extends TestCase
                 ->where('bankCoverage.min', '2026-06-01')
                 ->where('bankCoverage.max', '2026-08-06')
                 ->where('orderCoverage.min', '2026-07-01')
-                ->where('orderCoverage.max', '2026-08-01')
+                ->where('orderCoverage.max', '2026-08-04')
                 ->where('nearImportEdge', true)
                 ->has('orders', 2)
                 ->where('orders.0.id', $nearEdgeOrder->id)

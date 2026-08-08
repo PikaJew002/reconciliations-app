@@ -329,7 +329,7 @@ class ReconciliationServiceTest extends TestCase
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
 
-        // Range anchors only — order on 2026-07-03 is within 7 days of min posted_at.
+        // Range anchors only — order on 2026-07-03 is within 3 days of min posted_at.
         $this->createRangeAnchorTransactions($user, $account, $batch, '2026-07-01', '2026-08-15');
 
         $order = Order::factory()->create([
