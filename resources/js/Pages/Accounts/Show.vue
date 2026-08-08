@@ -65,6 +65,36 @@
             currency: 'USD',
         }).format(amount);
     };
+
+    let statusStyles = {
+        matched: {
+            row: 'border-l-green-500',
+            badge: 'bg-green-50 text-green-800',
+            label: 'Matched',
+        },
+        unmatched: {
+            row: 'border-l-amber-500',
+            badge: 'bg-amber-50 text-amber-900',
+            label: 'Unmatched',
+        },
+        partial: {
+            row: 'border-l-sky-500',
+            badge: 'bg-sky-50 text-sky-900',
+            label: 'Partial',
+        },
+        ignored: {
+            row: 'border-l-neutral-400',
+            badge: 'bg-neutral-100 text-neutral-700',
+            label: 'Ignored',
+        },
+    };
+
+    let statusStyle = (status) =>
+        statusStyles[status] ?? {
+            row: 'border-l-neutral-300',
+            badge: 'bg-neutral-100 text-neutral-700',
+            label: status,
+        };
 </script>
 
 <template>
@@ -129,13 +159,37 @@
             <li
                 v-for="transaction in transactions"
                 :key="transaction.id"
-                class="flex items-start justify-between gap-4 px-4 py-3"
+                class="flex items-start justify-between gap-4 border-l-4 px-4 py-3"
+                :class="statusStyle(transaction.status).row"
             >
-                <div>
-                    <p class="font-medium">{{ transaction.description }}</p>
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <p class="font-medium">{{ transaction.description }}</p>
+                        <span
+                            class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium"
+                            :class="statusStyle(transaction.status).badge"
+                        >
+                            <span
+                                class="size-1.5 rounded-full"
+                                :class="{
+                                    'bg-green-600':
+                                        transaction.status === 'matched',
+                                    'bg-amber-500':
+                                        transaction.status === 'unmatched',
+                                    'bg-sky-500':
+                                        transaction.status === 'partial',
+                                    'bg-neutral-500':
+                                        transaction.status === 'ignored' ||
+                                        !['matched', 'unmatched', 'partial'].includes(
+                                            transaction.status,
+                                        ),
+                                }"
+                            />
+                            {{ statusStyle(transaction.status).label }}
+                        </span>
+                    </div>
                     <p class="text-neutral-600">
                         {{ formatDate(transaction.posted_at) }}
-                        · {{ transaction.status }}
                         <template v-if="transaction.merchant">
                             · {{ transaction.merchant.name }}
                         </template>
@@ -144,7 +198,9 @@
                         </template>
                     </p>
                 </div>
-                <p class="font-medium">{{ formatMoney(transaction.amount) }}</p>
+                <p class="shrink-0 font-medium">
+                    {{ formatMoney(transaction.amount) }}
+                </p>
             </li>
         </ul>
 
