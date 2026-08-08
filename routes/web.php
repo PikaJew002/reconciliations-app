@@ -3,6 +3,7 @@
 use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Imports\AmazonOrderImportController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
@@ -50,6 +51,11 @@ Route::middleware('auth')->group(function () {
         ->name('imports.walmart-orders.create');
     Route::post('/imports/walmart-orders', [WalmartOrderImportController::class, 'store'])
         ->name('imports.walmart-orders.store');
+
+    Route::get('/imports/amazon-orders/create', [AmazonOrderImportController::class, 'create'])
+        ->name('imports.amazon-orders.create');
+    Route::post('/imports/amazon-orders', [AmazonOrderImportController::class, 'store'])
+        ->name('imports.amazon-orders.store');
 
     Route::get('/imports/{importBatch}', [ImportBatchController::class, 'show'])->name('imports.show');
 });

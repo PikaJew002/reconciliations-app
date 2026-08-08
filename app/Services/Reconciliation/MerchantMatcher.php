@@ -22,6 +22,10 @@ class MerchantMatcher
             'patterns' => ['wal-mart', 'walmart', 'wal mart', 'wm supercenter', 'walmart.com'],
             'normalized_name' => 'walmart',
         ],
+        [
+            'patterns' => ['amazon', 'amzn', 'amzn mktp', 'amazon.com', 'amazon mktpl'],
+            'normalized_name' => 'amazon',
+        ],
     ];
 
     /**
@@ -131,10 +135,6 @@ class MerchantMatcher
 
     protected function shouldSkipDescription(string $description): bool
     {
-        if ($this->looksLikeAmazon($description)) {
-            return true;
-        }
-
         foreach ($this->noisePatterns as $pattern) {
             if (str_contains($description, $pattern)) {
                 return true;

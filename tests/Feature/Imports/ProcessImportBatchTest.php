@@ -491,4 +491,96 @@ CSV;
         $this->assertSame(1, Order::query()->count());
         $this->assertSame(1, OrderItem::query()->count());
     }
+
+    public function test_job_imports_amazon_orders_from_summary_and_item_csvs(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $summaryPath = 'imports/amazon/summary.csv';
+        $itemsPath = 'imports/amazon/items.csv';
+
+        // Include a UTF-8 BOM on the summary header to mirror Amazon exports.
+        Storage::disk('local')->put($summaryPath, "\xEF\xBB\xBForder id,order url,items,to,date,total,shipping,shipping_refund,gift,tax,refund,payments\n".
+            "114-0885735-8288246,https://example.com/o1,Carabiner,Aaron,8/7/26,7.39,0,,,0.42,,Mastercard ending in 2525: 2026-08-07: \$7.39; \n".
+            "114-4176684-3373804,https://example.com/o2,Spa Set,Aaron,8/5/26,82.62,0,,,4.68,,Mastercard ending in 3557: 2026-08-05: \$82.62; \n".
+            "114-8413256-9366657,https://example.com/o3,Tonies,Aaron,7/21/26,0,0,,15.84,0.9,,Visa ending in 8463; Amazon gift card balance; \n".
+            "114-6361851-2134639,https://example.com/o4,Tonies,Aaron,7/21/26,7.21,2.99,,34.16,2.39,,Visa ending in 8463; Amazon gift card balance; \n".
+            "114-5762287-6399462,https://example.com/o5,,,7/19/26,,,,,,,\n".
+            "order id,order url,items,to,date,total,shipping,shipping_refund,gift,tax,refund,payments\n");
+
+        Storage::disk('local')->put($itemsPath, "\xEF\xBB\xBForder id,order url,order date,quantity,description,item url,price,subscribe & save,ASIN,category\n".
+            "114-0885735-8288246,https://example.com/o1,8/7/26,1,Carabiner,https://example.com/i1,\$6.97 ,0,B0B6R34RD4,Sports\n".
+            "114-4176684-3373804,https://example.com/o2,8/5/26,6,Spa Set,https://example.com/i2,\$12.99 ,0,B0FKMYKH3H,Beauty\n".
+            "114-8413256-9366657,https://example.com/o3,7/21/26,1,Tonies Cinderella,https://example.com/i3,\$14.94 ,0,B08FCYMXTD,Toys\n".
+            "114-6361851-2134639,https://example.com/o4,7/21/26,1,Tonies Ginny,https://example.com/i4,\$19.99 ,0,B0GYGNZN9D,Toys\n".
+            "114-6361851-2134639,https://example.com/o4,7/21/26,1,Tonies Ryder,https://example.com/i5,\$19.79 ,0,B0FN6HVP7N,Toys\n".
+            "order id,order url,order date,quantity,description,item url,price,subscribe & save,ASIN,category\n");
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'storage_path' => $summaryPath,
+            'status' => 'pending',
+            'record_count' => 0,
+            'started_at' => null,
+            'completed_at' => null,
+            'metadata' => [
+                'items_path' => $itemsPath,
+                'summary_filename' => 'summary.csv',
+                'items_filename' => 'items.csv',
+            ],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $batch->refresh();
+
+        $this->assertSame('completed', $batch->status);
+        $this->assertSame(4, $batch->record_count);
+
+        $orders = Order::query()->orderBy('order_number')->get()->keyBy('order_number');
+
+        $this->assertCount(4, $orders);
+        $this->assertSame('amazon', $orders['114-0885735-8288246']->merchant->normalized_name);
+
+        $cardOnly = $orders['114-0885735-8288246'];
+        $this->assertSame('7.39', $cardOnly->total);
+        $this->assertSame('6.97', $cardOnly->subtotal);
+        $this->assertSame('0.42', $cardOnly->tax);
+        $this->assertSame('2525', $cardOnly->payment_last_four);
+        $this->assertCount(1, $cardOnly->metadata['payments']);
+        $this->assertSame('card', $cardOnly->metadata['payments'][0]['kind']);
+        $this->assertSame(7.39, $cardOnly->metadata['payments'][0]['amount']);
+
+        $qtyOrder = $orders['114-4176684-3373804'];
+        $this->assertSame('77.94', $qtyOrder->subtotal);
+        $this->assertSame('82.62', $qtyOrder->total);
+        $item = OrderItem::query()->where('order_id', $qtyOrder->id)->first();
+        $this->assertSame('12.99', $item->unit_price);
+        $this->assertSame('77.94', $item->extended_price);
+        $this->assertSame(6.0, (float) $item->quantity);
+        $this->assertSame('B0FKMYKH3H', $item->sku);
+
+        $giftOnly = $orders['114-8413256-9366657'];
+        $this->assertSame('15.84', $giftOnly->total);
+        $this->assertNull($giftOnly->payment_last_four);
+        $this->assertCount(1, $giftOnly->metadata['payments']);
+        $this->assertSame('gift_card', $giftOnly->metadata['payments'][0]['kind']);
+        $this->assertSame(15.84, $giftOnly->metadata['payments'][0]['amount']);
+
+        $split = $orders['114-6361851-2134639'];
+        $this->assertSame('41.37', $split->total);
+        $this->assertSame('0.80', $split->discount);
+        $this->assertNull($split->payment_last_four);
+        $this->assertCount(2, $split->metadata['payments']);
+        $this->assertSame('card', $split->metadata['payments'][0]['kind']);
+        $this->assertSame(7.21, $split->metadata['payments'][0]['amount']);
+        $this->assertSame('gift_card', $split->metadata['payments'][1]['kind']);
+        $this->assertSame(34.16, $split->metadata['payments'][1]['amount']);
+
+        $this->assertSame(5, OrderItem::query()->count());
+        $this->assertDatabaseMissing('orders', ['order_number' => '114-5762287-6399462']);
+    }
 }

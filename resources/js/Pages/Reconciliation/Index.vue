@@ -95,6 +95,18 @@
         );
     }
 
+    function isAmazonTransaction(transaction) {
+        let merchant = (transaction.merchant || '').toLowerCase();
+        let description = (transaction.description || '').toLowerCase();
+
+        return (
+            merchant.includes('amazon') ||
+            merchant.includes('amzn') ||
+            description.includes('amazon') ||
+            description.includes('amzn')
+        );
+    }
+
     function isTransferTransaction(transaction) {
         return (transaction.description || '')
             .toLowerCase()
@@ -104,6 +116,10 @@
     function unmatchedTransactionCategory(transaction) {
         if (isWalmartTransaction(transaction)) {
             return 'walmart';
+        }
+
+        if (isAmazonTransaction(transaction)) {
+            return 'amazon';
         }
 
         if (!transaction.merchant && isTransferTransaction(transaction)) {
@@ -133,6 +149,7 @@
         let counts = {
             all: props.unmatchedTransactions.length,
             walmart: 0,
+            amazon: 0,
             'untagged-transfer': 0,
             'untagged-other': 0,
         };
@@ -148,6 +165,7 @@
         return [
             { id: 'all', label: 'All', count: counts.all },
             { id: 'walmart', label: 'Walmart', count: counts.walmart },
+            { id: 'amazon', label: 'Amazon', count: counts.amazon },
             {
                 id: 'untagged-transfer',
                 label: 'Untagged (transfer)',

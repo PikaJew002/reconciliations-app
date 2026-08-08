@@ -17,7 +17,7 @@ class GenerateOrderComponents implements ShouldQueue
     {
         $batch = $this->importBatch->fresh();
 
-        if (! $batch || $batch->source !== 'walmart' || $batch->type !== 'orders') {
+        if (! $batch || $batch->type !== 'orders') {
             return;
         }
 

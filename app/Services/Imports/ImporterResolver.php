@@ -16,6 +16,7 @@ class ImporterResolver
         return match ([$batch->source, $batch->type]) {
             ['bank', 'transactions'] => $this->resolveBankTransactionImporter($batch),
             ['walmart', 'orders'] => app(WalmartOrderImporter::class),
+            ['amazon', 'orders'] => app(AmazonOrderImporter::class),
             default => throw new InvalidArgumentException(
                 "No importer registered for source [{$batch->source}] and type [{$batch->type}].",
             ),

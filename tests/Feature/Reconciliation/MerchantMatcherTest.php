@@ -71,7 +71,7 @@ class MerchantMatcherTest extends TestCase
         $this->assertDatabaseCount('merchants', 0);
     }
 
-    public function test_skips_amazon_card_transactions(): void
+    public function test_does_not_create_amazon_merchant_when_missing(): void
     {
         $user = User::factory()->create();
         $account = Account::factory()->create();
@@ -93,6 +93,35 @@ class MerchantMatcherTest extends TestCase
         $this->assertFalse($matcher->matchTransaction($transaction, $user->id));
         $this->assertNull($transaction->fresh()->merchant_id);
         $this->assertDatabaseCount('merchants', 0);
+    }
+
+    public function test_matches_amazon_descriptions_to_merchant(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+            'supports_order_import' => true,
+        ]);
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => null,
+            'amount' => -42.10,
+            'description' => 'DBT CRD 0848 07/22/26 DJJKQM32 AMAZON MKTPL*XE7F71XN3 SEATTLE WA C#2195',
+            'normalized_description' => 'dbt crd 0848 07/22/26 djjkqm32 amazon mktpl*xe7f71xn3 seattle wa c#2195',
+            'status' => 'unmatched',
+        ]);
+
+        $matcher = app(MerchantMatcher::class);
+
+        $this->assertTrue($matcher->matchTransaction($transaction, $user->id));
+        $this->assertSame($merchant->id, $transaction->fresh()->merchant_id);
     }
 
     public function test_skips_venmo_and_transfer_noise(): void

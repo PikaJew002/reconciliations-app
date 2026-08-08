@@ -28,8 +28,8 @@ class OrderPaymentResolutionService
 
         $payments = $this->normalizedPayments($order);
 
-        if (count($payments) < 2) {
-            throw new InvalidArgumentException('Order does not have multiple payment methods to resolve.');
+        if ($payments === []) {
+            throw new InvalidArgumentException('Order does not have payment methods to resolve.');
         }
 
         $byIndex = [];
@@ -222,6 +222,87 @@ class OrderPaymentResolutionService
         }
 
         return $order->payment_last_four === null;
+    }
+
+    /**
+     * Auto-reconcile orders paid only with known non-bank tenders (gift card / balance).
+     *
+     * @return int Number of orders resolved.
+     */
+    public function autoResolveNonBankOnlyOrders(int $userId): int
+    {
+        $count = 0;
+
+        Order::query()
+            ->where('user_id', $userId)
+            ->where('status', '!=', 'reconciled')
+            ->with(['components', 'merchant', 'importBatch'])
+            ->orderBy('id')
+            ->each(function (Order $order) use (&$count): void {
+                if (! $this->canAutoResolveNonBankOnly($order)) {
+                    return;
+                }
+
+                $payments = $this->normalizedPayments($order);
+                $resolutions = [];
+
+                foreach ($payments as $index => $payment) {
+                    $resolutions[] = [
+                        'index' => $index,
+                        'amount' => $payment['amount'],
+                        'bank_transaction_id' => null,
+                    ];
+                }
+
+                try {
+                    $this->resolve($order, $resolutions);
+                    $count++;
+                } catch (\Throwable) {
+                    // Leave for manual review if allocation fails.
+                }
+            });
+
+        return $count;
+    }
+
+    protected function canAutoResolveNonBankOnly(Order $order): bool
+    {
+        $payments = $this->normalizedPayments($order);
+
+        if ($payments === []) {
+            return false;
+        }
+
+        $nonBankKinds = ['gift_card', 'walmart_balance'];
+
+        foreach ($payments as $payment) {
+            if (! in_array($payment['kind'], $nonBankKinds, true)) {
+                return false;
+            }
+
+            if ($payment['amount'] === null || (float) $payment['amount'] < 0.01) {
+                return false;
+            }
+        }
+
+        $paymentSum = round(array_sum(array_map(
+            fn (array $payment): float => (float) $payment['amount'],
+            $payments,
+        )), 2);
+
+        if (abs($paymentSum - (float) $order->total) >= 0.01) {
+            return false;
+        }
+
+        $order->loadMissing('components');
+
+        if ($order->components->isEmpty()) {
+            return false;
+        }
+
+        $componentSum = round((float) $order->components->sum('amount'), 2);
+
+        return abs($componentSum - (float) $order->total) < 0.01;
     }
 
     /**

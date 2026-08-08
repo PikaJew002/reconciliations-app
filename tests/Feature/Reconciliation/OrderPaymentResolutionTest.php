@@ -210,4 +210,109 @@ class OrderPaymentResolutionTest extends TestCase
         $this->assertSame('gift_card', $payments[0]['kind']);
         $this->assertSame('card', $payments[1]['kind']);
     }
+
+    public function test_auto_resolves_gift_only_amazon_order(): void
+    {
+        $user = User::factory()->create();
+        Account::factory()->create(['is_active' => true]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+            'supports_order_import' => true,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => '114-8413256-9366657',
+            'ordered_at' => '2026-07-21',
+            'total' => 15.84,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Amazon gift card balance',
+                        'last_four' => null,
+                        'amount' => 15.84,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Tonies Cinderella',
+            'amount' => 14.94,
+            'order_item_id' => null,
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'tax',
+            'description' => 'Sales Tax',
+            'amount' => 0.90,
+            'order_item_id' => null,
+        ]);
+
+        $resolved = app(OrderPaymentResolutionService::class)
+            ->autoResolveNonBankOnlyOrders($user->id);
+
+        $order->refresh();
+
+        $this->assertSame(1, $resolved);
+        $this->assertSame('reconciled', $order->status);
+        $this->assertDatabaseHas('bank_transactions', [
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'amount' => -15.84,
+            'status' => 'matched',
+        ]);
+    }
+
+    public function test_amazon_split_payments_need_review_with_prefilled_amounts(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'total' => 41.37,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 8463',
+                        'last_four' => '8463',
+                        'amount' => 7.21,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Amazon gift card balance',
+                        'last_four' => null,
+                        'amount' => 34.16,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $service = app(OrderPaymentResolutionService::class);
+
+        $this->assertTrue($service->needsPaymentReview($order));
+        $payments = $service->normalizedPayments($order);
+        $this->assertSame(7.21, $payments[0]['amount']);
+        $this->assertSame(34.16, $payments[1]['amount']);
+        $this->assertSame(0, $service->autoResolveNonBankOnlyOrders($user->id));
+        $this->assertSame('imported', $order->fresh()->status);
+    }
 }

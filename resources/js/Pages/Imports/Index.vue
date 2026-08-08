@@ -21,7 +21,7 @@
         <div>
             <h1 class="text-2xl font-semibold">Imports</h1>
             <p class="text-sm text-neutral-600">
-                Import bank transactions and Walmart orders.
+                Import bank transactions, Walmart orders, and Amazon orders.
             </p>
         </div>
 
@@ -44,6 +44,12 @@
                 class="rounded border px-4 py-2 text-sm"
             >
                 Import Walmart orders
+            </Link>
+            <Link
+                href="/imports/amazon-orders/create"
+                class="rounded border px-4 py-2 text-sm"
+            >
+                Import Amazon orders
             </Link>
         </div>
 

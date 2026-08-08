@@ -34,10 +34,16 @@ trait ReadsCsv
                 return;
             }
 
-            $headers = array_map(
-                fn ($header) => is_string($header) ? trim($header) : $header,
-                $headers,
-            );
+            $headers = array_map(function ($header) {
+                if (! is_string($header)) {
+                    return $header;
+                }
+
+                // Strip UTF-8 BOM that some CSV exporters prepend to the first header.
+                $header = preg_replace('/^\xEF\xBB\xBF/', '', $header) ?? $header;
+
+                return trim($header);
+            }, $headers);
 
             while (($values = fgetcsv($handle)) !== false) {
                 if ($values === [null] || $this->rowIsEmpty($values)) {

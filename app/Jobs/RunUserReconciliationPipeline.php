@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\ReconciliationRun;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
+use App\Services\Reconciliation\OrderPaymentResolutionService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\SyntheticBankSpendReconciler;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -20,6 +21,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
     public function handle(
         OrderComponentGenerator $components,
         MerchantMatcher $matcher,
+        OrderPaymentResolutionService $paymentResolution,
         ReconciliationService $reconciliation,
         SyntheticBankSpendReconciler $synthetic,
     ): void {
@@ -34,12 +36,14 @@ class RunUserReconciliationPipeline implements ShouldQueue
         try {
             $ordersWithComponents = $components->generateForUser($run->user_id);
             $merchantsMatched = $matcher->matchForUser($run->user_id);
+            $nonBankResolved = $paymentResolution->autoResolveNonBankOnlyOrders($run->user_id);
             $transactionsMatched = $reconciliation->reconcileForUser($run->user_id);
             $syntheticMatched = $synthetic->reconcileForUser($run->user_id);
 
             $run->markCompleted([
                 'orders_with_components' => $ordersWithComponents,
                 'merchants_matched' => $merchantsMatched,
+                'non_bank_resolved' => $nonBankResolved,
                 'transactions_matched' => $transactionsMatched,
                 'synthetic_matched' => $syntheticMatched,
             ]);
