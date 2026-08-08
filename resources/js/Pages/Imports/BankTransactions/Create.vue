@@ -1,36 +1,42 @@
 <script setup>
-import { Link, useForm } from '@inertiajs/vue3';
+    import AuthenticatedLayout from '../../../Layouts/AuthenticatedLayout.vue';
+    import { useForm } from '@inertiajs/vue3';
 
-defineProps({
-    accounts: {
-        type: Array,
-        required: true,
-    },
-});
+    defineOptions({ layout: AuthenticatedLayout });
 
-let form = useForm({
-    account_id: '',
-    file: null,
-});
-
-let submit = () => {
-    form.post('/imports/bank-transactions', {
-        forceFormData: true,
+    defineProps({
+        accounts: {
+            type: Array,
+            required: true,
+        },
     });
-};
+
+    let form = useForm({
+        account_id: '',
+        file: null,
+    });
+
+    let submit = () => {
+        form.post('/imports/bank-transactions', {
+            forceFormData: true,
+        });
+    };
 </script>
 
 <template>
-    <div class="mx-auto max-w-lg space-y-6 p-8">
+    <div class="space-y-6">
         <div>
-            <Link href="/imports" class="text-sm underline">Back to imports</Link>
-            <h1 class="mt-2 text-2xl font-semibold">Import bank transactions</h1>
-            <p class="text-sm text-neutral-600">Upload a CSV. Column mapping will be added later.</p>
+            <h1 class="text-2xl font-semibold">Import bank transactions</h1>
+            <p class="text-sm text-neutral-600">
+                Upload a CSV. Column mapping will be added later.
+            </p>
         </div>
 
         <form class="space-y-4" @submit.prevent="submit">
             <div>
-                <label class="mb-1 block text-sm" for="account_id">Account</label>
+                <label class="mb-1 block text-sm" for="account_id"
+                    >Account</label
+                >
                 <select
                     id="account_id"
                     v-model="form.account_id"
@@ -38,12 +44,21 @@ let submit = () => {
                     required
                 >
                     <option disabled value="">Select an account</option>
-                    <option v-for="account in accounts" :key="account.id" :value="account.id">
+                    <option
+                        v-for="account in accounts"
+                        :key="account.id"
+                        :value="account.id"
+                    >
                         {{ account.name }}
-                        <template v-if="account.last_four"> (•••• {{ account.last_four }})</template>
+                        <template v-if="account.last_four">
+                            (•••• {{ account.last_four }})</template
+                        >
                     </option>
                 </select>
-                <p v-if="form.errors.account_id" class="mt-1 text-sm text-red-600">
+                <p
+                    v-if="form.errors.account_id"
+                    class="mt-1 text-sm text-red-600"
+                >
                     {{ form.errors.account_id }}
                 </p>
             </div>
@@ -58,7 +73,9 @@ let submit = () => {
                     required
                     @input="form.file = $event.target.files[0]"
                 />
-                <p v-if="form.errors.file" class="mt-1 text-sm text-red-600">{{ form.errors.file }}</p>
+                <p v-if="form.errors.file" class="mt-1 text-sm text-red-600">
+                    {{ form.errors.file }}
+                </p>
             </div>
 
             <button

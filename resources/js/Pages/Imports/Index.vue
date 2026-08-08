@@ -1,38 +1,34 @@
 <script setup>
-import { Link, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+    import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import { Link, usePage } from '@inertiajs/vue3';
+    import { computed } from 'vue';
 
-defineProps({
-    batches: {
-        type: Array,
-        required: true,
-    },
-});
+    defineOptions({ layout: AuthenticatedLayout });
 
-let page = usePage();
-let user = computed(() => page.props.auth.user);
-let flashSuccess = computed(() => page.props.flash?.success);
+    defineProps({
+        batches: {
+            type: Array,
+            required: true,
+        },
+    });
+
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
 </script>
 
 <template>
-    <div class="mx-auto max-w-3xl space-y-6 p-8">
-        <div class="flex items-center justify-between gap-4">
-            <div>
-                <h1 class="text-2xl font-semibold">Imports</h1>
-                <p class="text-sm text-neutral-600">Signed in as {{ user?.email }}</p>
-            </div>
-
-            <Link
-                href="/logout"
-                method="post"
-                as="button"
-                class="rounded border px-3 py-1.5 text-sm"
-            >
-                Log out
-            </Link>
+    <div class="space-y-6">
+        <div>
+            <h1 class="text-2xl font-semibold">Imports</h1>
+            <p class="text-sm text-neutral-600">
+                Import bank transactions and Walmart orders.
+            </p>
         </div>
 
-        <p v-if="flashSuccess" class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
             {{ flashSuccess }}
         </p>
 
@@ -49,12 +45,6 @@ let flashSuccess = computed(() => page.props.flash?.success);
             >
                 Import Walmart orders
             </Link>
-            <Link
-                href="/reconciliation"
-                class="rounded border px-4 py-2 text-sm"
-            >
-                Review reconciliation
-            </Link>
         </div>
 
         <div v-if="batches.length === 0" class="text-sm text-neutral-600">
@@ -66,14 +56,18 @@ let flashSuccess = computed(() => page.props.flash?.success);
                 <Link :href="`/imports/${batch.id}`" class="block">
                     <div class="flex items-center justify-between gap-4">
                         <div>
-                            <p class="font-medium">{{ batch.original_filename }}</p>
+                            <p class="font-medium">
+                                {{ batch.original_filename }}
+                            </p>
                             <p class="text-sm text-neutral-600">
                                 {{ batch.source }} / {{ batch.type }}
                             </p>
                         </div>
                         <div class="text-right text-sm">
                             <p>{{ batch.status }}</p>
-                            <p class="text-neutral-600">{{ batch.record_count }} records</p>
+                            <p class="text-neutral-600">
+                                {{ batch.record_count }} records
+                            </p>
                         </div>
                     </div>
                 </Link>

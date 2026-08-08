@@ -1,10 +1,12 @@
 <?php
 
+use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
+use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
@@ -24,6 +26,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/imports', [ImportBatchController::class, 'index'])->name('imports.index');
+
+    Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
+    Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
+
+    Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
 
     Route::get('/reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
     Route::post('/reconciliation/run', [ReconciliationController::class, 'run'])->name('reconciliation.run');

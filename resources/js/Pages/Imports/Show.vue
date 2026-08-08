@@ -1,49 +1,59 @@
 <script setup>
-import { Link, router } from '@inertiajs/vue3';
-import { computed, onMounted, onUnmounted } from 'vue';
+    import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import { router } from '@inertiajs/vue3';
+    import { computed, onMounted, onUnmounted } from 'vue';
 
-let props = defineProps({
-    batch: {
-        type: Object,
-        required: true,
-    },
-});
+    defineOptions({ layout: AuthenticatedLayout });
 
-let isInProgress = computed(() => ['pending', 'processing'].includes(props.batch.status));
-let pollId = null;
+    let props = defineProps({
+        batch: {
+            type: Object,
+            required: true,
+        },
+    });
 
-onMounted(() => {
-    if (!isInProgress.value) {
-        return;
-    }
+    let isInProgress = computed(() =>
+        ['pending', 'processing'].includes(props.batch.status),
+    );
+    let pollId = null;
 
-    pollId = window.setInterval(() => {
-        router.reload({
-            only: ['batch'],
-            onSuccess: (page) => {
-                let status = page.props.batch?.status;
-                if (status && !['pending', 'processing'].includes(status) && pollId) {
-                    window.clearInterval(pollId);
-                    pollId = null;
-                }
-            },
-        });
-    }, 2000);
-});
+    onMounted(() => {
+        if (!isInProgress.value) {
+            return;
+        }
 
-onUnmounted(() => {
-    if (pollId) {
-        window.clearInterval(pollId);
-    }
-});
+        pollId = window.setInterval(() => {
+            router.reload({
+                only: ['batch'],
+                onSuccess: (page) => {
+                    let status = page.props.batch?.status;
+                    if (
+                        status &&
+                        !['pending', 'processing'].includes(status) &&
+                        pollId
+                    ) {
+                        window.clearInterval(pollId);
+                        pollId = null;
+                    }
+                },
+            });
+        }, 2000);
+    });
+
+    onUnmounted(() => {
+        if (pollId) {
+            window.clearInterval(pollId);
+        }
+    });
 </script>
 
 <template>
-    <div class="mx-auto max-w-lg space-y-6 p-8">
+    <div class="space-y-6">
         <div>
-            <Link href="/imports" class="text-sm underline">Back to imports</Link>
-            <h1 class="mt-2 text-2xl font-semibold">Import batch</h1>
-            <p class="text-sm text-neutral-600">{{ batch.original_filename }}</p>
+            <h1 class="text-2xl font-semibold">Import batch</h1>
+            <p class="text-sm text-neutral-600">
+                {{ batch.original_filename }}
+            </p>
         </div>
 
         <dl class="space-y-3 rounded border p-4 text-sm">
