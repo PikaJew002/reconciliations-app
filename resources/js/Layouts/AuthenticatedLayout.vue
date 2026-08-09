@@ -9,6 +9,7 @@
     let navItems = [
         { label: 'Imports', href: '/imports' },
         { label: 'Accounts', href: '/accounts' },
+        { label: 'Categories', href: '/categories' },
         { label: 'Orders', href: '/orders' },
         { label: 'Reconciliation', href: '/reconciliation' },
     ];

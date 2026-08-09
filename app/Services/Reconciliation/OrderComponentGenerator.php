@@ -55,17 +55,19 @@ class OrderComponentGenerator
             return false;
         }
 
-        $order->loadMissing('items');
+        $order->loadMissing('items.product');
 
         foreach ($order->items as $item) {
+            $productCategoryId = $item->product?->category_id;
+
             OrderComponent::create([
                 'order_id' => $order->id,
                 'order_item_id' => $item->id,
                 'type' => 'product',
                 'description' => $item->description,
                 'amount' => $item->extended_price,
-                'expense_category_id' => null,
-                'category_confidence' => null,
+                'category_id' => $productCategoryId,
+                'category_confidence' => $productCategoryId !== null ? 100 : null,
                 'is_user_modified' => false,
                 'metadata' => [],
             ]);
@@ -91,7 +93,7 @@ class OrderComponentGenerator
             'type' => $type,
             'description' => $description,
             'amount' => round($amount, 2),
-            'expense_category_id' => null,
+            'category_id' => null,
             'category_confidence' => null,
             'is_user_modified' => false,
             'metadata' => [],

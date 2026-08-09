@@ -2,7 +2,7 @@
 
 namespace Database\Factories;
 
-use App\Models\ExpenseCategory;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -19,7 +19,7 @@ class ProductFactory extends Factory
         return [
             'user_id' => User::factory(),
 
-            'expense_category_id' => ExpenseCategory::factory(),
+            'category_id' => Category::factory()->expense(),
 
             'name' => ucwords($name),
 

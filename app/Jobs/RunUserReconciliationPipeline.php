@@ -9,7 +9,7 @@ use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
 use App\Services\Reconciliation\ReconciliationService;
-use App\Services\Reconciliation\SyntheticBankSpendReconciler;
+use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Services\Reconciliation\TransferPairingService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -25,11 +25,11 @@ class RunUserReconciliationPipeline implements ShouldQueue
         CreditCardPaymentPairingService $creditCardPaymentPairing,
         TransferPairingService $transferPairing,
         IncomeClassificationService $incomeClassification,
+        TransactionCategorizationService $transactionCategorization,
         OrderComponentGenerator $components,
         MerchantMatcher $matcher,
         OrderPaymentResolutionService $paymentResolution,
         ReconciliationService $reconciliation,
-        SyntheticBankSpendReconciler $synthetic,
     ): void {
         $run = ReconciliationRun::query()->find($this->reconciliationRunId);
 
@@ -43,11 +43,11 @@ class RunUserReconciliationPipeline implements ShouldQueue
             $creditCardPayments = $creditCardPaymentPairing->pairForUser($run->user_id);
             $transfers = $transferPairing->pairForUser($run->user_id);
             $income = $incomeClassification->classifyForUser($run->user_id);
+            $categorized = $transactionCategorization->categorizeForUser($run->user_id);
             $ordersWithComponents = $components->generateForUser($run->user_id);
             $merchantsMatched = $matcher->matchForUser($run->user_id);
             $nonBankResolved = $paymentResolution->autoResolveNonBankOnlyOrders($run->user_id);
             $transactionsMatched = $reconciliation->reconcileForUser($run->user_id);
-            $syntheticMatched = $synthetic->reconcileForUser($run->user_id);
 
             $run->markCompleted([
                 'credit_card_payments_confirmed' => $creditCardPayments['confirmed'],
@@ -56,11 +56,12 @@ class RunUserReconciliationPipeline implements ShouldQueue
                 'transfers_suggested' => $transfers['suggested'],
                 'income_learned' => $income['learned'],
                 'income_suggested' => $income['suggested'],
+                'transactions_categorized' => $categorized['applied'],
+                'transactions_categorization_ambiguous' => $categorized['ambiguous'],
                 'orders_with_components' => $ordersWithComponents,
                 'merchants_matched' => $merchantsMatched,
                 'non_bank_resolved' => $nonBankResolved,
                 'transactions_matched' => $transactionsMatched,
-                'synthetic_matched' => $syntheticMatched,
             ]);
         } catch (Throwable $exception) {
             $run->markFailed($exception->getMessage());

@@ -2,7 +2,7 @@
 
 namespace Database\Factories;
 
-use App\Models\ExpenseCategory;
+use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
@@ -25,7 +25,7 @@ class OrderComponentFactory extends Factory
 
             'amount' => fake()->randomFloat(2, 1, 40),
 
-            'expense_category_id' => ExpenseCategory::factory(),
+            'category_id' => Category::factory()->expense(),
 
             'category_confidence' => 100,
 
@@ -37,7 +37,7 @@ class OrderComponentFactory extends Factory
 
     public function tax()
     {
-        return $this->state(fn() => [
+        return $this->state(fn () => [
             'type' => 'tax',
             'order_item_id' => OrderItem::factory(),
         ]);
@@ -45,7 +45,7 @@ class OrderComponentFactory extends Factory
 
     public function delivery()
     {
-        return $this->state(fn() => [
+        return $this->state(fn () => [
             'type' => 'delivery',
             'order_item_id' => null,
         ]);
@@ -53,7 +53,7 @@ class OrderComponentFactory extends Factory
 
     public function tip()
     {
-        return $this->state(fn() => [
+        return $this->state(fn () => [
             'type' => 'tip',
             'order_item_id' => null,
         ]);
@@ -61,7 +61,7 @@ class OrderComponentFactory extends Factory
 
     public function discount()
     {
-        return $this->state(fn() => [
+        return $this->state(fn () => [
             'type' => 'discount',
             'order_item_id' => null,
         ]);

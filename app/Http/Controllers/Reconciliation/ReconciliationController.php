@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Reconciliation;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RunUserReconciliationPipeline;
+use App\Models\Category;
 use App\Models\ReconciliationRun;
+use App\Models\TransactionCategorizationRule;
 use App\Services\Reconciliation\ReconciliationReviewService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,8 +20,23 @@ class ReconciliationController extends Controller
         $userId = $request->user()->id;
         $data = $review->forUser($userId);
 
+        $categories = Category::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'kind'])
+            ->map(fn (Category $category) => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'kind' => $category->kind,
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('Reconciliation/Index', [
             ...$data,
+            'categories' => $categories,
+            'matchModes' => TransactionCategorizationRule::allMatchModes(),
             'activeRun' => $this->activeRunPayload($userId),
         ]);
     }

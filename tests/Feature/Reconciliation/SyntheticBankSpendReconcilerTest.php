@@ -8,7 +8,7 @@ use App\Jobs\MatchMerchants;
 use App\Jobs\PairCreditCardPayments;
 use App\Jobs\PairTransfers;
 use App\Jobs\ProcessImportBatch;
-use App\Jobs\ReconcileSyntheticBankSpend;
+use App\Jobs\CategorizeTransactions;
 use App\Jobs\RunReconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
@@ -78,7 +78,7 @@ class SyntheticBankSpendReconcilerTest extends TestCase
         $this->assertSame('product', $component->type);
         $this->assertSame('Buc Ee', $component->description);
         $this->assertEquals(12.25, (float) $component->amount);
-        $this->assertNull($component->expense_category_id);
+        $this->assertNull($component->category_id);
 
         $allocation = TransactionAllocation::query()->where('bank_transaction_id', $transaction->id)->sole();
         $this->assertSame($component->id, $allocation->order_component_id);
@@ -205,10 +205,10 @@ CSV);
             PairCreditCardPayments::class,
             PairTransfers::class,
             ClassifyIncome::class,
+            CategorizeTransactions::class,
             GenerateOrderComponents::class,
             MatchMerchants::class,
             RunReconciliation::class,
-            ReconcileSyntheticBankSpend::class,
         ]);
     }
 

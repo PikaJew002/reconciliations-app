@@ -95,7 +95,7 @@ class SyntheticBankSpendReconciler
                 'type' => 'product',
                 'description' => $transaction->merchant->name,
                 'amount' => $amount,
-                'expense_category_id' => null,
+                'category_id' => null,
                 'category_confidence' => null,
                 'is_user_modified' => false,
                 'metadata' => [

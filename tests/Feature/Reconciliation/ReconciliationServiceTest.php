@@ -44,7 +44,7 @@ class ReconciliationServiceTest extends TestCase
             'type' => 'product',
             'description' => 'Groceries',
             'amount' => 71.77,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         OrderComponent::factory()->create([
@@ -53,7 +53,7 @@ class ReconciliationServiceTest extends TestCase
             'type' => 'tax',
             'description' => 'Sales Tax',
             'amount' => 0.21,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         $transaction = BankTransaction::factory()->create([
@@ -102,7 +102,7 @@ class ReconciliationServiceTest extends TestCase
             'order_item_id' => null,
             'type' => 'product',
             'amount' => 71.98,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         $transaction = BankTransaction::factory()->create([
@@ -152,7 +152,7 @@ class ReconciliationServiceTest extends TestCase
             'type' => 'product',
             'description' => 'Milk',
             'amount' => 31.94,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         OrderComponent::factory()->create([
@@ -161,7 +161,7 @@ class ReconciliationServiceTest extends TestCase
             'type' => 'product',
             'description' => 'Other items',
             'amount' => 217.77,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         $transaction = BankTransaction::factory()->create([
@@ -209,7 +209,7 @@ class ReconciliationServiceTest extends TestCase
             'order_item_id' => null,
             'type' => 'product',
             'amount' => 71.98,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         $smallOne = BankTransaction::factory()->create([
@@ -285,7 +285,7 @@ class ReconciliationServiceTest extends TestCase
             'order_item_id' => null,
             'type' => 'product',
             'amount' => 50.00,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         $first = BankTransaction::factory()->create([
@@ -347,7 +347,7 @@ class ReconciliationServiceTest extends TestCase
             'order_item_id' => null,
             'type' => 'product',
             'amount' => 50.00,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         $first = BankTransaction::factory()->create([
@@ -407,7 +407,7 @@ class ReconciliationServiceTest extends TestCase
             'order_item_id' => null,
             'type' => 'product',
             'amount' => 50.00,
-            'expense_category_id' => null,
+            'category_id' => null,
         ]);
 
         // Two distinct subsets sum to 50: {30,20} and {40,10}.

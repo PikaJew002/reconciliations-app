@@ -11,7 +11,7 @@ class Product extends Model
 
     protected $fillable = [
         'user_id',
-        'expense_category_id',
+        'category_id',
         'name',
         'normalized_name',
         'brand',
@@ -36,9 +36,9 @@ class Product extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function expenseCategory()
+    public function category()
     {
-        return $this->belongsTo(ExpenseCategory::class);
+        return $this->belongsTo(Category::class);
     }
 
     public function orderItems()
@@ -53,12 +53,12 @@ class Product extends Model
 
     public function isCategorized(): bool
     {
-        return !is_null($this->expense_category_id);
+        return ! is_null($this->category_id);
     }
 
     public function needsCategorization(): bool
     {
-        return is_null($this->expense_category_id);
+        return is_null($this->category_id);
     }
 
     public function validationRules(): array
@@ -66,7 +66,7 @@ class Product extends Model
         return [
             'name' => ['required', 'string'],
             'normalized_name' => ['required', 'string'],
-            'expense_category_id' => ['nullable', 'exists:expense_categories,id'],
+            'category_id' => ['nullable', 'exists:categories,id'],
             'brand' => ['nullable', 'string'],
             'upc' => ['nullable', 'string'],
         ];

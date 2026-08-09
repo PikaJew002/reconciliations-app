@@ -21,7 +21,7 @@ class OrderComponentController extends Controller
             'type' => $request->string('type')->toString(),
             'description' => $request->string('description')->toString(),
             'amount' => round((float) $request->input('amount'), 2),
-            'expense_category_id' => null,
+            'category_id' => null,
             'category_confidence' => null,
             'is_user_modified' => true,
             'metadata' => [

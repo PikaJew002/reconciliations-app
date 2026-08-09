@@ -13,6 +13,10 @@ class BankTransaction extends Model
 
     public const CLASSIFICATION_TRANSFER = 'transfer';
 
+    public const CLASSIFICATION_BILL = 'bill';
+
+    public const CLASSIFICATION_EXPENSE = 'expense';
+
     public const CLASSIFICATION_SOURCE_HEURISTIC = 'heuristic';
 
     public const CLASSIFICATION_SOURCE_LEARNED = 'learned';
@@ -38,6 +42,7 @@ class BankTransaction extends Model
         'classification',
         'classification_source',
         'classification_confidence',
+        'category_id',
         'transfer_group_id',
         'notes',
         'metadata',
@@ -71,6 +76,11 @@ class BankTransaction extends Model
         return $this->belongsTo(Merchant::class);
     }
 
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
     public function allocations()
     {
         return $this->hasMany(TransactionAllocation::class);
@@ -97,7 +107,17 @@ class BankTransaction extends Model
         return in_array($this->classification, [
             self::CLASSIFICATION_INCOME,
             self::CLASSIFICATION_TRANSFER,
+            self::CLASSIFICATION_BILL,
+            self::CLASSIFICATION_EXPENSE,
         ], true) && $this->status === 'ignored';
+    }
+
+    public function isCategorizedSpend(): bool
+    {
+        return in_array($this->classification, [
+            self::CLASSIFICATION_BILL,
+            self::CLASSIFICATION_EXPENSE,
+        ], true) && $this->category_id !== null;
     }
 
     public function scopeAvailableForExpenseMatching($query)

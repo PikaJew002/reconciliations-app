@@ -15,7 +15,7 @@ class OrderComponent extends Model
         'type',
         'description',
         'amount',
-        'expense_category_id',
+        'category_id',
         'category_confidence',
         'is_user_modified',
         'metadata',
@@ -44,9 +44,9 @@ class OrderComponent extends Model
         return $this->belongsTo(OrderItem::class);
     }
 
-    public function expenseCategory()
+    public function category()
     {
-        return $this->belongsTo(ExpenseCategory::class);
+        return $this->belongsTo(Category::class);
     }
 
     public function allocations()

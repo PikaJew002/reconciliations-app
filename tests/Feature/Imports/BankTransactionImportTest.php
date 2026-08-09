@@ -8,7 +8,7 @@ use App\Jobs\MatchMerchants;
 use App\Jobs\PairCreditCardPayments;
 use App\Jobs\PairTransfers;
 use App\Jobs\ProcessImportBatch;
-use App\Jobs\ReconcileSyntheticBankSpend;
+use App\Jobs\CategorizeTransactions;
 use App\Jobs\RunReconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
@@ -101,10 +101,10 @@ CSV);
             PairCreditCardPayments::class,
             PairTransfers::class,
             ClassifyIncome::class,
+            CategorizeTransactions::class,
             GenerateOrderComponents::class,
             MatchMerchants::class,
             RunReconciliation::class,
-            ReconcileSyntheticBankSpend::class,
         ]);
     }
 

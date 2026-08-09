@@ -184,6 +184,7 @@ class ReconciliationReviewService
                                 'type' => $component->type,
                                 'description' => $component->description,
                                 'amount' => (float) $component->amount,
+                                'category_id' => $component->category_id,
                                 'is_user_modified' => (bool) $component->is_user_modified,
                                 'can_delete' => $unallocated,
                                 'order_item_id' => $component->order_item_id,
@@ -255,7 +256,7 @@ class ReconciliationReviewService
     protected function unmatchedTransactions(int $userId): array
     {
         return $this->unmatchedTransactionsQuery($userId)
-            ->with('merchant:id,name,normalized_name')
+            ->with('merchant:id,name,normalized_name,supports_order_import')
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
             ->limit($this->unmatchedTransactionsLimit)
@@ -338,6 +339,11 @@ class ReconciliationReviewService
             'card_last_four' => $transaction->card_last_four,
             'status' => $transaction->status,
             'merchant' => $transaction->merchant?->name,
+            'supports_order_import' => (bool) ($transaction->merchant?->supports_order_import),
+            'can_categorize' => (float) $transaction->amount < 0
+                && $transaction->status === 'unmatched'
+                && $transaction->classification === null
+                && ! (bool) ($transaction->merchant?->supports_order_import),
         ];
 
         if ($includeAccount) {

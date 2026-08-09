@@ -45,6 +45,14 @@
             type: Array,
             required: true,
         },
+        categories: {
+            type: Array,
+            default: () => [],
+        },
+        matchModes: {
+            type: Array,
+            default: () => [],
+        },
         activeRun: {
             type: Object,
             default: null,
@@ -72,6 +80,17 @@
     let removingPaymentKey = ref(null);
     let transferActionId = ref(null);
     let incomeActionId = ref(null);
+    let categorizeForms = reactive({});
+    let categorizingTransactionId = ref(null);
+    let componentCategoryForms = reactive({});
+    let savingComponentCategoryKey = ref(null);
+
+    let billCategories = computed(() =>
+        props.categories.filter((category) => category.kind === 'bill'),
+    );
+    let expenseCategories = computed(() =>
+        props.categories.filter((category) => category.kind === 'expense'),
+    );
 
     let tabs = computed(() => [
         {
@@ -224,6 +243,11 @@
             }
 
             for (let component of order.components) {
+                if (componentCategoryForms[component.id] === undefined) {
+                    componentCategoryForms[component.id] =
+                        component.category_id ?? '';
+                }
+
                 if (
                     !component.can_edit_quantity ||
                     component.order_item_id == null ||
@@ -237,6 +261,90 @@
                 );
             }
         }
+    }
+
+    function ensureCategorizeForm(transaction) {
+        if (categorizeForms[transaction.id]) {
+            return categorizeForms[transaction.id];
+        }
+
+        categorizeForms[transaction.id] = {
+            classification: 'expense',
+            category_id: '',
+            match_mode: 'merchant',
+        };
+
+        return categorizeForms[transaction.id];
+    }
+
+    function onCategorizeClassificationChange(transaction) {
+        let form = ensureCategorizeForm(transaction);
+        form.category_id = '';
+        form.match_mode =
+            form.classification === 'bill'
+                ? 'exact_description_and_amount'
+                : 'merchant';
+    }
+
+    function categoriesForClassification(classification) {
+        return classification === 'bill'
+            ? billCategories.value
+            : expenseCategories.value;
+    }
+
+    function matchModeLabel(mode) {
+        return (
+            {
+                exact_description_and_amount: 'Exact description + amount',
+                amount_and_merchant: 'Amount + merchant',
+                merchant: 'Merchant only',
+                description: 'Description only',
+                once: 'This transaction only',
+            }[mode] ?? mode
+        );
+    }
+
+    function categorizeTransaction(transaction) {
+        let form = ensureCategorizeForm(transaction);
+
+        if (!form.category_id) {
+            return;
+        }
+
+        categorizingTransactionId.value = transaction.id;
+
+        router.post(
+            `/reconciliation/transactions/${transaction.id}/categorize`,
+            form,
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    categorizingTransactionId.value = null;
+                },
+            },
+        );
+    }
+
+    function saveComponentCategory(order, component) {
+        let categoryId = componentCategoryForms[component.id];
+
+        if (!categoryId) {
+            return;
+        }
+
+        let key = `${order.id}-${component.id}`;
+        savingComponentCategoryKey.value = key;
+
+        router.patch(
+            `/reconciliation/orders/${order.id}/components/${component.id}/category`,
+            { category_id: categoryId },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    savingComponentCategoryKey.value = null;
+                },
+            },
+        );
     }
 
     function addComponent(order) {
@@ -607,6 +715,8 @@
                     'unbalancedOrders',
                     'paymentReviewOrders',
                     'matchedPairs',
+                    'categories',
+                    'matchModes',
                     'activeRun',
                 ],
                 preserveScroll: true,
@@ -1359,6 +1469,49 @@
                                                 Update
                                             </button>
                                         </form>
+                                        <form
+                                            v-if="expenseCategories.length > 0"
+                                            class="flex items-center gap-2"
+                                            @submit.prevent="
+                                                saveComponentCategory(
+                                                    order,
+                                                    component,
+                                                )
+                                            "
+                                        >
+                                            <select
+                                                v-model="
+                                                    componentCategoryForms[
+                                                        component.id
+                                                    ]
+                                                "
+                                                class="rounded border px-2 py-1 text-xs"
+                                            >
+                                                <option disabled value="">
+                                                    Category
+                                                </option>
+                                                <option
+                                                    v-for="category in expenseCategories"
+                                                    :key="category.id"
+                                                    :value="category.id"
+                                                >
+                                                    {{ category.name }}
+                                                </option>
+                                            </select>
+                                            <button
+                                                type="submit"
+                                                class="text-xs text-neutral-800 underline disabled:opacity-50"
+                                                :disabled="
+                                                    savingComponentCategoryKey ===
+                                                        `${order.id}-${component.id}` ||
+                                                    !componentCategoryForms[
+                                                        component.id
+                                                    ]
+                                                "
+                                            >
+                                                Save
+                                            </button>
+                                        </form>
                                         <p class="font-medium">
                                             {{ formatMoney(component.amount) }}
                                         </p>
@@ -1614,32 +1767,150 @@
                     <li
                         v-for="transaction in filteredUnmatchedTransactions"
                         :key="transaction.id"
-                        class="flex items-start justify-between gap-4 px-4 py-3 text-sm"
+                        class="space-y-3 px-4 py-3 text-sm"
                     >
-                        <div>
-                            <p class="font-medium">
-                                {{ unmatchedTransactionTitle(transaction) }}
-                            </p>
-                            <p class="text-neutral-600">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <p class="font-medium">
+                                    {{
+                                        unmatchedTransactionTitle(transaction)
+                                    }}
+                                </p>
+                                <p class="text-neutral-600">
+                                    {{
+                                        transaction.transaction_date ||
+                                        transaction.posted_at ||
+                                        'No date'
+                                    }}
+                                    · {{ transaction.description }}
+                                    <span v-if="transaction.card_last_four">
+                                        · card
+                                        {{ transaction.card_last_four }}
+                                    </span>
+                                </p>
+                            </div>
+                            <div class="text-right">
+                                <p class="font-medium">
+                                    {{ formatMoney(transaction.amount) }}
+                                </p>
+                                <p class="text-neutral-600">
+                                    {{ transaction.status }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <form
+                            v-if="transaction.can_categorize"
+                            class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-4"
+                            @submit.prevent="categorizeTransaction(transaction)"
+                        >
+                            <label class="block space-y-1">
+                                <span class="text-neutral-600">Type</span>
+                                <select
+                                    v-model="
+                                        ensureCategorizeForm(transaction)
+                                            .classification
+                                    "
+                                    class="w-full rounded border px-2 py-1.5"
+                                    @change="
+                                        onCategorizeClassificationChange(
+                                            transaction,
+                                        )
+                                    "
+                                >
+                                    <option value="expense">Expense</option>
+                                    <option value="bill">Bill</option>
+                                </select>
+                            </label>
+                            <label class="block space-y-1">
+                                <span class="text-neutral-600">Category</span>
+                                <select
+                                    v-model="
+                                        ensureCategorizeForm(transaction)
+                                            .category_id
+                                    "
+                                    class="w-full rounded border px-2 py-1.5"
+                                    required
+                                >
+                                    <option disabled value="">Select</option>
+                                    <option
+                                        v-for="category in categoriesForClassification(
+                                            ensureCategorizeForm(transaction)
+                                                .classification,
+                                        )"
+                                        :key="category.id"
+                                        :value="category.id"
+                                    >
+                                        {{ category.name }}
+                                    </option>
+                                </select>
+                            </label>
+                            <label class="block space-y-1">
+                                <span class="text-neutral-600"
+                                    >Future match</span
+                                >
+                                <select
+                                    v-model="
+                                        ensureCategorizeForm(transaction)
+                                            .match_mode
+                                    "
+                                    class="w-full rounded border px-2 py-1.5"
+                                >
+                                    <option
+                                        v-for="mode in matchModes"
+                                        :key="mode"
+                                        :value="mode"
+                                    >
+                                        {{ matchModeLabel(mode) }}
+                                    </option>
+                                </select>
+                            </label>
+                            <div class="flex items-end">
+                                <button
+                                    type="submit"
+                                    class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                                    :disabled="
+                                        categorizingTransactionId ===
+                                            transaction.id ||
+                                        !ensureCategorizeForm(transaction)
+                                            .category_id ||
+                                        categoriesForClassification(
+                                            ensureCategorizeForm(transaction)
+                                                .classification,
+                                        ).length === 0
+                                    "
+                                >
+                                    {{
+                                        categorizingTransactionId ===
+                                        transaction.id
+                                            ? 'Saving…'
+                                            : 'Categorize'
+                                    }}
+                                </button>
+                            </div>
+                            <p
+                                v-if="
+                                    categoriesForClassification(
+                                        ensureCategorizeForm(transaction)
+                                            .classification,
+                                    ).length === 0
+                                "
+                                class="text-xs text-amber-800 sm:col-span-4"
+                            >
+                                Add a
                                 {{
-                                    transaction.transaction_date ||
-                                    transaction.posted_at ||
-                                    'No date'
+                                    ensureCategorizeForm(transaction)
+                                        .classification
                                 }}
-                                · {{ transaction.description }}
-                                <span v-if="transaction.card_last_four">
-                                    · card {{ transaction.card_last_four }}
-                                </span>
+                                category first.
                             </p>
-                        </div>
-                        <div class="text-right">
-                            <p class="font-medium">
-                                {{ formatMoney(transaction.amount) }}
-                            </p>
-                            <p class="text-neutral-600">
-                                {{ transaction.status }}
-                            </p>
-                        </div>
+                        </form>
+                        <p
+                            v-else-if="transaction.supports_order_import"
+                            class="text-xs text-neutral-600"
+                        >
+                            Waiting for an imported order from this merchant.
+                        </p>
                     </li>
                 </ul>
             </section>

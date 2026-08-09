@@ -43,6 +43,7 @@ class ProcessImportBatch implements ShouldQueue
             $jobs[] = new PairCreditCardPayments($batch->user_id);
             $jobs[] = new PairTransfers($batch->user_id);
             $jobs[] = new ClassifyIncome($batch->user_id);
+            $jobs[] = new CategorizeTransactions($batch->user_id);
         }
 
         $jobs = [
@@ -50,7 +51,6 @@ class ProcessImportBatch implements ShouldQueue
             new GenerateOrderComponents($batch),
             new MatchMerchants($batch->user_id),
             new RunReconciliation($batch->user_id),
-            new ReconcileSyntheticBankSpend($batch->user_id),
         ];
 
         Bus::chain($jobs)->dispatch();

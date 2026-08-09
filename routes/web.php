@@ -3,16 +3,20 @@
 use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Categories\CategoryController;
+use App\Http\Controllers\Categories\CategorizationRuleController;
 use App\Http\Controllers\Imports\AmazonOrderImportController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
 use App\Http\Controllers\Merchants\MerchantController;
 use App\Http\Controllers\Orders\OrderController;
+use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
 use App\Http\Controllers\Reconciliation\OrderItemController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
+use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
 use App\Http\Controllers\Reconciliation\TransactionClassificationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
 use Illuminate\Support\Facades\Route;
@@ -36,6 +40,20 @@ Route::middleware('auth')->group(function () {
     Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');
     Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
+
+    Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
+    Route::get('/categories/create', [CategoryController::class, 'create'])->name('categories.create');
+    Route::post('/categories', [CategoryController::class, 'store'])->name('categories.store');
+    Route::get('/categories/{category}/edit', [CategoryController::class, 'edit'])->name('categories.edit');
+    Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
+    Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
+
+    Route::get('/categorization-rules', [CategorizationRuleController::class, 'index'])
+        ->name('categorization-rules.index');
+    Route::patch('/categorization-rules/{rule}', [CategorizationRuleController::class, 'update'])
+        ->name('categorization-rules.update');
+    Route::delete('/categorization-rules/{rule}', [CategorizationRuleController::class, 'destroy'])
+        ->name('categorization-rules.destroy');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{merchant}', [OrderController::class, 'show'])
@@ -65,6 +83,10 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.transactions.confirm-income');
     Route::post('/reconciliation/transactions/{transaction}/reject-income', [TransactionClassificationController::class, 'rejectIncome'])
         ->name('reconciliation.transactions.reject-income');
+    Route::post('/reconciliation/transactions/{transaction}/categorize', [TransactionCategorizationController::class, 'store'])
+        ->name('reconciliation.transactions.categorize');
+    Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])
+        ->name('reconciliation.orders.components.category.update');
 
     Route::get('/imports/bank-transactions/create', [BankTransactionImportController::class, 'create'])
         ->name('imports.bank-transactions.create');
