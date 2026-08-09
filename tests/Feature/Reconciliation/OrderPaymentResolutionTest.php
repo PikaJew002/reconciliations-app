@@ -410,4 +410,117 @@ class OrderPaymentResolutionTest extends TestCase
             'status' => 'matched',
         ]);
     }
+
+    public function test_user_can_remove_duplicate_payment_method(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => '05031290015277424060',
+            'total' => 42.18,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Walmart Mastercard ending in 2525',
+                        'last_four' => '2525',
+                        'amount' => null,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Walmart Mastercard ending in 2525',
+                        'last_four' => '2525',
+                        'amount' => null,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.payments.destroy', [$order, 0]))
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+
+        $this->assertCount(1, $order->metadata['payments']);
+        $this->assertSame('2525', $order->payment_last_four);
+        $this->assertSame(
+            'Walmart Mastercard ending in 2525',
+            $order->metadata['payments'][0]['ending'],
+        );
+    }
+
+    public function test_cannot_remove_only_remaining_payment_method(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+            'payment_last_four' => '2525',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Walmart Mastercard ending in 2525',
+                        'last_four' => '2525',
+                        'amount' => null,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.payments.destroy', [$order, 0]))
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHas('error');
+
+        $order->refresh();
+
+        $this->assertCount(1, $order->metadata['payments']);
+    }
+
+    public function test_cannot_remove_payment_from_another_users_order(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $other->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $other->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Mastercard ending in 1111',
+                        'last_four' => '1111',
+                        'amount' => null,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Mastercard ending in 2222',
+                        'last_four' => '2222',
+                        'amount' => null,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.payments.destroy', [$order, 0]))
+            ->assertForbidden();
+    }
 }

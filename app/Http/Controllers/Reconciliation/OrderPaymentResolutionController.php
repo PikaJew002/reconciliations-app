@@ -7,6 +7,7 @@ use App\Http\Requests\Reconciliation\ResolveOrderPaymentsRequest;
 use App\Models\Order;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -30,5 +31,26 @@ class OrderPaymentResolutionController extends Controller
         return redirect()
             ->route('reconciliation.index')
             ->with('success', 'Multi-payment order reconciled.');
+    }
+
+    public function destroy(
+        Request $request,
+        Order $order,
+        int $paymentIndex,
+        OrderPaymentResolutionService $resolution,
+    ): RedirectResponse {
+        abort_unless($order->user_id === $request->user()->id, 403);
+
+        try {
+            $resolution->removePayment($order, $paymentIndex);
+        } catch (InvalidArgumentException $exception) {
+            return redirect()
+                ->route('reconciliation.index')
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('reconciliation.index')
+            ->with('success', 'Payment method removed.');
     }
 }

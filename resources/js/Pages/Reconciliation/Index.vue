@@ -69,6 +69,7 @@
     let savingOrderId = ref(null);
     let savingQuantityKey = ref(null);
     let resolvingOrderId = ref(null);
+    let removingPaymentKey = ref(null);
     let transferActionId = ref(null);
     let incomeActionId = ref(null);
 
@@ -483,6 +484,29 @@
                 },
                 onFinish: () => {
                     resolvingOrderId.value = null;
+                },
+            },
+        );
+    }
+
+    function removePayment(order, paymentIndex) {
+        if (order.payments.length < 2) {
+            return;
+        }
+
+        let key = `${order.id}-${paymentIndex}`;
+        removingPaymentKey.value = key;
+
+        router.delete(
+            `/reconciliation/orders/${order.id}/payments/${paymentIndex}`,
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    delete paymentForms[order.id];
+                    activeTab.value = 'needs-review';
+                },
+                onFinish: () => {
+                    removingPaymentKey.value = null;
                 },
             },
         );
@@ -960,8 +984,9 @@
                         </h2>
                         <p class="text-sm text-neutral-600">
                             Orders paid with more than one method (card + gift
-                            card / Walmart Balance). Match the bank card charge,
-                            enter the other tender amount, then save.
+                            card / Walmart Balance). Remove a failed/duplicate
+                            attempt, or match the bank card charge, enter the
+                            other tender amount, then save.
                         </p>
                     </div>
 
@@ -1007,10 +1032,6 @@
                             </p>
 
                             <form
-                                v-if="
-                                    paymentForms[order.id] &&
-                                    order.components_balanced
-                                "
                                 class="space-y-3"
                                 @submit.prevent="resolvePayments(order)"
                             >
@@ -1031,37 +1052,71 @@
                                             <p class="text-neutral-600">
                                                 {{
                                                     paymentKindLabel(
-                                                        paymentForms[order.id][
+                                                        paymentForms[order.id]?.[
                                                             paymentIndex
-                                                        ].kind,
+                                                        ]?.kind ??
+                                                            payment.kind,
                                                     )
                                                 }}
                                             </p>
                                         </div>
-                                        <label
-                                            v-if="canMarkAsGiftCard(payment)"
-                                            class="flex items-center gap-2 text-neutral-700"
+                                        <div
+                                            class="flex flex-wrap items-center gap-3"
                                         >
-                                            <input
-                                                type="checkbox"
-                                                :checked="
-                                                    paymentForms[order.id][
-                                                        paymentIndex
-                                                    ].kind === 'gift_card'
+                                            <label
+                                                v-if="
+                                                    order.components_balanced &&
+                                                    paymentForms[order.id] &&
+                                                    canMarkAsGiftCard(payment)
                                                 "
-                                                @change="
-                                                    onGiftCardToggle(
+                                                class="flex items-center gap-2 text-neutral-700"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="
+                                                        paymentForms[order.id][
+                                                            paymentIndex
+                                                        ].kind === 'gift_card'
+                                                    "
+                                                    @change="
+                                                        onGiftCardToggle(
+                                                            order,
+                                                            paymentIndex,
+                                                            $event,
+                                                        )
+                                                    "
+                                                />
+                                                <span>Mark as gift card</span>
+                                            </label>
+                                            <button
+                                                v-if="
+                                                    order.payments.length > 1
+                                                "
+                                                type="button"
+                                                class="text-xs text-red-700 underline disabled:opacity-50"
+                                                :disabled="
+                                                    removingPaymentKey ===
+                                                    `${order.id}-${paymentIndex}`
+                                                "
+                                                @click="
+                                                    removePayment(
                                                         order,
                                                         paymentIndex,
-                                                        $event,
                                                     )
                                                 "
-                                            />
-                                            <span>Mark as gift card</span>
-                                        </label>
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <div class="grid gap-3 sm:grid-cols-2">
+                                    <div
+                                        v-if="
+                                            order.components_balanced &&
+                                            paymentForms[order.id]
+                                        "
+                                        class="grid gap-3 sm:grid-cols-2"
+                                    >
                                         <label class="block space-y-1">
                                             <span class="text-neutral-600"
                                                 >Amount</span
@@ -1151,6 +1206,10 @@
                                 </div>
 
                                 <button
+                                    v-if="
+                                        order.components_balanced &&
+                                        paymentForms[order.id]
+                                    "
                                     type="submit"
                                     class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
                                     :disabled="resolvingOrderId === order.id"

@@ -172,6 +172,34 @@ class OrderPaymentResolutionService
         });
     }
 
+    public function removePayment(Order $order, int $index): void
+    {
+        if ($order->status === 'reconciled') {
+            throw new InvalidArgumentException('Reconciled orders cannot be edited.');
+        }
+
+        $payments = $this->normalizedPayments($order);
+
+        if (count($payments) < 2) {
+            throw new InvalidArgumentException('Cannot remove the only remaining payment method.');
+        }
+
+        if (! array_key_exists($index, $payments)) {
+            throw new InvalidArgumentException("Invalid payment index [{$index}].");
+        }
+
+        unset($payments[$index]);
+        $payments = array_values($payments);
+
+        $metadata = $order->metadata ?? [];
+        $metadata['payments'] = $payments;
+
+        $order->update([
+            'payment_last_four' => $this->primaryPaymentLastFour($payments),
+            'metadata' => $metadata,
+        ]);
+    }
+
     /**
      * @return list<array{ending: string, last_four: string|null, amount: float|null, kind: string}>
      */
@@ -211,6 +239,22 @@ class OrderPaymentResolutionService
         }
 
         return $payments;
+    }
+
+    /**
+     * @param  list<array{last_four: string|null}>  $payments
+     */
+    protected function primaryPaymentLastFour(array $payments): ?string
+    {
+        if ($payments === []) {
+            return null;
+        }
+
+        if (count($payments) > 1) {
+            return null;
+        }
+
+        return $payments[0]['last_four'];
     }
 
     public function needsPaymentReview(Order $order): bool
