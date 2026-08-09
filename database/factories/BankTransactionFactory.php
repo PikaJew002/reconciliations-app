@@ -39,6 +39,14 @@ class BankTransactionFactory extends Factory
 
             'status' => 'unmatched',
 
+            'classification' => null,
+
+            'classification_source' => null,
+
+            'classification_confidence' => null,
+
+            'transfer_group_id' => null,
+
             'notes' => null,
 
             'metadata' => [],

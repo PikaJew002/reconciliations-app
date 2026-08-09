@@ -5,6 +5,7 @@ namespace App\Services\Reconciliation;
 use App\Models\BankTransaction;
 use App\Models\Order;
 use App\Models\TransactionAllocation;
+use App\Models\TransactionTransferLink;
 use Illuminate\Support\Facades\DB;
 
 class ReconciliationReviewService
@@ -12,6 +13,7 @@ class ReconciliationReviewService
     public function __construct(
         protected OrderPaymentResolutionService $paymentResolution,
         protected int $listLimit = 50,
+        protected int $unmatchedTransactionsLimit = 250,
     ) {}
 
     /**
@@ -21,6 +23,8 @@ class ReconciliationReviewService
      *     unmatchedTransactions: list<array<string, mixed>>,
      *     unbalancedOrders: list<array<string, mixed>>,
      *     paymentReviewOrders: list<array<string, mixed>>,
+     *     suggestedTransfers: list<array<string, mixed>>,
+     *     suggestedIncome: list<array<string, mixed>>,
      *     matchedPairs: list<array<string, mixed>>
      * }
      */
@@ -28,19 +32,41 @@ class ReconciliationReviewService
     {
         $unbalancedOrders = $this->unbalancedOrders($userId);
         $paymentReviewOrders = $this->paymentReviewOrders($userId);
+        $suggestedTransfers = $this->suggestedTransfers($userId);
+        $suggestedIncome = $this->suggestedIncome($userId);
 
-        $needsReviewIds = collect($unbalancedOrders)
+        $suggestedTransfersCount = TransactionTransferLink::query()
+            ->where('user_id', $userId)
+            ->where('status', TransactionTransferLink::STATUS_SUGGESTED)
+            ->count();
+
+        $suggestedIncomeCount = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('status', 'unmatched')
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->count();
+
+        $orderReviewCount = collect($unbalancedOrders)
             ->pluck('id')
             ->merge(collect($paymentReviewOrders)->pluck('id'))
             ->unique()
             ->count();
 
         return [
-            'summary' => $this->summary($userId, count($unbalancedOrders), count($paymentReviewOrders), $needsReviewIds),
+            'summary' => $this->summary(
+                $userId,
+                count($unbalancedOrders),
+                count($paymentReviewOrders),
+                $suggestedTransfersCount,
+                $suggestedIncomeCount,
+                $orderReviewCount + $suggestedTransfersCount + $suggestedIncomeCount,
+            ),
             'unmatchedOrders' => $this->unmatchedOrders($userId),
             'unmatchedTransactions' => $this->unmatchedTransactions($userId),
             'unbalancedOrders' => $unbalancedOrders,
             'paymentReviewOrders' => $paymentReviewOrders,
+            'suggestedTransfers' => $suggestedTransfers,
+            'suggestedIncome' => $suggestedIncome,
             'matchedPairs' => $this->matchedPairs($userId),
         ];
     }
@@ -52,6 +78,8 @@ class ReconciliationReviewService
         int $userId,
         int $unbalancedOrdersCount,
         int $paymentReviewOrdersCount,
+        int $suggestedTransfersCount,
+        int $suggestedIncomeCount,
         int $needsReviewCount,
     ): array {
         return [
@@ -63,10 +91,7 @@ class ReconciliationReviewService
                 ->where('user_id', $userId)
                 ->where('status', 'reconciled')
                 ->count(),
-            'unmatched_transactions' => BankTransaction::query()
-                ->where('user_id', $userId)
-                ->where('status', 'unmatched')
-                ->count(),
+            'unmatched_transactions' => $this->unmatchedTransactionsQuery($userId)->count(),
             'partial_transactions' => BankTransaction::query()
                 ->where('user_id', $userId)
                 ->where('status', 'partial')
@@ -74,6 +99,8 @@ class ReconciliationReviewService
             'matched_pairs' => $this->matchedPairCount($userId),
             'unbalanced_orders' => $unbalancedOrdersCount,
             'payment_review_orders' => $paymentReviewOrdersCount,
+            'suggested_transfers' => $suggestedTransfersCount,
+            'suggested_income' => $suggestedIncomeCount,
             'needs_review' => $needsReviewCount,
         ];
     }
@@ -217,25 +244,98 @@ class ReconciliationReviewService
      */
     protected function unmatchedTransactions(int $userId): array
     {
+        return $this->unmatchedTransactionsQuery($userId)
+            ->with('merchant:id,name,normalized_name')
+            ->orderByDesc('posted_at')
+            ->orderByDesc('id')
+            ->limit($this->unmatchedTransactionsLimit)
+            ->get()
+            ->map(fn (BankTransaction $transaction): array => $this->transactionPayload($transaction))
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function suggestedTransfers(int $userId): array
+    {
+        return TransactionTransferLink::query()
+            ->where('user_id', $userId)
+            ->where('status', TransactionTransferLink::STATUS_SUGGESTED)
+            ->with([
+                'debitTransaction.account:id,name,last_four,account_type',
+                'creditTransaction.account:id,name,last_four,account_type',
+            ])
+            ->orderByDesc('id')
+            ->limit($this->listLimit)
+            ->get()
+            ->map(function (TransactionTransferLink $link): array {
+                return [
+                    'id' => $link->id,
+                    'match_confidence' => $link->match_confidence !== null
+                        ? (float) $link->match_confidence
+                        : null,
+                    'debit' => $this->transactionPayload($link->debitTransaction, includeAccount: true),
+                    'credit' => $this->transactionPayload($link->creditTransaction, includeAccount: true),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function suggestedIncome(int $userId): array
+    {
         return BankTransaction::query()
             ->where('user_id', $userId)
             ->where('status', 'unmatched')
-            ->with('merchant:id,name,normalized_name')
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->with('account:id,name,last_four,account_type')
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
             ->limit($this->listLimit)
             ->get()
             ->map(fn (BankTransaction $transaction): array => [
-                'id' => $transaction->id,
-                'posted_at' => $transaction->posted_at?->toDateString(),
-                'transaction_date' => $transaction->transaction_date?->toDateString(),
-                'description' => $transaction->description,
-                'amount' => (float) $transaction->amount,
-                'card_last_four' => $transaction->card_last_four,
-                'status' => $transaction->status,
-                'merchant' => $transaction->merchant?->name,
+                ...$this->transactionPayload($transaction, includeAccount: true),
+                'classification' => $transaction->classification,
+                'classification_source' => $transaction->classification_source,
+                'classification_confidence' => $transaction->classification_confidence !== null
+                    ? (float) $transaction->classification_confidence
+                    : null,
             ])
             ->all();
+    }
+
+    protected function unmatchedTransactionsQuery(int $userId)
+    {
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->availableForExpenseMatching();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function transactionPayload(BankTransaction $transaction, bool $includeAccount = false): array
+    {
+        $payload = [
+            'id' => $transaction->id,
+            'posted_at' => $transaction->posted_at?->toDateString(),
+            'transaction_date' => $transaction->transaction_date?->toDateString(),
+            'description' => $transaction->description,
+            'amount' => (float) $transaction->amount,
+            'card_last_four' => $transaction->card_last_four,
+            'status' => $transaction->status,
+            'merchant' => $transaction->merchant?->name,
+        ];
+
+        if ($includeAccount) {
+            $payload['account'] = $transaction->account?->name;
+            $payload['account_last_four'] = $transaction->account?->last_four;
+        }
+
+        return $payload;
     }
 
     /**

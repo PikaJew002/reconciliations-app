@@ -41,6 +41,8 @@ class RunUserReconciliationPipelineTest extends TestCase
         ]);
 
         (new RunUserReconciliationPipeline($run->id))->handle(
+            app(\App\Services\Reconciliation\TransferPairingService::class),
+            app(\App\Services\Reconciliation\IncomeClassificationService::class),
             app(\App\Services\Reconciliation\OrderComponentGenerator::class),
             app(\App\Services\Reconciliation\MerchantMatcher::class),
             app(\App\Services\Reconciliation\OrderPaymentResolutionService::class),

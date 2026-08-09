@@ -37,11 +37,21 @@ class ProcessImportBatch implements ShouldQueue
             return;
         }
 
-        Bus::chain([
+        $jobs = [];
+
+        if ($batch->source === 'bank' && $batch->type === 'transactions') {
+            $jobs[] = new PairTransfers($batch->user_id);
+            $jobs[] = new ClassifyIncome($batch->user_id);
+        }
+
+        $jobs = [
+            ...$jobs,
             new GenerateOrderComponents($batch),
             new MatchMerchants($batch->user_id),
             new RunReconciliation($batch->user_id),
             new ReconcileSyntheticBankSpend($batch->user_id),
-        ])->dispatch();
+        ];
+
+        Bus::chain($jobs)->dispatch();
     }
 }

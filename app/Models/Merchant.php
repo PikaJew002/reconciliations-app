@@ -45,6 +45,11 @@ class Merchant extends Model
         return $this->hasMany(Order::class);
     }
 
+    public function bankTransactions()
+    {
+        return $this->hasMany(BankTransaction::class);
+    }
+
     public function canImportOrders(): bool
     {
         return $this->supports_order_import;

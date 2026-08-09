@@ -7,10 +7,13 @@ use App\Http\Controllers\Imports\AmazonOrderImportController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
+use App\Http\Controllers\Merchants\MerchantController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
+use App\Http\Controllers\Reconciliation\TransactionClassificationController;
+use App\Http\Controllers\Reconciliation\TransferLinkController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/imports');
@@ -34,6 +37,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::get('/orders/{merchant}', [OrderController::class, 'show'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->name('orders.show');
+
+    Route::get('/merchants/{merchant}', [MerchantController::class, 'show'])->name('merchants.show');
 
     Route::get('/reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
     Route::post('/reconciliation/run', [ReconciliationController::class, 'run'])->name('reconciliation.run');
@@ -43,6 +51,14 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.orders.components.destroy');
     Route::post('/reconciliation/orders/{order}/resolve-payments', [OrderPaymentResolutionController::class, 'store'])
         ->name('reconciliation.orders.resolve-payments');
+    Route::post('/reconciliation/transfers/{transferLink}/confirm', [TransferLinkController::class, 'confirm'])
+        ->name('reconciliation.transfers.confirm');
+    Route::post('/reconciliation/transfers/{transferLink}/reject', [TransferLinkController::class, 'reject'])
+        ->name('reconciliation.transfers.reject');
+    Route::post('/reconciliation/transactions/{transaction}/confirm-income', [TransactionClassificationController::class, 'confirmIncome'])
+        ->name('reconciliation.transactions.confirm-income');
+    Route::post('/reconciliation/transactions/{transaction}/reject-income', [TransactionClassificationController::class, 'rejectIncome'])
+        ->name('reconciliation.transactions.reject-income');
 
     Route::get('/imports/bank-transactions/create', [BankTransactionImportController::class, 'create'])
         ->name('imports.bank-transactions.create');

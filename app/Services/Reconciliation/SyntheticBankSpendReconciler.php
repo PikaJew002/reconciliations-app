@@ -19,7 +19,7 @@ class SyntheticBankSpendReconciler
 
         BankTransaction::query()
             ->where('user_id', $userId)
-            ->where('status', 'unmatched')
+            ->availableForExpenseMatching()
             ->where('amount', '<', 0)
             ->whereNotNull('merchant_id')
             ->whereDoesntHave('allocations')

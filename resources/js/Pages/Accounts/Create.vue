@@ -1,6 +1,6 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { useForm } from '@inertiajs/vue3';
+    import { Link, useForm } from '@inertiajs/vue3';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -36,7 +36,8 @@
 <template>
     <div class="space-y-6">
         <div>
-            <h1 class="text-2xl font-semibold">Add account</h1>
+            <Link href="/accounts" class="text-sm underline">Back to accounts</Link>
+            <h1 class="mt-2 text-2xl font-semibold">Add account</h1>
             <p class="text-sm text-neutral-600">
                 Create an account so you can import bank transactions for it.
             </p>
@@ -174,13 +175,21 @@
                 </div>
             </div>
 
-            <button
-                type="submit"
-                class="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
-                :disabled="form.processing"
-            >
-                Create account
-            </button>
+            <div class="flex flex-wrap gap-2">
+                <button
+                    type="submit"
+                    class="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
+                    :disabled="form.processing"
+                >
+                    Create account
+                </button>
+                <Link
+                    href="/accounts"
+                    class="rounded border px-4 py-2 text-neutral-700 hover:bg-neutral-100"
+                >
+                    Cancel
+                </Link>
+            </div>
         </form>
     </div>
 </template>

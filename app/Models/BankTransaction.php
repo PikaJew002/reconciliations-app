@@ -9,6 +9,18 @@ class BankTransaction extends Model
 {
     use HasFactory;
 
+    public const CLASSIFICATION_INCOME = 'income';
+
+    public const CLASSIFICATION_TRANSFER = 'transfer';
+
+    public const CLASSIFICATION_SOURCE_HEURISTIC = 'heuristic';
+
+    public const CLASSIFICATION_SOURCE_LEARNED = 'learned';
+
+    public const CLASSIFICATION_SOURCE_PAIRED = 'paired';
+
+    public const CLASSIFICATION_SOURCE_MANUAL = 'manual';
+
     protected $fillable = [
         'user_id',
         'import_batch_id',
@@ -23,6 +35,10 @@ class BankTransaction extends Model
         'amount',
         'currency',
         'status',
+        'classification',
+        'classification_source',
+        'classification_confidence',
+        'transfer_group_id',
         'notes',
         'metadata',
     ];
@@ -31,6 +47,7 @@ class BankTransaction extends Model
         'posted_at' => 'date',
         'transaction_date' => 'date',
         'amount' => 'decimal:2',
+        'classification_confidence' => 'decimal:2',
         'metadata' => 'array',
     ];
 
@@ -57,6 +74,50 @@ class BankTransaction extends Model
     public function allocations()
     {
         return $this->hasMany(TransactionAllocation::class);
+    }
+
+    public function debitTransferLink()
+    {
+        return $this->hasOne(TransactionTransferLink::class, 'debit_transaction_id');
+    }
+
+    public function creditTransferLink()
+    {
+        return $this->hasOne(TransactionTransferLink::class, 'credit_transaction_id');
+    }
+
+    public function isSuggestedIncome(): bool
+    {
+        return $this->classification === self::CLASSIFICATION_INCOME
+            && $this->status === 'unmatched';
+    }
+
+    public function isResolvedNonExpense(): bool
+    {
+        return in_array($this->classification, [
+            self::CLASSIFICATION_INCOME,
+            self::CLASSIFICATION_TRANSFER,
+        ], true) && $this->status === 'ignored';
+    }
+
+    public function scopeAvailableForExpenseMatching($query)
+    {
+        $activeStatuses = [
+            TransactionTransferLink::STATUS_SUGGESTED,
+            TransactionTransferLink::STATUS_CONFIRMED,
+        ];
+
+        return $query
+            ->where('status', 'unmatched')
+            ->whereNull('classification')
+            ->whereDoesntHave(
+                'debitTransferLink',
+                fn ($linkQuery) => $linkQuery->whereIn('status', $activeStatuses),
+            )
+            ->whereDoesntHave(
+                'creditTransferLink',
+                fn ($linkQuery) => $linkQuery->whereIn('status', $activeStatuses),
+            );
     }
 
     public function getAllocatedAmountAttribute(): float

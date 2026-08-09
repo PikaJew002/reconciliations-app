@@ -33,6 +33,14 @@
             type: Array,
             required: true,
         },
+        suggestedTransfers: {
+            type: Array,
+            default: () => [],
+        },
+        suggestedIncome: {
+            type: Array,
+            default: () => [],
+        },
         matchedPairs: {
             type: Array,
             required: true,
@@ -59,6 +67,8 @@
     let paymentForms = reactive({});
     let savingOrderId = ref(null);
     let resolvingOrderId = ref(null);
+    let transferActionId = ref(null);
+    let incomeActionId = ref(null);
 
     let tabs = computed(() => [
         {
@@ -450,6 +460,66 @@
         { immediate: true },
     );
 
+    function confirmTransfer(link) {
+        transferActionId.value = `confirm-${link.id}`;
+        router.post(`/reconciliation/transfers/${link.id}/confirm`, {}, {
+            preserveScroll: true,
+            onFinish: () => {
+                transferActionId.value = null;
+            },
+        });
+    }
+
+    function rejectTransfer(link) {
+        transferActionId.value = `reject-${link.id}`;
+        router.post(`/reconciliation/transfers/${link.id}/reject`, {}, {
+            preserveScroll: true,
+            onFinish: () => {
+                transferActionId.value = null;
+            },
+        });
+    }
+
+    function confirmIncome(transaction) {
+        incomeActionId.value = `confirm-${transaction.id}`;
+        router.post(
+            `/reconciliation/transactions/${transaction.id}/confirm-income`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    incomeActionId.value = null;
+                },
+            },
+        );
+    }
+
+    function rejectIncome(transaction) {
+        incomeActionId.value = `reject-${transaction.id}`;
+        router.post(
+            `/reconciliation/transactions/${transaction.id}/reject-income`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    incomeActionId.value = null;
+                },
+            },
+        );
+    }
+
+    function accountLabel(transaction) {
+        if (!transaction?.account) {
+            return 'Account';
+        }
+
+        if (transaction.account_last_four) {
+            return `${transaction.account} ····${transaction.account_last_four}`;
+        }
+
+        return transaction.account;
+    }
+
     function runReconciliation() {
         runForm.post('/reconciliation/run', {
             preserveScroll: true,
@@ -468,6 +538,8 @@
                     'summary',
                     'unmatchedOrders',
                     'unmatchedTransactions',
+                    'suggestedTransfers',
+                    'suggestedIncome',
                     'unbalancedOrders',
                     'paymentReviewOrders',
                     'matchedPairs',
@@ -560,7 +632,11 @@
             v-else-if="activeRun?.status === 'completed'"
             class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
         >
-            Reconciliation finished. Matched
+            Reconciliation finished. Confirmed
+            {{ activeRun.metadata?.transfers_confirmed ?? 0 }} transfers,
+            suggested
+            {{ activeRun.metadata?.transfers_suggested ?? 0 }} transfers and
+            {{ activeRun.metadata?.income_suggested ?? 0 }} income, matched
             {{ activeRun.metadata?.merchants_matched ?? 0 }} merchants,
             {{ activeRun.metadata?.transactions_matched ?? 0 }} order
             transactions, and
@@ -639,6 +715,200 @@
             </div>
 
             <section v-if="activeTab === 'needs-review'" class="space-y-8">
+                <div class="space-y-4">
+                    <div>
+                        <h2 class="text-base font-semibold">
+                            Suggested transfers
+                        </h2>
+                        <p class="text-sm text-neutral-600">
+                            Internal account transfers. Confirm to hide both
+                            sides from expense tracking.
+                        </p>
+                    </div>
+
+                    <p
+                        v-if="suggestedTransfers.length === 0"
+                        class="text-sm text-neutral-600"
+                    >
+                        No suggested transfers.
+                    </p>
+
+                    <ul v-else class="space-y-3">
+                        <li
+                            v-for="link in suggestedTransfers"
+                            :key="`transfer-${link.id}`"
+                            class="space-y-3 rounded border px-4 py-3 text-sm"
+                        >
+                            <div
+                                class="flex flex-wrap items-start justify-between gap-4"
+                            >
+                                <div class="space-y-2">
+                                    <div>
+                                        <p class="font-medium">
+                                            From
+                                            {{ accountLabel(link.debit) }}
+                                        </p>
+                                        <p class="text-neutral-600">
+                                            {{
+                                                link.debit.posted_at ||
+                                                'No date'
+                                            }}
+                                            · {{ link.debit.description }}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p class="font-medium">
+                                            To
+                                            {{ accountLabel(link.credit) }}
+                                        </p>
+                                        <p class="text-neutral-600">
+                                            {{
+                                                link.credit.posted_at ||
+                                                'No date'
+                                            }}
+                                            · {{ link.credit.description }}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <p class="font-medium">
+                                        {{
+                                            formatMoney(
+                                                Math.abs(link.debit.amount),
+                                            )
+                                        }}
+                                    </p>
+                                    <p
+                                        v-if="link.match_confidence != null"
+                                        class="text-neutral-600"
+                                    >
+                                        {{
+                                            Math.round(link.match_confidence)
+                                        }}% confidence
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                                    :disabled="transferActionId !== null"
+                                    @click="confirmTransfer(link)"
+                                >
+                                    {{
+                                        transferActionId ===
+                                        `confirm-${link.id}`
+                                            ? 'Confirming…'
+                                            : 'Confirm transfer'
+                                    }}
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                                    :disabled="transferActionId !== null"
+                                    @click="rejectTransfer(link)"
+                                >
+                                    {{
+                                        transferActionId ===
+                                        `reject-${link.id}`
+                                            ? 'Dismissing…'
+                                            : 'Dismiss'
+                                    }}
+                                </button>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <h2 class="text-base font-semibold">
+                            Suggested income
+                        </h2>
+                        <p class="text-sm text-neutral-600">
+                            Credits that look like income. Confirm to hide them
+                            and teach the app for next time.
+                        </p>
+                    </div>
+
+                    <p
+                        v-if="suggestedIncome.length === 0"
+                        class="text-sm text-neutral-600"
+                    >
+                        No suggested income.
+                    </p>
+
+                    <ul v-else class="space-y-3">
+                        <li
+                            v-for="transaction in suggestedIncome"
+                            :key="`income-${transaction.id}`"
+                            class="flex flex-wrap items-start justify-between gap-4 rounded border px-4 py-3 text-sm"
+                        >
+                            <div>
+                                <p class="font-medium">
+                                    {{ accountLabel(transaction) }}
+                                </p>
+                                <p class="text-neutral-600">
+                                    {{
+                                        transaction.posted_at || 'No date'
+                                    }}
+                                    · {{ transaction.description }}
+                                </p>
+                                <p class="mt-1 text-neutral-600">
+                                    Suggested income
+                                    <span
+                                        v-if="
+                                            transaction.classification_confidence !=
+                                            null
+                                        "
+                                    >
+                                        ·
+                                        {{
+                                            Math.round(
+                                                transaction.classification_confidence,
+                                            )
+                                        }}% confidence
+                                    </span>
+                                </p>
+                            </div>
+                            <div class="space-y-2 text-right">
+                                <p class="font-medium">
+                                    {{ formatMoney(transaction.amount) }}
+                                </p>
+                                <div class="flex flex-wrap justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                                        :disabled="incomeActionId !== null"
+                                        @click="confirmIncome(transaction)"
+                                    >
+                                        {{
+                                            incomeActionId ===
+                                            `confirm-${transaction.id}`
+                                                ? 'Confirming…'
+                                                : 'Confirm income'
+                                        }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                                        :disabled="incomeActionId !== null"
+                                        @click="rejectIncome(transaction)"
+                                    >
+                                        {{
+                                            incomeActionId ===
+                                            `reject-${transaction.id}`
+                                                ? 'Dismissing…'
+                                                : 'Dismiss'
+                                        }}
+                                    </button>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
                 <div class="space-y-4">
                     <div>
                         <h2 class="text-base font-semibold">

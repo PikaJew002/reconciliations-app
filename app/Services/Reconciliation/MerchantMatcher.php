@@ -60,7 +60,7 @@ class MerchantMatcher
         BankTransaction::query()
             ->where('user_id', $userId)
             ->whereNull('merchant_id')
-            ->where('status', 'unmatched')
+            ->availableForExpenseMatching()
             ->with('account')
             ->orderBy('id')
             ->each(function (BankTransaction $transaction) use ($userId, &$count): void {

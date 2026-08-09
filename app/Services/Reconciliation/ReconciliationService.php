@@ -127,7 +127,7 @@ class ReconciliationService
         return BankTransaction::query()
             ->where('user_id', $userId)
             ->where('merchant_id', $order->merchant_id)
-            ->where('status', 'unmatched')
+            ->availableForExpenseMatching()
             ->where('amount', '<', 0)
             ->whereNotNull('merchant_id')
             ->orderBy('posted_at')

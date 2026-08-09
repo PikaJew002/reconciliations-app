@@ -3,12 +3,22 @@
 namespace App\Services\Orders;
 
 use App\Models\BankTransaction;
+use App\Models\Merchant;
 use App\Models\Order;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class OrderBrowseService
 {
+    /**
+     * @var list<array{normalized_name: string, name: string}>
+     */
+    public const BROWSABLE_MERCHANTS = [
+        ['normalized_name' => 'walmart', 'name' => 'Walmart'],
+        ['normalized_name' => 'amazon', 'name' => 'Amazon'],
+    ];
+
     public function __construct(
         protected int $importEdgeWindowDays = 3,
         protected int $listLimit = 50,
@@ -16,6 +26,63 @@ class OrderBrowseService
 
     /**
      * @return array{
+     *     retailers: list<array<string, mixed>>,
+     *     bankCoverage: array{min: ?string, max: ?string}|null
+     * }
+     */
+    public function index(int $userId): array
+    {
+        $coverageByMerchant = Order::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('merchant_id')
+            ->selectRaw('merchant_id, MIN(ordered_at) as min_ordered_at, MAX(ordered_at) as max_ordered_at, COUNT(*) as order_count')
+            ->groupBy('merchant_id')
+            ->get()
+            ->keyBy('merchant_id');
+
+        $merchantIds = $coverageByMerchant->keys()->all();
+
+        $merchantsByNormalized = $merchantIds === []
+            ? collect()
+            : Merchant::query()
+                ->whereIn('id', $merchantIds)
+                ->get()
+                ->keyBy('normalized_name');
+
+        $retailers = collect(self::BROWSABLE_MERCHANTS)
+            ->map(function (array $vendor) use ($merchantsByNormalized, $coverageByMerchant): array {
+                $merchant = $merchantsByNormalized->get($vendor['normalized_name']);
+                $coverage = $merchant ? $coverageByMerchant->get($merchant->id) : null;
+
+                $min = $coverage?->min_ordered_at
+                    ? Carbon::parse($coverage->min_ordered_at)->toDateString()
+                    : null;
+                $max = $coverage?->max_ordered_at
+                    ? Carbon::parse($coverage->max_ordered_at)->toDateString()
+                    : null;
+
+                return [
+                    'name' => $vendor['name'],
+                    'normalized_name' => $vendor['normalized_name'],
+                    'type' => Merchant::RETAILER,
+                    'order_count' => (int) ($coverage?->order_count ?? 0),
+                    'min_ordered_at' => $min,
+                    'max_ordered_at' => $max,
+                    'coverage_span_days' => $this->spanDays($min, $max),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'retailers' => $retailers,
+            'bankCoverage' => $this->bankCoverage($userId),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     merchant: array{name: string, normalized_name: string},
      *     orders: list<array<string, mixed>>,
      *     ordersTruncated: bool,
      *     orderCoverage: array{min: ?string, max: ?string}|null,
@@ -24,12 +91,12 @@ class OrderBrowseService
      *     filters: array{q: string, merchant: string}
      * }
      */
-    public function index(int $userId, ?string $query = null, string $merchantNormalized = 'walmart'): array
+    public function show(int $userId, string $merchantNormalized, ?string $query = null): array
     {
+        $vendor = $this->resolveBrowsableMerchant($merchantNormalized);
+
         $query = trim((string) $query);
-        $merchantNormalized = trim($merchantNormalized) !== ''
-            ? trim($merchantNormalized)
-            : 'walmart';
+        $merchantNormalized = $vendor['normalized_name'];
 
         $bankCoverage = $this->bankCoverage($userId);
         $ordersQuery = $this->baseOrdersQuery($userId, $merchantNormalized);
@@ -72,6 +139,7 @@ class OrderBrowseService
             ->all();
 
         return [
+            'merchant' => $vendor,
             'orders' => $orders,
             'ordersTruncated' => $totalMatching > $this->listLimit,
             'orderCoverage' => $orderCoverage,
@@ -82,6 +150,22 @@ class OrderBrowseService
                 'merchant' => $merchantNormalized,
             ],
         ];
+    }
+
+    /**
+     * @return array{normalized_name: string, name: string}
+     */
+    protected function resolveBrowsableMerchant(string $merchantNormalized): array
+    {
+        $merchantNormalized = strtolower(trim($merchantNormalized));
+
+        foreach (self::BROWSABLE_MERCHANTS as $vendor) {
+            if ($vendor['normalized_name'] === $merchantNormalized) {
+                return $vendor;
+            }
+        }
+
+        throw new NotFoundHttpException();
     }
 
     protected function baseOrdersQuery(int $userId, string $merchantNormalized): Builder
@@ -192,5 +276,14 @@ class OrderBrowseService
         $date = $order->ordered_at ?? $order->delivered_at;
 
         return $date ? Carbon::parse($date)->startOfDay() : null;
+    }
+
+    protected function spanDays(?string $min, ?string $max): ?int
+    {
+        if ($min === null || $max === null) {
+            return null;
+        }
+
+        return (int) abs(Carbon::parse($min)->startOfDay()->diffInDays(Carbon::parse($max)->startOfDay(), false));
     }
 }
