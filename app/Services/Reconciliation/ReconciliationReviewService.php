@@ -148,6 +148,7 @@ class ReconciliationReviewService
             ->with([
                 'merchant:id,name,normalized_name',
                 'components' => fn ($query) => $query
+                    ->with(['orderItem:id,quantity,unit_price,extended_price'])
                     ->withCount('allocations')
                     ->orderBy('id'),
             ])
@@ -174,14 +175,23 @@ class ReconciliationReviewService
                     'status' => $order->status,
                     'merchant' => $order->merchant?->name,
                     'components' => $order->components
-                        ->map(fn ($component): array => [
-                            'id' => $component->id,
-                            'type' => $component->type,
-                            'description' => $component->description,
-                            'amount' => (float) $component->amount,
-                            'is_user_modified' => (bool) $component->is_user_modified,
-                            'can_delete' => (int) $component->allocations_count === 0,
-                        ])
+                        ->map(function ($component): array {
+                            $unallocated = (int) $component->allocations_count === 0;
+                            $item = $component->orderItem;
+
+                            return [
+                                'id' => $component->id,
+                                'type' => $component->type,
+                                'description' => $component->description,
+                                'amount' => (float) $component->amount,
+                                'is_user_modified' => (bool) $component->is_user_modified,
+                                'can_delete' => $unallocated,
+                                'order_item_id' => $component->order_item_id,
+                                'quantity' => $item !== null ? (float) $item->quantity : null,
+                                'unit_price' => $item !== null ? (float) $item->unit_price : null,
+                                'can_edit_quantity' => $item !== null && $unallocated,
+                            ];
+                        })
                         ->all(),
                 ];
             })

@@ -7,6 +7,7 @@ use App\Models\BankTransaction;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Models\OrderItem;
 use App\Models\ReconciliationRun;
 use App\Models\TransactionAllocation;
 use App\Models\User;
@@ -60,12 +61,20 @@ class ReconciliationReviewTest extends TestCase
             'status' => 'imported',
         ]);
 
+        $unbalancedItem = OrderItem::factory()->create([
+            'order_id' => $unbalancedOrder->id,
+            'description' => 'Groceries',
+            'quantity' => 2,
+            'unit_price' => 97.16,
+            'extended_price' => 194.33,
+        ]);
+
         OrderComponent::factory()->create([
             'order_id' => $unbalancedOrder->id,
+            'order_item_id' => $unbalancedItem->id,
             'type' => 'product',
             'description' => 'Groceries',
             'amount' => 194.33,
-            'order_item_id' => null,
         ]);
 
         $reconciledOrder = Order::factory()->create([
@@ -139,6 +148,9 @@ class ReconciliationReviewTest extends TestCase
                 ->has('paymentReviewOrders', 0)
                 ->where('unbalancedOrders.0.id', $unbalancedOrder->id)
                 ->where('unbalancedOrders.0.gap', 5)
+                ->where('unbalancedOrders.0.components.0.order_item_id', $unbalancedItem->id)
+                ->where('unbalancedOrders.0.components.0.quantity', 2)
+                ->where('unbalancedOrders.0.components.0.can_edit_quantity', true)
                 ->has('unmatchedTransactions', 1)
                 ->where('unmatchedTransactions.0.id', $unmatchedTransaction->id)
                 ->where('unmatchedTransactions.0.description', 'Unmatched purchase')

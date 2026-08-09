@@ -64,8 +64,10 @@
     let unmatchedTransactionFilter = ref('all');
     let pollId = null;
     let componentForms = reactive({});
+    let quantityForms = reactive({});
     let paymentForms = reactive({});
     let savingOrderId = ref(null);
+    let savingQuantityKey = ref(null);
     let resolvingOrderId = ref(null);
     let transferActionId = ref(null);
     let incomeActionId = ref(null);
@@ -211,15 +213,28 @@
 
     function syncComponentForms(orders) {
         for (let order of orders) {
-            if (componentForms[order.id]) {
-                continue;
+            if (!componentForms[order.id]) {
+                componentForms[order.id] = {
+                    type: order.gap > 0 ? 'delivery' : 'other',
+                    description:
+                        order.gap > 0 ? 'Fast delivery fee' : 'Adjustment',
+                    amount: Number(order.gap.toFixed(2)),
+                };
             }
 
-            componentForms[order.id] = {
-                type: order.gap > 0 ? 'delivery' : 'other',
-                description: order.gap > 0 ? 'Fast delivery fee' : 'Adjustment',
-                amount: Number(order.gap.toFixed(2)),
-            };
+            for (let component of order.components) {
+                if (
+                    !component.can_edit_quantity ||
+                    component.order_item_id == null ||
+                    quantityForms[component.order_item_id] !== undefined
+                ) {
+                    continue;
+                }
+
+                quantityForms[component.order_item_id] = Number(
+                    component.quantity,
+                );
+            }
         }
     }
 
@@ -242,6 +257,31 @@
                 savingOrderId.value = null;
             },
         });
+    }
+
+    function updateItemQuantity(order, component) {
+        if (!component.can_edit_quantity || component.order_item_id == null) {
+            return;
+        }
+
+        let quantity = quantityForms[component.order_item_id];
+        let key = `${order.id}-${component.order_item_id}`;
+
+        savingQuantityKey.value = key;
+
+        router.patch(
+            `/reconciliation/orders/${order.id}/items/${component.order_item_id}`,
+            { quantity },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    activeTab.value = 'needs-review';
+                },
+                onFinish: () => {
+                    savingQuantityKey.value = null;
+                },
+            },
+        );
     }
 
     function deleteComponent(order, component) {
@@ -1133,9 +1173,9 @@
                         </h2>
                         <p class="text-sm text-neutral-600">
                             Orders whose components do not add up to the order
-                            total. Add the missing fee (for example Fast
-                            delivery) or remove a bad component, then re-run
-                            reconciliation.
+                            total. Fix an item quantity, add a missing fee (for
+                            example Fast delivery), or remove a bad component,
+                            then re-run reconciliation.
                         </p>
                     </div>
 
@@ -1189,7 +1229,7 @@
                                 <li
                                     v-for="component in order.components"
                                     :key="component.id"
-                                    class="flex items-center justify-between gap-3 px-3 py-2"
+                                    class="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
                                 >
                                     <div>
                                         <p class="font-medium">
@@ -1199,6 +1239,18 @@
                                             {{ component.type }}
                                             <span
                                                 v-if="
+                                                    component.unit_price != null
+                                                "
+                                            >
+                                                ·
+                                                {{
+                                                    formatMoney(
+                                                        component.unit_price,
+                                                    )
+                                                }}/ea</span
+                                            >
+                                            <span
+                                                v-if="
                                                     component.is_user_modified
                                                 "
                                             >
@@ -1206,7 +1258,48 @@
                                             >
                                         </p>
                                     </div>
-                                    <div class="flex items-center gap-3">
+                                    <div
+                                        class="flex flex-wrap items-center gap-3"
+                                    >
+                                        <form
+                                            v-if="component.can_edit_quantity"
+                                            class="flex items-center gap-2"
+                                            @submit.prevent="
+                                                updateItemQuantity(
+                                                    order,
+                                                    component,
+                                                )
+                                            "
+                                        >
+                                            <label
+                                                class="flex items-center gap-1.5 text-neutral-600"
+                                            >
+                                                <span>Qty</span>
+                                                <input
+                                                    v-model.number="
+                                                        quantityForms[
+                                                            component
+                                                                .order_item_id
+                                                        ]
+                                                    "
+                                                    type="number"
+                                                    min="0.001"
+                                                    step="any"
+                                                    class="w-20 rounded border px-2 py-1"
+                                                    required
+                                                />
+                                            </label>
+                                            <button
+                                                type="submit"
+                                                class="text-xs text-neutral-800 underline disabled:opacity-50"
+                                                :disabled="
+                                                    savingQuantityKey ===
+                                                    `${order.id}-${component.order_item_id}`
+                                                "
+                                            >
+                                                Update
+                                            </button>
+                                        </form>
                                         <p class="font-medium">
                                             {{ formatMoney(component.amount) }}
                                         </p>

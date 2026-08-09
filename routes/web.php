@@ -10,6 +10,7 @@ use App\Http\Controllers\Imports\WalmartOrderImportController;
 use App\Http\Controllers\Merchants\MerchantController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
+use App\Http\Controllers\Reconciliation\OrderItemController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\TransactionClassificationController;
@@ -49,6 +50,8 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.orders.components.store');
     Route::delete('/reconciliation/orders/{order}/components/{component}', [OrderComponentController::class, 'destroy'])
         ->name('reconciliation.orders.components.destroy');
+    Route::patch('/reconciliation/orders/{order}/items/{item}', [OrderItemController::class, 'update'])
+        ->name('reconciliation.orders.items.update');
     Route::post('/reconciliation/orders/{order}/resolve-payments', [OrderPaymentResolutionController::class, 'store'])
         ->name('reconciliation.orders.resolve-payments');
     Route::post('/reconciliation/transfers/{transferLink}/confirm', [TransferLinkController::class, 'confirm'])
