@@ -271,7 +271,7 @@
         categorizeForms[transaction.id] = {
             classification: 'expense',
             category_id: '',
-            match_mode: 'merchant',
+            match_mode: 'once',
         };
 
         return categorizeForms[transaction.id];
@@ -280,10 +280,7 @@
     function onCategorizeClassificationChange(transaction) {
         let form = ensureCategorizeForm(transaction);
         form.category_id = '';
-        form.match_mode =
-            form.classification === 'bill'
-                ? 'exact_description_and_amount'
-                : 'merchant';
+        form.match_mode = 'once';
     }
 
     function categoriesForClassification(classification) {
