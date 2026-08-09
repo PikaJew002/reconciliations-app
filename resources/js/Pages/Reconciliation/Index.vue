@@ -633,8 +633,12 @@
             class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
         >
             Reconciliation finished. Confirmed
+            {{ activeRun.metadata?.credit_card_payments_confirmed ?? 0 }} card
+            payments and
             {{ activeRun.metadata?.transfers_confirmed ?? 0 }} transfers,
             suggested
+            {{ activeRun.metadata?.credit_card_payments_suggested ?? 0 }} card
+            payments,
             {{ activeRun.metadata?.transfers_suggested ?? 0 }} transfers and
             {{ activeRun.metadata?.income_suggested ?? 0 }} income, matched
             {{ activeRun.metadata?.merchants_matched ?? 0 }} merchants,

@@ -6,9 +6,16 @@ use App\Jobs\RunUserReconciliationPipeline;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\ImportBatch;
-use App\Models\Merchant;
 use App\Models\ReconciliationRun;
 use App\Models\User;
+use App\Services\Reconciliation\CreditCardPaymentPairingService;
+use App\Services\Reconciliation\IncomeClassificationService;
+use App\Services\Reconciliation\MerchantMatcher;
+use App\Services\Reconciliation\OrderComponentGenerator;
+use App\Services\Reconciliation\OrderPaymentResolutionService;
+use App\Services\Reconciliation\ReconciliationService;
+use App\Services\Reconciliation\SyntheticBankSpendReconciler;
+use App\Services\Reconciliation\TransferPairingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -41,13 +48,14 @@ class RunUserReconciliationPipelineTest extends TestCase
         ]);
 
         (new RunUserReconciliationPipeline($run->id))->handle(
-            app(\App\Services\Reconciliation\TransferPairingService::class),
-            app(\App\Services\Reconciliation\IncomeClassificationService::class),
-            app(\App\Services\Reconciliation\OrderComponentGenerator::class),
-            app(\App\Services\Reconciliation\MerchantMatcher::class),
-            app(\App\Services\Reconciliation\OrderPaymentResolutionService::class),
-            app(\App\Services\Reconciliation\ReconciliationService::class),
-            app(\App\Services\Reconciliation\SyntheticBankSpendReconciler::class),
+            app(CreditCardPaymentPairingService::class),
+            app(TransferPairingService::class),
+            app(IncomeClassificationService::class),
+            app(OrderComponentGenerator::class),
+            app(MerchantMatcher::class),
+            app(OrderPaymentResolutionService::class),
+            app(ReconciliationService::class),
+            app(SyntheticBankSpendReconciler::class),
         );
 
         $run->refresh();

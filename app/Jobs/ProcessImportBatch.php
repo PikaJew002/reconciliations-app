@@ -40,6 +40,7 @@ class ProcessImportBatch implements ShouldQueue
         $jobs = [];
 
         if ($batch->source === 'bank' && $batch->type === 'transactions') {
+            $jobs[] = new PairCreditCardPayments($batch->user_id);
             $jobs[] = new PairTransfers($batch->user_id);
             $jobs[] = new ClassifyIncome($batch->user_id);
         }

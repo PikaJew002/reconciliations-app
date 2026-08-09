@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ReconciliationRun;
+use App\Services\Reconciliation\CreditCardPaymentPairingService;
 use App\Services\Reconciliation\IncomeClassificationService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
@@ -21,6 +22,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
     public function __construct(public int $reconciliationRunId) {}
 
     public function handle(
+        CreditCardPaymentPairingService $creditCardPaymentPairing,
         TransferPairingService $transferPairing,
         IncomeClassificationService $incomeClassification,
         OrderComponentGenerator $components,
@@ -38,6 +40,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
         $run->markProcessing();
 
         try {
+            $creditCardPayments = $creditCardPaymentPairing->pairForUser($run->user_id);
             $transfers = $transferPairing->pairForUser($run->user_id);
             $income = $incomeClassification->classifyForUser($run->user_id);
             $ordersWithComponents = $components->generateForUser($run->user_id);
@@ -47,6 +50,8 @@ class RunUserReconciliationPipeline implements ShouldQueue
             $syntheticMatched = $synthetic->reconcileForUser($run->user_id);
 
             $run->markCompleted([
+                'credit_card_payments_confirmed' => $creditCardPayments['confirmed'],
+                'credit_card_payments_suggested' => $creditCardPayments['suggested'],
                 'transfers_confirmed' => $transfers['confirmed'],
                 'transfers_suggested' => $transfers['suggested'],
                 'income_learned' => $income['learned'],

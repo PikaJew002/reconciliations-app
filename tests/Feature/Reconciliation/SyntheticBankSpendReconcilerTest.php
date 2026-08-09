@@ -5,6 +5,7 @@ namespace Tests\Feature\Reconciliation;
 use App\Jobs\ClassifyIncome;
 use App\Jobs\GenerateOrderComponents;
 use App\Jobs\MatchMerchants;
+use App\Jobs\PairCreditCardPayments;
 use App\Jobs\PairTransfers;
 use App\Jobs\ProcessImportBatch;
 use App\Jobs\ReconcileSyntheticBankSpend;
@@ -201,6 +202,7 @@ CSV);
         (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
 
         Bus::assertChained([
+            PairCreditCardPayments::class,
             PairTransfers::class,
             ClassifyIncome::class,
             GenerateOrderComponents::class,
