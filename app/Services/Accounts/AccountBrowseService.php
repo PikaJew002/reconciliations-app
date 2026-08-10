@@ -4,6 +4,7 @@ namespace App\Services\Accounts;
 
 use App\Models\Account;
 use App\Models\BankTransaction;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -98,7 +99,7 @@ class AccountBrowseService
      *     filters: array{q: string}
      * }|null
      */
-    public function show(int $userId, Account $account, ?string $query = null): ?array
+    public function show(int $userId, Account $account, ?string $q = null): ?array
     {
         $hasActivity = BankTransaction::query()
             ->where('user_id', $userId)
@@ -109,7 +110,7 @@ class AccountBrowseService
             return null;
         }
 
-        $query = trim((string) $query);
+        $q = trim((string) $q);
 
         $coverage = BankTransaction::query()
             ->where('user_id', $userId)
@@ -125,20 +126,18 @@ class AccountBrowseService
             ? Carbon::parse($coverage->max_posted_at)->toDateString()
             : null;
 
-        $transactionsQuery = BankTransaction::query()
+        $transactionsQuery = BankTransaction::with('merchant:id,name,normalized_name')
             ->where('user_id', $userId)
             ->where('account_id', $account->id)
-            ->with('merchant:id,name,normalized_name')
+            ->when($q !== '', function (Builder $query) use ($q): void {
+                $query->where(function (Builder $builder) use ($q): void {
+                    $builder
+                        ->where('description', 'like', "%{$q}%")
+                        ->orWhere('amount', 'like', "%{$q}%");
+                });
+            })
             ->orderByDesc('posted_at')
             ->orderByDesc('id');
-
-        if ($query !== '') {
-            $transactionsQuery->where(function ($builder) use ($query): void {
-                $builder
-                    ->where('description', 'like', "%{$query}%")
-                    ->orWhere('amount', 'like', "%{$query}%");
-            });
-        }
 
         $totalMatching = (clone $transactionsQuery)->count();
 
@@ -170,7 +169,7 @@ class AccountBrowseService
             ])->values()->all(),
             'transactionsTruncated' => $totalMatching > $this->listLimit,
             'filters' => [
-                'q' => $query,
+                'q' => $q,
             ],
         ];
     }
