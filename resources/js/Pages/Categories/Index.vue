@@ -63,6 +63,12 @@
             </div>
             <div class="flex flex-wrap gap-2">
                 <Link
+                    href="/products"
+                    class="rounded border px-4 py-2 text-sm"
+                >
+                    Uncategorized products
+                </Link>
+                <Link
                     href="/categorization-rules"
                     class="rounded border px-4 py-2 text-sm"
                 >

@@ -8,6 +8,10 @@ use App\Models\BankTransaction;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
+use App\Models\Order;
+use App\Models\OrderComponent;
+use App\Models\OrderItem;
+use App\Models\Product;
 use App\Models\ReconciliationRun;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
@@ -16,6 +20,7 @@ use App\Services\Reconciliation\IncomeClassificationService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
+use App\Services\Reconciliation\ProductMatchingService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Services\Reconciliation\TransferPairingService;
@@ -73,6 +78,7 @@ class RunUserReconciliationPipelineTest extends TestCase
             app(TransferPairingService::class),
             app(IncomeClassificationService::class),
             app(TransactionCategorizationService::class),
+            app(ProductMatchingService::class),
             app(OrderComponentGenerator::class),
             app(MerchantMatcher::class),
             app(OrderPaymentResolutionService::class),
@@ -88,5 +94,81 @@ class RunUserReconciliationPipelineTest extends TestCase
         $this->assertSame('ignored', $transaction->status);
         $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $transaction->classification);
         $this->assertSame($category->id, $transaction->category_id);
+    }
+
+    public function test_pipeline_matches_products_before_generating_components(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+            'supports_order_import' => true,
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'category_id' => $category->id,
+            'name' => 'Milk',
+            'normalized_name' => 'milk',
+            'sku' => '777',
+        ]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'subtotal' => 5.00,
+            'tax' => 0,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'discount' => 0,
+            'total' => 5.00,
+            'status' => 'imported',
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => null,
+            'line_number' => 1,
+            'sku' => '777',
+            'description' => 'Milk',
+            'normalized_description' => 'milk',
+            'extended_price' => 5.00,
+        ]);
+
+        $run = ReconciliationRun::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'pending',
+        ]);
+
+        (new RunUserReconciliationPipeline($run->id))->handle(
+            app(CreditCardPaymentPairingService::class),
+            app(TransferPairingService::class),
+            app(IncomeClassificationService::class),
+            app(TransactionCategorizationService::class),
+            app(ProductMatchingService::class),
+            app(OrderComponentGenerator::class),
+            app(MerchantMatcher::class),
+            app(OrderPaymentResolutionService::class),
+            app(ReconciliationService::class),
+        );
+
+        $run->refresh();
+        $item->refresh();
+
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(0, $run->metadata['products_created']);
+        $this->assertSame(1, $run->metadata['products_linked']);
+        $this->assertSame($product->id, $item->product_id);
+
+        $component = OrderComponent::query()
+            ->where('order_id', $order->id)
+            ->where('type', 'product')
+            ->first();
+
+        $this->assertNotNull($component);
+        $this->assertSame($category->id, $component->category_id);
     }
 }

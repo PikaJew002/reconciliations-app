@@ -8,6 +8,7 @@ use App\Services\Reconciliation\IncomeClassificationService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
+use App\Services\Reconciliation\ProductMatchingService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Services\Reconciliation\TransferPairingService;
@@ -26,6 +27,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
         TransferPairingService $transferPairing,
         IncomeClassificationService $incomeClassification,
         TransactionCategorizationService $transactionCategorization,
+        ProductMatchingService $productMatching,
         OrderComponentGenerator $components,
         MerchantMatcher $matcher,
         OrderPaymentResolutionService $paymentResolution,
@@ -44,6 +46,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
             $transfers = $transferPairing->pairForUser($run->user_id);
             $income = $incomeClassification->classifyForUser($run->user_id);
             $categorized = $transactionCategorization->categorizeForUser($run->user_id);
+            $productsMatched = $productMatching->matchForUser($run->user_id);
             $ordersWithComponents = $components->generateForUser($run->user_id);
             $merchantsMatched = $matcher->matchForUser($run->user_id);
             $nonBankResolved = $paymentResolution->autoResolveNonBankOnlyOrders($run->user_id);
@@ -58,6 +61,8 @@ class RunUserReconciliationPipeline implements ShouldQueue
                 'income_suggested' => $income['suggested'],
                 'transactions_categorized' => $categorized['applied'],
                 'transactions_categorization_ambiguous' => $categorized['ambiguous'],
+                'products_created' => $productsMatched['created'],
+                'products_linked' => $productsMatched['linked'],
                 'orders_with_components' => $ordersWithComponents,
                 'merchants_matched' => $merchantsMatched,
                 'non_bank_resolved' => $nonBankResolved,

@@ -146,8 +146,18 @@ class TransactionCategorizationTest extends TestCase
     {
         $user = User::factory()->create();
         $category = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
-        $product = Product::factory()->for($user)->create(['category_id' => null]);
-        $order = Order::factory()->for($user)->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'category_id' => null,
+        ]);
+        $order = Order::factory()->for($user)->create([
+            'merchant_id' => $merchant->id,
+        ]);
         $item = OrderItem::factory()->create([
             'order_id' => $order->id,
             'product_id' => $product->id,

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Category;
+use App\Models\Merchant;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -18,17 +19,13 @@ class ProductFactory extends Factory
 
         return [
             'user_id' => User::factory(),
-
+            'merchant_id' => Merchant::factory(),
             'category_id' => Category::factory()->expense(),
-
             'name' => ucwords($name),
-
             'normalized_name' => Str::lower($name),
-
+            'sku' => null,
             'brand' => fake()->optional()->company(),
-
             'upc' => fake()->optional()->ean13(),
-
             'size' => fake()->optional()->randomElement([
                 '8 oz',
                 '16 oz',
@@ -36,7 +33,6 @@ class ProductFactory extends Factory
                 '1 lb',
                 '1 gal',
             ]),
-
             'unit' => fake()->optional()->randomElement([
                 'each',
                 'pack',
@@ -44,13 +40,9 @@ class ProductFactory extends Factory
                 'bottle',
                 'bag',
             ]),
-
             'is_taxable' => fake()->boolean(70),
-
             'category_confidence' => 100,
-
             'is_user_modified' => false,
-
             'metadata' => [],
         ];
     }

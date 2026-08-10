@@ -11,6 +11,7 @@ use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
 use App\Http\Controllers\Merchants\MerchantController;
 use App\Http\Controllers\Orders\OrderController;
+use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
 use App\Http\Controllers\Reconciliation\OrderItemController;
@@ -54,6 +55,11 @@ Route::middleware('auth')->group(function () {
         ->name('categorization-rules.update');
     Route::delete('/categorization-rules/{rule}', [CategorizationRuleController::class, 'destroy'])
         ->name('categorization-rules.destroy');
+
+    Route::get('/products', [ProductController::class, 'index'])->name('products.index');
+    Route::post('/products/reconcile', [ProductController::class, 'reconcile'])->name('products.reconcile');
+    Route::patch('/products/{product}/category', [ProductController::class, 'updateCategory'])
+        ->name('products.category.update');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/{merchant}', [OrderController::class, 'show'])

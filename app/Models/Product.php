@@ -11,9 +11,11 @@ class Product extends Model
 
     protected $fillable = [
         'user_id',
+        'merchant_id',
         'category_id',
         'name',
         'normalized_name',
+        'sku',
         'brand',
         'upc',
         'size',
@@ -36,6 +38,11 @@ class Product extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function merchant()
+    {
+        return $this->belongsTo(Merchant::class);
+    }
+
     public function category()
     {
         return $this->belongsTo(Category::class);
@@ -44,11 +51,6 @@ class Product extends Model
     public function orderItems()
     {
         return $this->hasMany(OrderItem::class);
-    }
-
-    public function aliases()
-    {
-        return $this->hasMany(ProductAlias::class);
     }
 
     public function isCategorized(): bool
@@ -66,7 +68,9 @@ class Product extends Model
         return [
             'name' => ['required', 'string'],
             'normalized_name' => ['required', 'string'],
+            'merchant_id' => ['required', 'exists:merchants,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
+            'sku' => ['nullable', 'string'],
             'brand' => ['nullable', 'string'],
             'upc' => ['nullable', 'string'],
         ];
