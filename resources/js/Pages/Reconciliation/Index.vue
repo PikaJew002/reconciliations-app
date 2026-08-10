@@ -1,4 +1,5 @@
 <script setup>
+    import StickyToasts from '../../Components/StickyToasts.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { router, useForm, usePage } from '@inertiajs/vue3';
     import {
@@ -78,12 +79,6 @@
     let hasCategorizeRunsInProgress = computed(
         () => categorizeRunsInProgress.value.length > 0,
     );
-    let latestCompletedCategorizeRun = computed(() =>
-        props.activeCategorizeRuns.find((run) => run.status === 'completed'),
-    );
-    let latestFailedCategorizeRun = computed(() =>
-        props.activeCategorizeRuns.find((run) => run.status === 'failed'),
-    );
     let activeTab = ref(
         (props.summary.needs_review ?? 0) > 0 ? 'needs-review' : 'matched',
     );
@@ -103,6 +98,11 @@
     let categorizingTransactionId = ref(null);
     let componentCategoryForms = reactive({});
     let savingComponentCategoryKey = ref(null);
+    let toasts = ref([]);
+    let nextToastId = 0;
+    let toastTimers = new Map();
+    let announcedCategorizeRunIds = new Set();
+    let categorizeProgressToastId = null;
 
     let billCategories = computed(() =>
         props.categories.filter((category) => category.kind === 'bill'),
@@ -795,7 +795,119 @@
         }
     }
 
+    function dismissToast(id) {
+        toasts.value = toasts.value.filter((toast) => toast.id !== id);
+
+        let timer = toastTimers.get(id);
+        if (timer) {
+            window.clearTimeout(timer);
+            toastTimers.delete(id);
+        }
+
+        if (categorizeProgressToastId === id) {
+            categorizeProgressToastId = null;
+        }
+    }
+
+    function pushToast({ type, message, persistent = false, duration = 6000 }) {
+        let id = ++nextToastId;
+        toasts.value = [...toasts.value, { id, type, message, persistent }];
+
+        if (!persistent) {
+            let timer = window.setTimeout(() => dismissToast(id), duration);
+            toastTimers.set(id, timer);
+        }
+
+        return id;
+    }
+
+    function categorizeProgressMessage() {
+        let count = categorizeRunsInProgress.value.length;
+
+        return `Applying categorization ${
+            count === 1 ? 'rule' : 'rules'
+        } in the background (${count} active)… unmatched transactions will update automatically. You can keep categorizing.`;
+    }
+
+    function syncCategorizeProgressToast() {
+        if (!hasCategorizeRunsInProgress.value) {
+            if (categorizeProgressToastId !== null) {
+                dismissToast(categorizeProgressToastId);
+            }
+
+            return;
+        }
+
+        let message = categorizeProgressMessage();
+
+        if (categorizeProgressToastId === null) {
+            categorizeProgressToastId = pushToast({
+                type: 'warning',
+                message,
+                persistent: true,
+            });
+            return;
+        }
+
+        toasts.value = toasts.value.map((item) =>
+            item.id === categorizeProgressToastId
+                ? { ...item, message }
+                : item,
+        );
+    }
+
+    function completedCategorizeMessage(run) {
+        let applied = run.metadata?.applied ?? 0;
+        let ambiguous = run.metadata?.ambiguous ?? 0;
+        let message = `Rule apply finished. Auto-categorized ${applied} transaction${
+            applied === 1 ? '' : 's'
+        }`;
+
+        if (ambiguous > 0) {
+            message += `; ${ambiguous} ambiguous`;
+        }
+
+        return `${message}.`;
+    }
+
+    function announceFinishedCategorizeRuns() {
+        for (let run of props.activeCategorizeRuns) {
+            if (announcedCategorizeRunIds.has(run.id)) {
+                continue;
+            }
+
+            if (run.status === 'completed') {
+                announcedCategorizeRunIds.add(run.id);
+                pushToast({
+                    type: 'success',
+                    message: completedCategorizeMessage(run),
+                    duration: 8000,
+                });
+                continue;
+            }
+
+            if (run.status === 'failed') {
+                announcedCategorizeRunIds.add(run.id);
+                pushToast({
+                    type: 'error',
+                    message: `Categorization rule apply failed${
+                        run.error_message ? `: ${run.error_message}` : '.'
+                    }`,
+                    duration: 8000,
+                });
+            }
+        }
+    }
+
     onMounted(() => {
+        for (let run of props.activeCategorizeRuns) {
+            if (run.status === 'completed' || run.status === 'failed') {
+                announcedCategorizeRunIds.add(run.id);
+            }
+        }
+
+        syncCategorizeProgressToast();
+
         if (isRunInProgress.value) {
             startPolling();
         }
@@ -804,6 +916,26 @@
             startCategorizePolling();
         }
     });
+
+    watch(
+        flashSuccess,
+        (message, previous) => {
+            if (message && message !== previous) {
+                pushToast({ type: 'success', message });
+            }
+        },
+        { immediate: true },
+    );
+
+    watch(
+        flashError,
+        (message, previous) => {
+            if (message && message !== previous) {
+                pushToast({ type: 'error', message });
+            }
+        },
+        { immediate: true },
+    );
 
     watch(isRunInProgress, (inProgress) => {
         if (inProgress) {
@@ -815,6 +947,8 @@
     });
 
     watch(hasCategorizeRunsInProgress, (inProgress) => {
+        syncCategorizeProgressToast();
+
         if (inProgress) {
             startCategorizePolling();
             return;
@@ -823,14 +957,30 @@
         stopCategorizePolling();
     });
 
+    watch(
+        () => props.activeCategorizeRuns,
+        () => {
+            syncCategorizeProgressToast();
+            announceFinishedCategorizeRuns();
+        },
+        { deep: true },
+    );
+
     onUnmounted(() => {
         stopPolling();
         stopCategorizePolling();
+
+        for (let timer of toastTimers.values()) {
+            window.clearTimeout(timer);
+        }
+        toastTimers.clear();
     });
 </script>
 
 <template>
     <div class="space-y-8">
+        <StickyToasts :toasts="toasts" @dismiss="dismissToast" />
+
         <div class="flex items-center justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-semibold">Reconciliation</h1>
@@ -852,20 +1002,6 @@
                 }}
             </button>
         </div>
-
-        <p
-            v-if="flashSuccess"
-            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
-        >
-            {{ flashSuccess }}
-        </p>
-
-        <p
-            v-if="flashError"
-            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-        >
-            {{ flashError }}
-        </p>
 
         <p
             v-if="isRunInProgress"
@@ -902,51 +1038,6 @@
             Reconciliation failed{{
                 activeRun.error_message ? `: ${activeRun.error_message}` : '.'
             }}
-        </p>
-
-        <p
-            v-if="hasCategorizeRunsInProgress"
-            class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-        >
-            Applying categorization
-            {{
-                categorizeRunsInProgress.length === 1
-                    ? 'rule'
-                    : 'rules'
-            }}
-            in the background ({{ categorizeRunsInProgress.length }} active)…
-            unmatched transactions will update automatically. You can keep
-            categorizing.
-        </p>
-
-        <p
-            v-else-if="latestFailedCategorizeRun"
-            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-        >
-            Categorization rule apply failed{{
-                latestFailedCategorizeRun.error_message
-                    ? `: ${latestFailedCategorizeRun.error_message}`
-                    : '.'
-            }}
-        </p>
-
-        <p
-            v-else-if="latestCompletedCategorizeRun"
-            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
-        >
-            Rule apply finished. Auto-categorized
-            {{ latestCompletedCategorizeRun.metadata?.applied ?? 0 }}
-            transaction{{
-                (latestCompletedCategorizeRun.metadata?.applied ?? 0) === 1
-                    ? ''
-                    : 's'
-            }}<template
-                v-if="(latestCompletedCategorizeRun.metadata?.ambiguous ?? 0) > 0"
-            >
-                ;
-                {{ latestCompletedCategorizeRun.metadata.ambiguous }}
-                ambiguous</template
-            >.
         </p>
 
         <p class="text-sm text-neutral-600">
