@@ -8,6 +8,7 @@ use App\Models\TransactionClassificationRule;
 use App\Models\TransactionTransferLink;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 class IncomeClassificationService
 {
@@ -42,8 +43,8 @@ class IncomeClassificationService
             return ['learned' => 0, 'suggested' => 0];
         }
 
-        $confirmedPatterns = $this->activePatterns($userId, TransactionClassificationRule::ORIGIN_USER_CONFIRMED);
-        $rejectedPatterns = $this->activePatterns($userId, TransactionClassificationRule::ORIGIN_USER_REJECTED);
+        $confirmedRules = $this->activeConfirmedRules($userId);
+        $rejectedPatterns = $this->activeRejectedPatterns($userId);
 
         foreach ($transactions as $transaction) {
             $normalized = $this->normalizedDescription($transaction);
@@ -52,7 +53,7 @@ class IncomeClassificationService
                 continue;
             }
 
-            if (isset($confirmedPatterns[$normalized])) {
+            if ($this->matchesConfirmedRule($transaction, $normalized, $confirmedRules)) {
                 $this->applyLearnedIncome($transaction);
                 $learned++;
 
@@ -71,10 +72,16 @@ class IncomeClassificationService
         ];
     }
 
-    public function confirmIncome(BankTransaction $transaction): void
-    {
+    public function confirmIncome(
+        BankTransaction $transaction,
+        string $matchMode = TransactionClassificationRule::MATCH_DESCRIPTION,
+    ): void {
         if ((float) $transaction->amount <= 0) {
-            throw new \InvalidArgumentException('Only credits can be classified as income.');
+            throw new InvalidArgumentException('Only credits can be classified as income.');
+        }
+
+        if (! in_array($matchMode, TransactionClassificationRule::allMatchModes(), true)) {
+            throw new InvalidArgumentException('Invalid match mode.');
         }
 
         $normalized = $this->normalizedDescription($transaction);
@@ -86,20 +93,28 @@ class IncomeClassificationService
             'status' => 'ignored',
         ]);
 
-        if ($normalized !== '') {
-            $this->upsertRule(
-                $transaction->user_id,
-                $normalized,
-                TransactionClassificationRule::ORIGIN_USER_CONFIRMED,
-            );
-
-            TransactionClassificationRule::query()
-                ->where('user_id', $transaction->user_id)
-                ->where('normalized_pattern', $normalized)
-                ->where('classification', TransactionClassificationRule::CLASSIFICATION_INCOME)
-                ->where('origin', TransactionClassificationRule::ORIGIN_USER_REJECTED)
-                ->update(['is_active' => false]);
+        if ($matchMode === TransactionClassificationRule::MATCH_ONCE || $normalized === '') {
+            return;
         }
+
+        $amount = $matchMode === TransactionClassificationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT
+            ? abs((float) $transaction->amount)
+            : null;
+
+        $this->upsertRule(
+            $transaction->user_id,
+            $normalized,
+            TransactionClassificationRule::ORIGIN_USER_CONFIRMED,
+            $matchMode,
+            $amount,
+        );
+
+        TransactionClassificationRule::query()
+            ->where('user_id', $transaction->user_id)
+            ->where('normalized_pattern', $normalized)
+            ->where('classification', TransactionClassificationRule::CLASSIFICATION_INCOME)
+            ->where('origin', TransactionClassificationRule::ORIGIN_USER_REJECTED)
+            ->update(['is_active' => false]);
     }
 
     public function rejectIncome(BankTransaction $transaction): void
@@ -118,6 +133,8 @@ class IncomeClassificationService
                 $transaction->user_id,
                 $normalized,
                 TransactionClassificationRule::ORIGIN_USER_REJECTED,
+                TransactionClassificationRule::MATCH_DESCRIPTION,
+                null,
             );
 
             TransactionClassificationRule::query()
@@ -188,28 +205,73 @@ class IncomeClassificationService
     }
 
     /**
-     * @return array<string, true>
+     * @return Collection<int, TransactionClassificationRule>
      */
-    protected function activePatterns(int $userId, string $origin): array
+    protected function activeConfirmedRules(int $userId): Collection
     {
         return TransactionClassificationRule::query()
             ->where('user_id', $userId)
             ->where('classification', TransactionClassificationRule::CLASSIFICATION_INCOME)
-            ->where('origin', $origin)
+            ->where('origin', TransactionClassificationRule::ORIGIN_USER_CONFIRMED)
+            ->where('is_active', true)
+            ->whereIn('match_mode', TransactionClassificationRule::persistableMatchModes())
+            ->get();
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    protected function activeRejectedPatterns(int $userId): array
+    {
+        return TransactionClassificationRule::query()
+            ->where('user_id', $userId)
+            ->where('classification', TransactionClassificationRule::CLASSIFICATION_INCOME)
+            ->where('origin', TransactionClassificationRule::ORIGIN_USER_REJECTED)
             ->where('is_active', true)
             ->pluck('normalized_pattern')
             ->mapWithKeys(fn (string $pattern): array => [$pattern => true])
             ->all();
     }
 
-    protected function upsertRule(int $userId, string $normalizedPattern, string $origin): void
-    {
+    /**
+     * @param  Collection<int, TransactionClassificationRule>  $rules
+     */
+    protected function matchesConfirmedRule(
+        BankTransaction $transaction,
+        string $normalized,
+        Collection $rules,
+    ): bool {
+        $amount = abs((float) $transaction->amount);
+
+        return $rules->contains(function (TransactionClassificationRule $rule) use ($normalized, $amount): bool {
+            if ($rule->normalized_pattern !== $normalized) {
+                return false;
+            }
+
+            return match ($rule->match_mode) {
+                TransactionClassificationRule::MATCH_DESCRIPTION => true,
+                TransactionClassificationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT => $rule->amount !== null
+                    && abs((float) $rule->amount - $amount) < 0.005,
+                default => false,
+            };
+        });
+    }
+
+    protected function upsertRule(
+        int $userId,
+        string $normalizedPattern,
+        string $origin,
+        string $matchMode,
+        ?float $amount,
+    ): void {
         TransactionClassificationRule::query()->updateOrCreate(
             [
                 'user_id' => $userId,
                 'normalized_pattern' => $normalizedPattern,
                 'classification' => TransactionClassificationRule::CLASSIFICATION_INCOME,
                 'origin' => $origin,
+                'match_mode' => $matchMode,
+                'amount' => $amount,
             ],
             [
                 'direction' => TransactionClassificationRule::DIRECTION_CREDIT,

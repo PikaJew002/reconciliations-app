@@ -427,6 +427,9 @@ class ReconciliationReviewService
                 && $transaction->status === 'unmatched'
                 && $transaction->classification === null
                 && ! (bool) ($transaction->merchant?->supports_order_import),
+            'can_mark_income' => (float) $transaction->amount > 0
+                && $transaction->status === 'unmatched'
+                && $transaction->classification === null,
         ];
 
         if ($includeAccount) {

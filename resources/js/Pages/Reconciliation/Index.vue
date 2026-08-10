@@ -66,6 +66,14 @@
             type: Array,
             default: () => [],
         },
+        incomeMatchModes: {
+            type: Array,
+            default: () => [
+                'exact_description_and_amount',
+                'description',
+                'once',
+            ],
+        },
         activeRun: {
             type: Object,
             default: null,
@@ -107,6 +115,7 @@
     let transferActionId = ref(null);
     let incomeActionId = ref(null);
     let categorizeForms = reactive({});
+    let incomeForms = reactive({});
     let categorizingTransactionId = ref(null);
     let componentCategoryForms = reactive({});
     let savingComponentCategoryKey = ref(null);
@@ -311,6 +320,18 @@
         };
 
         return categorizeForms[transaction.id];
+    }
+
+    function ensureIncomeForm(transaction) {
+        if (incomeForms[transaction.id]) {
+            return incomeForms[transaction.id];
+        }
+
+        incomeForms[transaction.id] = {
+            match_mode: 'exact_description_and_amount',
+        };
+
+        return incomeForms[transaction.id];
     }
 
     function onCategorizeClassificationChange(transaction) {
@@ -699,10 +720,11 @@
     }
 
     function confirmIncome(transaction) {
+        let form = ensureIncomeForm(transaction);
         incomeActionId.value = `confirm-${transaction.id}`;
         router.post(
             `/reconciliation/transactions/${transaction.id}/confirm-income`,
-            {},
+            { match_mode: form.match_mode },
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -1095,7 +1117,10 @@
     function completedCategorizeMessage(run) {
         let applied = run.metadata?.applied ?? 0;
         let ambiguous = run.metadata?.ambiguous ?? 0;
-        let message = `Rule apply finished. Auto-categorized ${applied} transaction${
+        let isIncome =
+            run.metadata?.classification === 'income';
+        let verb = isIncome ? 'Auto-classified' : 'Auto-categorized';
+        let message = `Rule apply finished. ${verb} ${applied} transaction${
             applied === 1 ? '' : 's'
         }`;
 
@@ -1499,6 +1524,27 @@
                                 <p class="font-medium">
                                     {{ formatMoney(transaction.amount) }}
                                 </p>
+                                <label class="block space-y-1 text-left">
+                                    <span class="text-xs text-neutral-600"
+                                        >Future match</span
+                                    >
+                                    <select
+                                        v-model="
+                                            ensureIncomeForm(transaction)
+                                                .match_mode
+                                        "
+                                        class="w-full rounded border px-2 py-1.5"
+                                        :disabled="incomeActionId !== null"
+                                    >
+                                        <option
+                                            v-for="mode in incomeMatchModes"
+                                            :key="mode"
+                                            :value="mode"
+                                        >
+                                            {{ matchModeLabel(mode) }}
+                                        </option>
+                                    </select>
+                                </label>
                                 <div class="flex flex-wrap justify-end gap-2">
                                     <button
                                         type="button"
@@ -2616,7 +2662,48 @@
                         </div>
 
                         <form
-                            v-if="transaction.can_categorize"
+                            v-if="transaction.can_mark_income"
+                            class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-3"
+                            @submit.prevent="confirmIncome(transaction)"
+                        >
+                            <label class="block space-y-1 sm:col-span-2">
+                                <span class="text-neutral-600"
+                                    >Future match</span
+                                >
+                                <select
+                                    v-model="
+                                        ensureIncomeForm(transaction)
+                                            .match_mode
+                                    "
+                                    class="w-full rounded border px-2 py-1.5"
+                                    :disabled="incomeActionId !== null"
+                                >
+                                    <option
+                                        v-for="mode in incomeMatchModes"
+                                        :key="mode"
+                                        :value="mode"
+                                    >
+                                        {{ matchModeLabel(mode) }}
+                                    </option>
+                                </select>
+                            </label>
+                            <div class="flex items-end">
+                                <button
+                                    type="submit"
+                                    class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                                    :disabled="incomeActionId !== null"
+                                >
+                                    {{
+                                        incomeActionId ===
+                                        `confirm-${transaction.id}`
+                                            ? 'Saving…'
+                                            : 'Mark as income'
+                                    }}
+                                </button>
+                            </div>
+                        </form>
+                        <form
+                            v-else-if="transaction.can_categorize"
                             class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-4"
                             @submit.prevent="categorizeTransaction(transaction)"
                         >

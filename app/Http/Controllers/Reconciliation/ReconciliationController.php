@@ -8,6 +8,7 @@ use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\ReconciliationRun;
 use App\Models\TransactionCategorizationRule;
+use App\Models\TransactionClassificationRule;
 use App\Services\Reconciliation\ReconciliationReviewService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,6 +39,7 @@ class ReconciliationController extends Controller
             ...$data,
             'categories' => $categories,
             'matchModes' => TransactionCategorizationRule::allMatchModes(),
+            'incomeMatchModes' => TransactionClassificationRule::allMatchModes(),
             'activeRun' => $this->activeRunPayload($userId),
             'activeCategorizeRuns' => $this->activeCategorizeRunsPayload($userId),
         ]);

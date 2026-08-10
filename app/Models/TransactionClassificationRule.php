@@ -18,17 +18,48 @@ class TransactionClassificationRule extends Model
 
     public const ORIGIN_USER_REJECTED = 'user_rejected';
 
+    public const MATCH_ONCE = 'once';
+
+    public const MATCH_DESCRIPTION = 'description';
+
+    public const MATCH_EXACT_DESCRIPTION_AND_AMOUNT = 'exact_description_and_amount';
+
+    /**
+     * @return list<string>
+     */
+    public static function persistableMatchModes(): array
+    {
+        return [
+            self::MATCH_DESCRIPTION,
+            self::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function allMatchModes(): array
+    {
+        return [
+            ...self::persistableMatchModes(),
+            self::MATCH_ONCE,
+        ];
+    }
+
     protected $fillable = [
         'user_id',
         'normalized_pattern',
         'classification',
         'direction',
         'origin',
+        'match_mode',
+        'amount',
         'is_active',
         'metadata',
     ];
 
     protected $casts = [
+        'amount' => 'decimal:2',
         'is_active' => 'boolean',
         'metadata' => 'array',
     ];

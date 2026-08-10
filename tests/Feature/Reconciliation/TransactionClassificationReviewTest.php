@@ -5,9 +5,11 @@ namespace Tests\Feature\Reconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\ImportBatch;
+use App\Models\TransactionClassificationRule;
 use App\Models\TransactionTransferLink;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -91,6 +93,53 @@ class TransactionClassificationReviewTest extends TestCase
             );
     }
 
+    public function test_unmatched_credit_exposes_can_mark_income(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create([
+            'account_type' => Account::CHECKING,
+            'is_active' => true,
+        ]);
+
+        $credit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'amount' => 500.00,
+            'posted_at' => '2026-08-01',
+            'description' => 'VENMO CASHOUT',
+            'status' => 'unmatched',
+        ]);
+
+        $debit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'amount' => -25.00,
+            'posted_at' => '2026-08-01',
+            'description' => 'COFFEE',
+            'status' => 'unmatched',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reconciliation/Index')
+                ->has('incomeMatchModes')
+                ->has('unmatchedTransactions', 2)
+                ->where('unmatchedTransactions', function ($transactions) use ($credit, $debit) {
+                    $byId = collect($transactions)->keyBy('id');
+
+                    return $byId[$credit->id]['can_mark_income'] === true
+                        && $byId[$credit->id]['can_categorize'] === false
+                        && $byId[$debit->id]['can_mark_income'] === false
+                        && $byId[$debit->id]['can_categorize'] === true;
+                })
+            );
+    }
+
     public function test_user_can_confirm_and_reject_transfer_and_income(): void
     {
         $user = User::factory()->create();
@@ -148,8 +197,12 @@ class TransactionClassificationReviewTest extends TestCase
             'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_HEURISTIC,
         ]);
 
+        Queue::fake();
+
         $this->actingAs($user)
-            ->post(route('reconciliation.transactions.confirm-income', $income))
+            ->post(route('reconciliation.transactions.confirm-income', $income), [
+                'match_mode' => TransactionClassificationRule::MATCH_DESCRIPTION,
+            ])
             ->assertRedirect(route('reconciliation.index'));
 
         $this->assertSame('ignored', $income->fresh()->status);
