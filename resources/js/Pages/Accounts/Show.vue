@@ -66,25 +66,32 @@
         }).format(amount);
     };
 
-    let statusStyles = {
+    let resolvedClassifications = [
+        'income',
+        'bill',
+        'expense',
+        'reimbursement',
+    ];
+
+    let statusBadgeStyles = {
         matched: {
-            row: 'border-l-green-500',
-            badge: 'bg-green-50 text-green-800',
+            badge: 'bg-blue-50 text-blue-900',
+            dot: 'bg-blue-600',
             label: 'Matched',
         },
         unmatched: {
-            row: 'border-l-amber-500',
             badge: 'bg-amber-50 text-amber-900',
+            dot: 'bg-amber-500',
             label: 'Unmatched',
         },
         partial: {
-            row: 'border-l-sky-500',
             badge: 'bg-sky-50 text-sky-900',
+            dot: 'bg-sky-500',
             label: 'Partial',
         },
         ignored: {
-            row: 'border-l-neutral-400',
             badge: 'bg-neutral-100 text-neutral-700',
+            dot: 'bg-neutral-500',
             label: 'Ignored',
         },
     };
@@ -112,12 +119,51 @@
         },
     };
 
-    let statusStyle = (status) =>
-        statusStyles[status] ?? {
-            row: 'border-l-neutral-300',
-            badge: 'bg-neutral-100 text-neutral-700',
-            label: status,
-        };
+    let isResolvedClassification = (classification) =>
+        resolvedClassifications.includes(classification);
+
+    // Green = confirmed categorization. Blue = linked to an order (items may still need categories).
+    let rowToneClass = (transaction) => {
+        if (
+            transaction.status === 'ignored' &&
+            isResolvedClassification(transaction.classification)
+        ) {
+            return 'border-l-green-500';
+        }
+
+        if (transaction.status === 'matched') {
+            return 'border-l-blue-500';
+        }
+
+        if (transaction.status === 'unmatched') {
+            return 'border-l-amber-500';
+        }
+
+        if (transaction.status === 'partial') {
+            return 'border-l-sky-500';
+        }
+
+        // Transfers and other ignored/inert rows stay gray.
+        return 'border-l-neutral-400';
+    };
+
+    let statusBadge = (transaction) => {
+        // Classification badge already explains these; "Ignored" is misleading.
+        if (
+            transaction.status === 'ignored' &&
+            transaction.classification
+        ) {
+            return null;
+        }
+
+        return (
+            statusBadgeStyles[transaction.status] ?? {
+                badge: 'bg-neutral-100 text-neutral-700',
+                dot: 'bg-neutral-500',
+                label: transaction.status,
+            }
+        );
+    };
 
     let classificationStyle = (classification) => {
         if (!classification) {
@@ -207,34 +253,21 @@
                 v-for="transaction in transactions"
                 :key="transaction.id"
                 class="flex items-start justify-between gap-4 border-l-4 px-4 py-3"
-                :class="statusStyle(transaction.status).row"
+                :class="rowToneClass(transaction)"
             >
                 <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
                         <p class="font-medium">{{ transaction.description }}</p>
                         <span
+                            v-if="statusBadge(transaction)"
                             class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium"
-                            :class="statusStyle(transaction.status).badge"
+                            :class="statusBadge(transaction).badge"
                         >
                             <span
                                 class="size-1.5 rounded-full"
-                                :class="{
-                                    'bg-green-600':
-                                        transaction.status === 'matched',
-                                    'bg-amber-500':
-                                        transaction.status === 'unmatched',
-                                    'bg-sky-500':
-                                        transaction.status === 'partial',
-                                    'bg-neutral-500':
-                                        transaction.status === 'ignored' ||
-                                        ![
-                                            'matched',
-                                            'unmatched',
-                                            'partial',
-                                        ].includes(transaction.status),
-                                }"
+                                :class="statusBadge(transaction).dot"
                             />
-                            {{ statusStyle(transaction.status).label }}
+                            {{ statusBadge(transaction).label }}
                         </span>
                         <span
                             v-if="classificationStyle(transaction.classification)"
