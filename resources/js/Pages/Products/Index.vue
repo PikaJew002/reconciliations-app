@@ -1,6 +1,6 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router, usePage } from '@inertiajs/vue3';
+    import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, reactive, ref } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -18,12 +18,15 @@
 
     let page = usePage();
     let flashSuccess = computed(() => page.props.flash?.success);
-    let categoryForms = reactive({});
+    let categorySelections = reactive({});
+    let categoryForm = useForm({
+        category_id: '',
+    });
     let savingProductId = ref(null);
     let reconciling = ref(false);
 
     for (let product of props.products) {
-        categoryForms[product.id] = '';
+        categorySelections[product.id] = '';
     }
 
     let runProductReconciliation = () => {
@@ -32,6 +35,7 @@
             '/products/reconcile',
             {},
             {
+                preserveScroll: true,
                 onFinish: () => {
                     reconciling.value = false;
                 },
@@ -39,23 +43,21 @@
         );
     };
 
-    let saveCategory = (product) => {
-        let categoryId = categoryForms[product.id];
+    let submitCategory = (product) => {
+        let categoryId = categorySelections[product.id];
 
-        if (!categoryId) {
+        if (!categoryId || categoryForm.processing) {
             return;
         }
 
         savingProductId.value = product.id;
-        router.patch(
-            `/products/${product.id}/category`,
-            { category_id: categoryId },
-            {
-                onFinish: () => {
-                    savingProductId.value = null;
-                },
+        categoryForm.category_id = categoryId;
+        categoryForm.patch(`/products/${product.id}/category`, {
+            preserveScroll: true,
+            onFinish: () => {
+                savingProductId.value = null;
             },
-        );
+        });
     };
 </script>
 
@@ -121,11 +123,14 @@
                         }}
                     </p>
                 </div>
-                <div class="flex flex-wrap items-end gap-2">
+                <form
+                    class="flex flex-wrap items-end gap-2"
+                    @submit.prevent="submitCategory(product)"
+                >
                     <label class="block text-sm">
                         <span class="text-neutral-600">Category</span>
                         <select
-                            v-model="categoryForms[product.id]"
+                            v-model="categorySelections[product.id]"
                             class="mt-1 block rounded border px-3 py-1.5"
                         >
                             <option value="">Select…</option>
@@ -139,13 +144,12 @@
                         </select>
                     </label>
                     <button
-                        type="button"
+                        type="submit"
                         class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
                         :disabled="
-                            !categoryForms[product.id] ||
+                            !categorySelections[product.id] ||
                             savingProductId === product.id
                         "
-                        @click="saveCategory(product)"
                     >
                         {{
                             savingProductId === product.id
@@ -153,7 +157,7 @@
                                 : 'Save'
                         }}
                     </button>
-                </div>
+                </form>
             </li>
         </ul>
     </div>
