@@ -44,7 +44,7 @@ class OrderComponentController extends Controller
         $component->delete();
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.index'))
             ->with('success', 'Component removed.');
     }
 }

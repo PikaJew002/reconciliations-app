@@ -48,16 +48,13 @@ class ProductMatchingService
                     return;
                 }
 
-                $result = $this->resolveProduct(
-                    userId: (int) $item->order->user_id,
-                    merchantId: (int) $merchant->id,
-                    item: $item,
-                );
+                $result = $this->linkOrCreateForItem($item);
 
-                $item->update([
-                    'product_id' => $result['product']->id,
-                    'match_confidence' => 100,
-                ]);
+                if ($result === null) {
+                    $skipped++;
+
+                    return;
+                }
 
                 if ($result['created']) {
                     $created++;
@@ -71,6 +68,40 @@ class ProductMatchingService
             'linked' => $linked,
             'skipped' => $skipped,
         ];
+    }
+
+    /**
+     * Link an order item to an existing or newly created product.
+     *
+     * @return array{product: Product, created: bool}|null
+     */
+    public function linkOrCreateForItem(OrderItem $item): ?array
+    {
+        $item->loadMissing('order.merchant');
+
+        $order = $item->order;
+        $merchant = $order?->merchant;
+
+        if ($order === null || $merchant === null) {
+            return null;
+        }
+
+        if (! in_array($merchant->normalized_name, self::ELIGIBLE_MERCHANT_NORMALIZED_NAMES, true)) {
+            return null;
+        }
+
+        $result = $this->resolveProduct(
+            userId: (int) $order->user_id,
+            merchantId: (int) $merchant->id,
+            item: $item,
+        );
+
+        $item->update([
+            'product_id' => $result['product']->id,
+            'match_confidence' => 100,
+        ]);
+
+        return $result;
     }
 
     /**

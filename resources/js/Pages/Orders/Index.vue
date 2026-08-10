@@ -56,11 +56,21 @@
 <template>
     <div class="space-y-8">
         <div>
-            <h1 class="text-2xl font-semibold">Orders</h1>
-            <p class="text-sm text-neutral-600">
-                Browse retailer order history, or search bank activity for other
-                merchants.
-            </p>
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h1 class="text-2xl font-semibold">Orders</h1>
+                    <p class="text-sm text-neutral-600">
+                        Browse retailer order history, or search bank activity
+                        for other merchants.
+                    </p>
+                </div>
+                <Link
+                    href="/orders/categorize"
+                    class="rounded border px-4 py-2 text-sm"
+                >
+                    Categorize order lines
+                </Link>
+            </div>
         </div>
 
         <div v-if="bankCoverage" class="rounded border px-4 py-3 text-sm">

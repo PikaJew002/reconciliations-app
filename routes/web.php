@@ -12,7 +12,9 @@ use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Imports\WalmartOrderImportController;
 use App\Http\Controllers\Merchants\MerchantController;
+use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
+use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
@@ -73,6 +75,12 @@ Route::middleware('auth')->group(function () {
         ->name('products.category.update');
 
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
+    Route::get('/orders/categorize', [OrderCategorizationController::class, 'index'])
+        ->name('orders.categorize');
+    Route::post('/orders/items/{item}/categorize-as-product', [OrderItemCategorizationController::class, 'store'])
+        ->name('orders.items.categorize-as-product');
+    Route::delete('/orders/items/{item}', [OrderItemCategorizationController::class, 'destroy'])
+        ->name('orders.items.destroy');
     Route::get('/orders/{merchant}', [OrderController::class, 'show'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.show');

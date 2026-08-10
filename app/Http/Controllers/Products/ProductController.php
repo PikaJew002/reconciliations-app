@@ -99,7 +99,7 @@ class ProductController extends Controller
             ]);
 
         return redirect()
-            ->route('products.index')
+            ->back(fallback: route('products.index'))
             ->with('success', 'Product categorized.');
     }
 
