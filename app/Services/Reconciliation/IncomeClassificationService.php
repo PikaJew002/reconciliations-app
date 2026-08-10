@@ -3,6 +3,7 @@
 namespace App\Services\Reconciliation;
 
 use App\Models\BankTransaction;
+use App\Models\ReimbursementGroupTransaction;
 use App\Models\TransactionClassificationRule;
 use App\Models\TransactionTransferLink;
 use Illuminate\Support\Collection;
@@ -147,12 +148,19 @@ class IncomeClassificationService
             ->unique()
             ->all();
 
+        $reimbursementIds = ReimbursementGroupTransaction::query()
+            ->whereHas('group', fn ($query) => $query->where('user_id', $userId))
+            ->pluck('bank_transaction_id')
+            ->all();
+
+        $excluded = array_values(array_unique([...$linkedIds, ...$reimbursementIds]));
+
         return BankTransaction::query()
             ->where('user_id', $userId)
             ->where('status', 'unmatched')
             ->whereNull('classification')
             ->where('amount', '>', 0)
-            ->when($linkedIds !== [], fn ($query) => $query->whereNotIn('id', $linkedIds))
+            ->when($excluded !== [], fn ($query) => $query->whereNotIn('id', $excluded))
             ->orderBy('posted_at')
             ->orderBy('id')
             ->get();

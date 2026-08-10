@@ -17,6 +17,7 @@ use App\Http\Controllers\Reconciliation\OrderComponentController;
 use App\Http\Controllers\Reconciliation\OrderItemController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
+use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
 use App\Http\Controllers\Reconciliation\TransactionClassificationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
@@ -93,6 +94,20 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.transactions.categorize');
     Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])
         ->name('reconciliation.orders.components.category.update');
+    Route::post('/reconciliation/reimbursement-groups', [ReimbursementGroupController::class, 'store'])
+        ->name('reconciliation.reimbursement-groups.store');
+    Route::post('/reconciliation/reimbursement-groups/{reimbursementGroup}/transactions', [ReimbursementGroupController::class, 'addTransactions'])
+        ->name('reconciliation.reimbursement-groups.transactions.add');
+    Route::delete('/reconciliation/reimbursement-groups/{reimbursementGroup}/transactions/{transaction}', [ReimbursementGroupController::class, 'removeTransaction'])
+        ->name('reconciliation.reimbursement-groups.transactions.remove');
+    Route::patch('/reconciliation/reimbursement-groups/{reimbursementGroup}/transactions/{transaction}', [ReimbursementGroupController::class, 'updateLeg'])
+        ->name('reconciliation.reimbursement-groups.transactions.update');
+    Route::post('/reconciliation/reimbursement-groups/{reimbursementGroup}/close', [ReimbursementGroupController::class, 'close'])
+        ->name('reconciliation.reimbursement-groups.close');
+    Route::post('/reconciliation/reimbursement-groups/{reimbursementGroup}/reopen', [ReimbursementGroupController::class, 'reopen'])
+        ->name('reconciliation.reimbursement-groups.reopen');
+    Route::delete('/reconciliation/reimbursement-groups/{reimbursementGroup}', [ReimbursementGroupController::class, 'destroy'])
+        ->name('reconciliation.reimbursement-groups.destroy');
 
     Route::get('/imports/bank-transactions/create', [BankTransactionImportController::class, 'create'])
         ->name('imports.bank-transactions.create');

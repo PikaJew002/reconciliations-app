@@ -4,6 +4,7 @@ namespace App\Services\Reconciliation;
 
 use App\Models\BankTransaction;
 use App\Models\Order;
+use App\Models\ReimbursementGroup;
 use App\Models\TransactionAllocation;
 use App\Models\TransactionTransferLink;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,7 @@ class ReconciliationReviewService
 {
     public function __construct(
         protected OrderPaymentResolutionService $paymentResolution,
+        protected ReimbursementGroupService $reimbursementGroups,
         protected int $listLimit = 50,
         protected int $unmatchedTransactionsLimit = 250,
     ) {}
@@ -25,6 +27,9 @@ class ReconciliationReviewService
      *     paymentReviewOrders: list<array<string, mixed>>,
      *     suggestedTransfers: list<array<string, mixed>>,
      *     suggestedIncome: list<array<string, mixed>>,
+     *     openReimbursementGroups: list<array<string, mixed>>,
+     *     closedReimbursementGroups: list<array<string, mixed>>,
+     *     reimbursementEligibleTransactions: list<array<string, mixed>>,
      *     matchedPairs: list<array<string, mixed>>
      * }
      */
@@ -34,6 +39,8 @@ class ReconciliationReviewService
         $paymentReviewOrders = $this->paymentReviewOrders($userId);
         $suggestedTransfers = $this->suggestedTransfers($userId);
         $suggestedIncome = $this->suggestedIncome($userId);
+        $openReimbursementGroups = $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_OPEN);
+        $closedReimbursementGroups = $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_CLOSED);
 
         $suggestedTransfersCount = TransactionTransferLink::query()
             ->where('user_id', $userId)
@@ -45,6 +52,8 @@ class ReconciliationReviewService
             ->where('status', 'unmatched')
             ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
             ->count();
+
+        $openReimbursementGroupsCount = count($openReimbursementGroups);
 
         $orderReviewCount = collect($unbalancedOrders)
             ->pluck('id')
@@ -59,7 +68,8 @@ class ReconciliationReviewService
                 count($paymentReviewOrders),
                 $suggestedTransfersCount,
                 $suggestedIncomeCount,
-                $orderReviewCount + $suggestedTransfersCount + $suggestedIncomeCount,
+                $openReimbursementGroupsCount,
+                $orderReviewCount + $suggestedTransfersCount + $suggestedIncomeCount + $openReimbursementGroupsCount,
             ),
             'unmatchedOrders' => $this->unmatchedOrders($userId),
             'unmatchedTransactions' => $this->unmatchedTransactions($userId),
@@ -67,6 +77,9 @@ class ReconciliationReviewService
             'paymentReviewOrders' => $paymentReviewOrders,
             'suggestedTransfers' => $suggestedTransfers,
             'suggestedIncome' => $suggestedIncome,
+            'openReimbursementGroups' => $openReimbursementGroups,
+            'closedReimbursementGroups' => $closedReimbursementGroups,
+            'reimbursementEligibleTransactions' => $this->reimbursementEligibleTransactions($userId),
             'matchedPairs' => $this->matchedPairs($userId),
         ];
     }
@@ -80,6 +93,7 @@ class ReconciliationReviewService
         int $paymentReviewOrdersCount,
         int $suggestedTransfersCount,
         int $suggestedIncomeCount,
+        int $openReimbursementGroupsCount,
         int $needsReviewCount,
     ): array {
         return [
@@ -101,8 +115,77 @@ class ReconciliationReviewService
             'payment_review_orders' => $paymentReviewOrdersCount,
             'suggested_transfers' => $suggestedTransfersCount,
             'suggested_income' => $suggestedIncomeCount,
+            'open_reimbursement_groups' => $openReimbursementGroupsCount,
             'needs_review' => $needsReviewCount,
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function reimbursementGroupsPayload(int $userId, string $status): array
+    {
+        return ReimbursementGroup::query()
+            ->where('user_id', $userId)
+            ->where('status', $status)
+            ->with([
+                'remainderCategory:id,name,kind',
+                'legs.bankTransaction.account:id,name,last_four',
+                'legs.bankTransaction.merchant:id,name',
+            ])
+            ->orderByDesc('id')
+            ->limit($this->listLimit)
+            ->get()
+            ->map(function (ReimbursementGroup $group): array {
+                $expenseTotal = $group->expenseTotal();
+                $reimbursementTotal = $group->reimbursementTotal();
+                $net = $group->net();
+
+                return [
+                    'id' => $group->id,
+                    'name' => $group->name,
+                    'notes' => $group->notes,
+                    'status' => $group->status,
+                    'expense_total' => $expenseTotal,
+                    'reimbursement_total' => $reimbursementTotal,
+                    'net' => $net,
+                    'remainder_category_id' => $group->remainder_category_id,
+                    'remainder_classification' => $group->remainder_classification,
+                    'remainder_category' => $group->remainderCategory?->name,
+                    'closed_at' => $group->closed_at?->toDateTimeString(),
+                    'legs' => $group->legs
+                        ->sortBy(fn ($leg) => $leg->bankTransaction?->posted_at)
+                        ->values()
+                        ->map(function ($leg): array {
+                            $transaction = $leg->bankTransaction;
+
+                            return [
+                                'id' => $leg->id,
+                                'role' => $leg->role,
+                                'amount' => (float) $leg->amount,
+                                'transaction' => $transaction
+                                    ? $this->transactionPayload($transaction, includeAccount: true)
+                                    : null,
+                            ];
+                        })
+                        ->all(),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function reimbursementEligibleTransactions(int $userId): array
+    {
+        return $this->reimbursementGroups
+            ->eligibleTransactionsForUser($userId)
+            ->map(fn (BankTransaction $transaction): array => [
+                ...$this->transactionPayload($transaction, includeAccount: true),
+                'classification' => $transaction->classification,
+            ])
+            ->all();
     }
 
     protected function matchedPairCount(int $userId): int

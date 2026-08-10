@@ -4,6 +4,7 @@ namespace App\Services\Reconciliation;
 
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\ReimbursementGroupTransaction;
 use App\Models\TransactionTransferLink;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -166,12 +167,19 @@ class TransferPairingService
             ->unique()
             ->all();
 
+        $reimbursementIds = ReimbursementGroupTransaction::query()
+            ->whereHas('group', fn ($query) => $query->where('user_id', $userId))
+            ->pluck('bank_transaction_id')
+            ->all();
+
+        $excluded = array_values(array_unique([...$linkedIds, ...$reimbursementIds]));
+
         return BankTransaction::query()
             ->where('user_id', $userId)
             ->where('status', 'unmatched')
             ->whereNull('classification')
             ->whereNull('transfer_group_id')
-            ->when($linkedIds !== [], fn ($query) => $query->whereNotIn('id', $linkedIds))
+            ->when($excluded !== [], fn ($query) => $query->whereNotIn('id', $excluded))
             ->whereHas('account', function ($query): void {
                 $query->whereIn('account_type', [Account::CHECKING, Account::SAVINGS]);
             })

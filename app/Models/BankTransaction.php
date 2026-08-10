@@ -17,6 +17,8 @@ class BankTransaction extends Model
 
     public const CLASSIFICATION_EXPENSE = 'expense';
 
+    public const CLASSIFICATION_REIMBURSEMENT = 'reimbursement';
+
     public const CLASSIFICATION_SOURCE_HEURISTIC = 'heuristic';
 
     public const CLASSIFICATION_SOURCE_LEARNED = 'learned';
@@ -109,7 +111,18 @@ class BankTransaction extends Model
             self::CLASSIFICATION_TRANSFER,
             self::CLASSIFICATION_BILL,
             self::CLASSIFICATION_EXPENSE,
+            self::CLASSIFICATION_REIMBURSEMENT,
         ], true) && $this->status === 'ignored';
+    }
+
+    public function reimbursementGroupLeg()
+    {
+        return $this->hasOne(ReimbursementGroupTransaction::class);
+    }
+
+    public function isInReimbursementGroup(): bool
+    {
+        return $this->reimbursementGroupLeg()->exists();
     }
 
     public function isCategorizedSpend(): bool
@@ -137,7 +150,8 @@ class BankTransaction extends Model
             ->whereDoesntHave(
                 'creditTransferLink',
                 fn ($linkQuery) => $linkQuery->whereIn('status', $activeStatuses),
-            );
+            )
+            ->whereDoesntHave('reimbursementGroupLeg');
     }
 
     public function getAllocatedAmountAttribute(): float
