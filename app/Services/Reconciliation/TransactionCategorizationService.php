@@ -107,6 +107,20 @@ class TransactionCategorizationService
             throw new InvalidArgumentException('Invalid match mode.');
         }
 
+        if (
+            in_array($matchMode, TransactionCategorizationRule::billOnlyMatchModes(), true)
+            && $classification !== BankTransaction::CLASSIFICATION_BILL
+        ) {
+            throw new InvalidArgumentException('Check + amount matching is only available for bills.');
+        }
+
+        if (
+            $matchMode === TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT
+            && ! $this->isCheckDescription($this->normalizedDescription($transaction))
+        ) {
+            throw new InvalidArgumentException('Check + amount matching requires a description that starts with "CHECK ".');
+        }
+
         $transaction->update([
             'classification' => $classification,
             'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
@@ -145,6 +159,10 @@ class TransactionCategorizationService
                     && $rule->merchant_id === $transaction->merchant_id,
                 TransactionCategorizationRule::MATCH_DESCRIPTION => $normalized !== ''
                     && $rule->normalized_pattern === $normalized,
+                TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT => $rule->classification === BankTransaction::CLASSIFICATION_BILL
+                    && $this->isCheckDescription($normalized)
+                    && $rule->amount !== null
+                    && abs((float) $rule->amount - $amount) < 0.01,
                 default => false,
             };
         })->values();
@@ -192,6 +210,13 @@ class TransactionCategorizationService
             $attributes['merchant_id'] = $transaction->merchant_id;
         } elseif ($matchMode === TransactionCategorizationRule::MATCH_DESCRIPTION) {
             $attributes['normalized_pattern'] = $normalized !== '' ? $normalized : null;
+        } elseif ($matchMode === TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT) {
+            if ($classification !== BankTransaction::CLASSIFICATION_BILL || ! $this->isCheckDescription($normalized)) {
+                return;
+            }
+
+            $attributes['normalized_pattern'] = TransactionCategorizationRule::CHECK_DESCRIPTION_PREFIX;
+            $attributes['amount'] = $amount;
         }
 
         if (
@@ -207,6 +232,7 @@ class TransactionCategorizationService
             in_array($matchMode, [
                 TransactionCategorizationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
                 TransactionCategorizationRule::MATCH_DESCRIPTION,
+                TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
             ], true) && ($attributes['normalized_pattern'] === null || $attributes['normalized_pattern'] === '')
         ) {
             return;
@@ -233,5 +259,11 @@ class TransactionCategorizationService
         $value = $transaction->normalized_description ?: $transaction->description;
 
         return Str::of((string) $value)->lower()->squish()->toString();
+    }
+
+    protected function isCheckDescription(string $normalized): bool
+    {
+        return $normalized !== ''
+            && str_starts_with($normalized, TransactionCategorizationRule::CHECK_DESCRIPTION_PREFIX);
     }
 }

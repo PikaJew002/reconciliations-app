@@ -18,7 +18,12 @@ class TransactionCategorizationRule extends Model
 
     public const MATCH_DESCRIPTION = 'description';
 
+    /** Bill-only: description starts with "CHECK " and amount matches. */
+    public const MATCH_CHECK_AND_AMOUNT = 'check_and_amount';
+
     public const MATCH_ONCE = 'once';
+
+    public const CHECK_DESCRIPTION_PREFIX = 'check ';
 
     /**
      * @return list<string>
@@ -30,6 +35,19 @@ class TransactionCategorizationRule extends Model
             self::MATCH_AMOUNT_AND_MERCHANT,
             self::MATCH_MERCHANT,
             self::MATCH_DESCRIPTION,
+            self::MATCH_CHECK_AND_AMOUNT,
+        ];
+    }
+
+    /**
+     * Match modes only valid when classifying as a bill.
+     *
+     * @return list<string>
+     */
+    public static function billOnlyMatchModes(): array
+    {
+        return [
+            self::MATCH_CHECK_AND_AMOUNT,
         ];
     }
 

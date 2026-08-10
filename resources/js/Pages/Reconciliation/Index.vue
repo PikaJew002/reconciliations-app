@@ -299,7 +299,10 @@
     function onCategorizeClassificationChange(transaction) {
         let form = ensureCategorizeForm(transaction);
         form.category_id = '';
-        form.match_mode = 'once';
+        let availableModes = matchModesForClassification(form.classification);
+        if (!availableModes.includes(form.match_mode)) {
+            form.match_mode = 'once';
+        }
     }
 
     function categoriesForClassification(classification) {
@@ -315,8 +318,18 @@
                 amount_and_merchant: 'Amount + merchant',
                 merchant: 'Merchant only',
                 description: 'Description only',
+                check_and_amount: 'Check + amount',
                 once: 'This transaction only',
             }[mode] ?? mode
+        );
+    }
+
+    function matchModesForClassification(classification) {
+        let billOnlyModes = ['check_and_amount'];
+
+        return props.matchModes.filter(
+            (mode) =>
+                !billOnlyModes.includes(mode) || classification === 'bill',
         );
     }
 
@@ -1962,7 +1975,10 @@
                                     class="w-full rounded border px-2 py-1.5"
                                 >
                                     <option
-                                        v-for="mode in matchModes"
+                                        v-for="mode in matchModesForClassification(
+                                            ensureCategorizeForm(transaction)
+                                                .classification,
+                                        )"
                                         :key="mode"
                                         :value="mode"
                                     >

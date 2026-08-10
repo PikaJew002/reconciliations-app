@@ -259,6 +259,98 @@ class TransactionCategorizationTest extends TestCase
         $this->assertFalse($rule->fresh()->is_active);
     }
 
+    public function test_check_and_amount_bill_rule_matches_other_checks_with_same_amount(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->bill()->create(['name' => 'Tithe']);
+
+        $first = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -250.0,
+            'description' => 'CHECK 1001',
+            'normalized_description' => 'check 1001',
+        ]);
+        $second = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -250.0,
+            'description' => 'CHECK 1002',
+            'normalized_description' => 'check 1002',
+        ]);
+        $wrongAmount = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -200.0,
+            'description' => 'CHECK 1003',
+            'normalized_description' => 'check 1003',
+        ]);
+        $notACheck = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -250.0,
+            'description' => 'CHECKOUT STORE',
+            'normalized_description' => 'checkout store',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $first), [
+                'classification' => BankTransaction::CLASSIFICATION_BILL,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
+            ])
+            ->assertRedirect(route('reconciliation.index'));
+
+        $this->assertDatabaseHas('transaction_categorization_rules', [
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'match_mode' => TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
+            'merchant_id' => null,
+            'normalized_pattern' => TransactionCategorizationRule::CHECK_DESCRIPTION_PREFIX,
+            'amount' => 250.0,
+            'is_active' => true,
+        ]);
+
+        $run = CategorizationRun::query()->first();
+        $this->assertNotNull($run);
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(1, $run->metadata['applied'] ?? null);
+
+        $second->refresh();
+        $this->assertSame('ignored', $second->status);
+        $this->assertSame(BankTransaction::CLASSIFICATION_BILL, $second->classification);
+        $this->assertSame($category->id, $second->category_id);
+        $this->assertSame(BankTransaction::CLASSIFICATION_SOURCE_LEARNED, $second->classification_source);
+
+        $wrongAmount->refresh();
+        $this->assertSame('unmatched', $wrongAmount->status);
+        $this->assertNull($wrongAmount->classification);
+
+        $notACheck->refresh();
+        $this->assertSame('unmatched', $notACheck->status);
+        $this->assertNull($notACheck->classification);
+    }
+
+    public function test_check_and_amount_match_mode_rejects_expense_classification(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $transaction = $this->debitTransaction($user, [
+            'amount' => -50.0,
+            'description' => 'CHECK 55',
+            'normalized_description' => 'check 55',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $transaction), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
+            ])
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('transaction_categorization_rules', 0);
+        $transaction->refresh();
+        $this->assertNull($transaction->classification);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

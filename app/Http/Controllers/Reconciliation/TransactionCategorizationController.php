@@ -49,6 +49,13 @@ class TransactionCategorizationController extends Controller
 
         abort_unless($category->kind === $expectedKind, 422, 'Category kind must match classification.');
 
+        if (
+            in_array($validated['match_mode'], TransactionCategorizationRule::billOnlyMatchModes(), true)
+            && $validated['classification'] !== BankTransaction::CLASSIFICATION_BILL
+        ) {
+            abort(422, 'Check + amount matching is only available for bills.');
+        }
+
         $categorization->categorizeTransaction(
             $transaction,
             $category,

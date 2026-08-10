@@ -25,6 +25,7 @@
             amount_and_merchant: 'Amount + merchant',
             merchant: 'Merchant only',
             description: 'Description only',
+            check_and_amount: 'Check + amount',
         }[mode] ?? mode;
     };
 
