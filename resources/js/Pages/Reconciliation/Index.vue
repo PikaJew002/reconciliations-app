@@ -57,6 +57,10 @@
             type: Object,
             default: null,
         },
+        activeCategorizeRuns: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
@@ -66,11 +70,26 @@
     let isRunInProgress = computed(() =>
         ['pending', 'processing'].includes(props.activeRun?.status),
     );
+    let categorizeRunsInProgress = computed(() =>
+        props.activeCategorizeRuns.filter((run) =>
+            ['pending', 'processing'].includes(run.status),
+        ),
+    );
+    let hasCategorizeRunsInProgress = computed(
+        () => categorizeRunsInProgress.value.length > 0,
+    );
+    let latestCompletedCategorizeRun = computed(() =>
+        props.activeCategorizeRuns.find((run) => run.status === 'completed'),
+    );
+    let latestFailedCategorizeRun = computed(() =>
+        props.activeCategorizeRuns.find((run) => run.status === 'failed'),
+    );
     let activeTab = ref(
         (props.summary.needs_review ?? 0) > 0 ? 'needs-review' : 'matched',
     );
     let unmatchedTransactionFilter = ref('all');
     let pollId = null;
+    let categorizePollId = null;
     let componentForms = reactive({});
     let quantityForms = reactive({});
     let paymentForms = reactive({});
@@ -715,6 +734,7 @@
                     'categories',
                     'matchModes',
                     'activeRun',
+                    'activeCategorizeRuns',
                 ],
                 preserveScroll: true,
                 onSuccess: () => {
@@ -733,9 +753,42 @@
         }
     }
 
+    function startCategorizePolling() {
+        if (categorizePollId || !hasCategorizeRunsInProgress.value) {
+            return;
+        }
+
+        categorizePollId = window.setInterval(() => {
+            router.reload({
+                only: [
+                    'summary',
+                    'unmatchedTransactions',
+                    'activeCategorizeRuns',
+                ],
+                preserveScroll: true,
+                onSuccess: () => {
+                    if (!hasCategorizeRunsInProgress.value && categorizePollId) {
+                        stopCategorizePolling();
+                    }
+                },
+            });
+        }, 2000);
+    }
+
+    function stopCategorizePolling() {
+        if (categorizePollId) {
+            window.clearInterval(categorizePollId);
+            categorizePollId = null;
+        }
+    }
+
     onMounted(() => {
         if (isRunInProgress.value) {
             startPolling();
+        }
+
+        if (hasCategorizeRunsInProgress.value) {
+            startCategorizePolling();
         }
     });
 
@@ -748,8 +801,18 @@
         stopPolling();
     });
 
+    watch(hasCategorizeRunsInProgress, (inProgress) => {
+        if (inProgress) {
+            startCategorizePolling();
+            return;
+        }
+
+        stopCategorizePolling();
+    });
+
     onUnmounted(() => {
         stopPolling();
+        stopCategorizePolling();
     });
 </script>
 
@@ -826,6 +889,51 @@
             Reconciliation failed{{
                 activeRun.error_message ? `: ${activeRun.error_message}` : '.'
             }}
+        </p>
+
+        <p
+            v-if="hasCategorizeRunsInProgress"
+            class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+            Applying categorization
+            {{
+                categorizeRunsInProgress.length === 1
+                    ? 'rule'
+                    : 'rules'
+            }}
+            in the background ({{ categorizeRunsInProgress.length }} active)…
+            unmatched transactions will update automatically. You can keep
+            categorizing.
+        </p>
+
+        <p
+            v-else-if="latestFailedCategorizeRun"
+            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+            Categorization rule apply failed{{
+                latestFailedCategorizeRun.error_message
+                    ? `: ${latestFailedCategorizeRun.error_message}`
+                    : '.'
+            }}
+        </p>
+
+        <p
+            v-else-if="latestCompletedCategorizeRun"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            Rule apply finished. Auto-categorized
+            {{ latestCompletedCategorizeRun.metadata?.applied ?? 0 }}
+            transaction{{
+                (latestCompletedCategorizeRun.metadata?.applied ?? 0) === 1
+                    ? ''
+                    : 's'
+            }}<template
+                v-if="(latestCompletedCategorizeRun.metadata?.ambiguous ?? 0) > 0"
+            >
+                ;
+                {{ latestCompletedCategorizeRun.metadata.ambiguous }}
+                ambiguous</template
+            >.
         </p>
 
         <p class="text-sm text-neutral-600">

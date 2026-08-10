@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Reconciliation;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ApplyCategorizationRun;
 use App\Models\BankTransaction;
+use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\TransactionCategorizationRule;
 use App\Services\Reconciliation\TransactionCategorizationService;
@@ -54,8 +56,27 @@ class TransactionCategorizationController extends Controller
             $validated['match_mode'],
         );
 
+        if ($validated['match_mode'] === TransactionCategorizationRule::MATCH_ONCE) {
+            return redirect()
+                ->route('reconciliation.index')
+                ->with('success', 'Transaction categorized.');
+        }
+
+        $run = CategorizationRun::query()->create([
+            'user_id' => $request->user()->id,
+            'status' => 'pending',
+            'metadata' => [
+                'source_transaction_id' => $transaction->id,
+                'category_id' => $category->id,
+                'classification' => $validated['classification'],
+                'match_mode' => $validated['match_mode'],
+            ],
+        ]);
+
+        ApplyCategorizationRun::dispatch($run->id);
+
         return redirect()
             ->route('reconciliation.index')
-            ->with('success', 'Transaction categorized.');
+            ->with('success', 'Transaction categorized. Applying rule to similar transactions…');
     }
 }

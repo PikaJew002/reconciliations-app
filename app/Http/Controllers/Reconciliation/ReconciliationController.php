@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reconciliation;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\RunUserReconciliationPipeline;
+use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\ReconciliationRun;
 use App\Models\TransactionCategorizationRule;
@@ -38,6 +39,7 @@ class ReconciliationController extends Controller
             'categories' => $categories,
             'matchModes' => TransactionCategorizationRule::allMatchModes(),
             'activeRun' => $this->activeRunPayload($userId),
+            'activeCategorizeRuns' => $this->activeCategorizeRunsPayload($userId),
         ]);
     }
 
@@ -95,5 +97,31 @@ class ReconciliationController extends Controller
             'error_message' => $run->error_message,
             'metadata' => $run->metadata ?? [],
         ];
+    }
+
+    /**
+     * @return list<array{id: int, status: string, error_message: ?string, metadata: array<string, mixed>}>
+     */
+    protected function activeCategorizeRunsPayload(int $userId): array
+    {
+        return CategorizationRun::query()
+            ->where('user_id', $userId)
+            ->where(function ($query) {
+                $query->whereIn('status', ['pending', 'processing'])
+                    ->orWhere(function ($recent) {
+                        $recent->whereIn('status', ['completed', 'failed'])
+                            ->where('completed_at', '>=', now()->subMinutes(5));
+                    });
+            })
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get()
+            ->map(fn (CategorizationRun $run) => [
+                'id' => $run->id,
+                'status' => $run->status,
+                'error_message' => $run->error_message,
+                'metadata' => $run->metadata ?? [],
+            ])
+            ->all();
     }
 }

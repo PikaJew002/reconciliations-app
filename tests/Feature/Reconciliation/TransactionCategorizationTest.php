@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Reconciliation;
 
+use App\Jobs\ApplyCategorizationRun;
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
@@ -15,6 +17,7 @@ use App\Models\TransactionCategorizationRule;
 use App\Models\User;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class TransactionCategorizationTest extends TestCase
@@ -23,6 +26,8 @@ class TransactionCategorizationTest extends TestCase
 
     public function test_user_can_categorize_transaction_as_expense_with_merchant_rule(): void
     {
+        Queue::fake();
+
         $user = User::factory()->create();
         $merchant = Merchant::factory()->create([
             'user_id' => $user->id,
@@ -58,10 +63,17 @@ class TransactionCategorizationTest extends TestCase
             'merchant_id' => $merchant->id,
             'is_active' => true,
         ]);
+
+        $run = CategorizationRun::query()->first();
+        $this->assertNotNull($run);
+        $this->assertSame('pending', $run->status);
+        Queue::assertPushed(ApplyCategorizationRun::class, fn (ApplyCategorizationRun $job) => $job->categorizationRunId === $run->id);
     }
 
-    public function test_once_match_mode_does_not_create_rule(): void
+    public function test_once_match_mode_does_not_create_rule_or_apply_run(): void
     {
+        Queue::fake();
+
         $user = User::factory()->create();
         $category = Category::factory()->for($user)->bill()->create();
         $transaction = $this->debitTransaction($user, [
@@ -77,6 +89,50 @@ class TransactionCategorizationTest extends TestCase
         ])->assertRedirect(route('reconciliation.index'));
 
         $this->assertDatabaseCount('transaction_categorization_rules', 0);
+        $this->assertDatabaseCount('categorization_runs', 0);
+        Queue::assertNotPushed(ApplyCategorizationRun::class);
+    }
+
+    public function test_apply_run_categorizes_other_matching_transactions(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'supports_order_import' => false,
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Dining']);
+
+        $first = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -12.0,
+            'description' => 'CHIPOTLE A',
+            'normalized_description' => 'chipotle a',
+        ]);
+        $second = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -19.5,
+            'description' => 'CHIPOTLE B',
+            'normalized_description' => 'chipotle b',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $first), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_MERCHANT,
+            ])
+            ->assertRedirect(route('reconciliation.index'));
+
+        $run = CategorizationRun::query()->first();
+        $this->assertNotNull($run);
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(1, $run->metadata['applied'] ?? null);
+
+        $second->refresh();
+        $this->assertSame('ignored', $second->status);
+        $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $second->classification);
+        $this->assertSame($category->id, $second->category_id);
+        $this->assertSame(BankTransaction::CLASSIFICATION_SOURCE_LEARNED, $second->classification_source);
     }
 
     public function test_learned_rule_auto_applies_on_service_run(): void
