@@ -126,7 +126,10 @@ class AccountBrowseService
             ? Carbon::parse($coverage->max_posted_at)->toDateString()
             : null;
 
-        $transactionsQuery = BankTransaction::with('merchant:id,name,normalized_name')
+        $transactionsQuery = BankTransaction::with([
+            'merchant:id,name,normalized_name',
+            'category:id,name,kind',
+        ])
             ->where('user_id', $userId)
             ->where('account_id', $account->id)
             ->when($q !== '', function (Builder $query) use ($q): void {
@@ -164,8 +167,18 @@ class AccountBrowseService
                 'description' => $transaction->description,
                 'amount' => (float) $transaction->amount,
                 'status' => $transaction->status,
+                'classification' => $transaction->classification,
+                'classification_source' => $transaction->classification_source,
+                'classification_confidence' => $transaction->classification_confidence !== null
+                    ? (float) $transaction->classification_confidence
+                    : null,
                 'card_last_four' => $transaction->card_last_four,
                 'merchant' => $transaction->merchant?->only(['id', 'name', 'normalized_name']),
+                'category' => $transaction->category ? [
+                    'id' => $transaction->category->id,
+                    'name' => $transaction->category->name,
+                    'kind' => $transaction->category->kind,
+                ] : null,
             ])->values()->all(),
             'transactionsTruncated' => $totalMatching > $this->listLimit,
             'filters' => [

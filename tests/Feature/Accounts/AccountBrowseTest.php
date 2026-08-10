@@ -167,6 +167,10 @@ class AccountBrowseTest extends TestCase
             'posted_at' => '2026-08-04',
             'description' => 'TARGET STORE',
             'amount' => -20.00,
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
+            'classification_confidence' => 100,
         ]);
 
         BankTransaction::factory()->create([
@@ -188,6 +192,8 @@ class AccountBrowseTest extends TestCase
                 ->where('account.max_posted_at', '2026-08-04')
                 ->has('transactions', 2)
                 ->where('transactions.0.description', 'TARGET STORE')
+                ->where('transactions.0.classification', BankTransaction::CLASSIFICATION_EXPENSE)
+                ->where('transactions.0.classification_source', BankTransaction::CLASSIFICATION_SOURCE_MANUAL)
                 ->where('transactionsTruncated', false));
     }
 

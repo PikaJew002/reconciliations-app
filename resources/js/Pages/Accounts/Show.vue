@@ -89,12 +89,59 @@
         },
     };
 
+    let classificationStyles = {
+        income: {
+            badge: 'bg-emerald-50 text-emerald-900',
+            label: 'Income',
+        },
+        transfer: {
+            badge: 'bg-indigo-50 text-indigo-900',
+            label: 'Transfer',
+        },
+        bill: {
+            badge: 'bg-violet-50 text-violet-900',
+            label: 'Bill',
+        },
+        expense: {
+            badge: 'bg-rose-50 text-rose-900',
+            label: 'Expense',
+        },
+        reimbursement: {
+            badge: 'bg-teal-50 text-teal-900',
+            label: 'Reimbursement',
+        },
+    };
+
     let statusStyle = (status) =>
         statusStyles[status] ?? {
             row: 'border-l-neutral-300',
             badge: 'bg-neutral-100 text-neutral-700',
             label: status,
         };
+
+    let classificationStyle = (classification) => {
+        if (!classification) {
+            return null;
+        }
+
+        return (
+            classificationStyles[classification] ?? {
+                badge: 'bg-neutral-100 text-neutral-700',
+                label: classification,
+            }
+        );
+    };
+
+    let classificationSourceLabel = (source) => {
+        return (
+            {
+                heuristic: 'suggested',
+                learned: 'learned',
+                paired: 'paired',
+                manual: 'manual',
+            }[source] ?? source
+        );
+    };
 </script>
 
 <template>
@@ -180,12 +227,40 @@
                                         transaction.status === 'partial',
                                     'bg-neutral-500':
                                         transaction.status === 'ignored' ||
-                                        !['matched', 'unmatched', 'partial'].includes(
-                                            transaction.status,
-                                        ),
+                                        ![
+                                            'matched',
+                                            'unmatched',
+                                            'partial',
+                                        ].includes(transaction.status),
                                 }"
                             />
                             {{ statusStyle(transaction.status).label }}
+                        </span>
+                        <span
+                            v-if="classificationStyle(transaction.classification)"
+                            class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium"
+                            :class="
+                                classificationStyle(transaction.classification)
+                                    .badge
+                            "
+                            :title="
+                                transaction.classification_source
+                                    ? `Source: ${classificationSourceLabel(
+                                          transaction.classification_source,
+                                      )}`
+                                    : undefined
+                            "
+                        >
+                            {{
+                                classificationStyle(transaction.classification)
+                                    .label
+                            }}
+                        </span>
+                        <span
+                            v-if="transaction.category"
+                            class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-neutral-100 text-neutral-700"
+                        >
+                            {{ transaction.category.name }}
                         </span>
                     </div>
                     <p class="text-neutral-600">
