@@ -10,6 +10,7 @@
         { label: 'Imports', href: '/imports' },
         { label: 'Accounts', href: '/accounts' },
         { label: 'Categories', href: '/categories' },
+        { label: 'Rules', href: '/rules' },
         { label: 'Orders', href: '/orders' },
         { label: 'Reconciliation', href: '/reconciliation' },
     ];
@@ -29,7 +30,7 @@
     <div class="min-h-screen">
         <header class="border-b">
             <div
-                class="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-4 px-8 py-4"
+                class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-8 py-4"
             >
                 <nav class="flex flex-wrap items-center gap-4 text-sm">
                     <Link
@@ -61,7 +62,7 @@
             </div>
         </header>
 
-        <main class="mx-auto max-w-3xl space-y-6 p-8">
+        <main class="mx-auto max-w-6xl space-y-6 p-8">
             <slot />
         </main>
     </div>

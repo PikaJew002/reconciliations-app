@@ -5,6 +5,8 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\Categories\CategorizationRuleController;
+use App\Http\Controllers\Rules\IncomeClassificationRuleController;
+use App\Http\Controllers\Rules\RuleController;
 use App\Http\Controllers\Imports\AmazonOrderImportController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
@@ -50,7 +52,15 @@ Route::middleware('auth')->group(function () {
     Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
 
-    Route::get('/categorization-rules', [CategorizationRuleController::class, 'index'])
+    Route::get('/rules', [RuleController::class, 'index'])->name('rules.index');
+    Route::delete('/rules/income/description-only', [IncomeClassificationRuleController::class, 'destroyDescriptionOnly'])
+        ->name('rules.income.destroy-description-only');
+    Route::patch('/rules/income/{rule}', [IncomeClassificationRuleController::class, 'update'])
+        ->name('rules.income.update');
+    Route::delete('/rules/income/{rule}', [IncomeClassificationRuleController::class, 'destroy'])
+        ->name('rules.income.destroy');
+
+    Route::redirect('/categorization-rules', '/rules?tab=expenses')
         ->name('categorization-rules.index');
     Route::patch('/categorization-rules/{rule}', [CategorizationRuleController::class, 'update'])
         ->name('categorization-rules.update');

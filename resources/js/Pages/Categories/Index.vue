@@ -69,7 +69,7 @@
                     Uncategorized products
                 </Link>
                 <Link
-                    href="/categorization-rules"
+                    href="/rules?tab=expenses"
                     class="rounded border px-4 py-2 text-sm"
                 >
                     Rules

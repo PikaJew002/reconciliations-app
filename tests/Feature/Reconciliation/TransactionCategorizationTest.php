@@ -254,7 +254,7 @@ class TransactionCategorizationTest extends TestCase
             ->patch(route('categorization-rules.update', $rule), [
                 'is_active' => false,
             ])
-            ->assertRedirect(route('categorization-rules.index'));
+            ->assertRedirect(route('rules.index', ['tab' => 'expenses']));
 
         $this->assertFalse($rule->fresh()->is_active);
     }
