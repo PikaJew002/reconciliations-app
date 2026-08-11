@@ -6,9 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Accounts\StoreAccountRequest;
 use App\Models\Account;
 use App\Services\Accounts\AccountBrowseService;
-use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
-use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
-use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
+use App\Services\Institutions\InstitutionRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -27,14 +25,10 @@ class AccountController extends Controller
         return Inertia::render('Accounts/Index', $data);
     }
 
-    public function create(): Response
+    public function create(InstitutionRegistry $institutions): Response
     {
         return Inertia::render('Accounts/Create', [
-            'institutions' => [
-                CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
-                CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
-                CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
-            ],
+            'institutions' => $institutions->names(),
             'accountTypes' => [
                 Account::CHECKING,
                 Account::SAVINGS,

@@ -4,14 +4,16 @@ namespace App\Services\Imports;
 
 use App\Models\Account;
 use App\Models\ImportBatch;
-use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
-use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
-use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use App\Services\Imports\Contracts\Importer;
+use App\Services\Institutions\InstitutionRegistry;
 use InvalidArgumentException;
 
 class ImporterResolver
 {
+    public function __construct(
+        protected InstitutionRegistry $institutions,
+    ) {}
+
     public function resolve(ImportBatch $batch): Importer
     {
         return match ([$batch->source, $batch->type]) {
@@ -38,19 +40,14 @@ class ImporterResolver
             throw new InvalidArgumentException("Account [{$accountId}] not found.");
         }
 
-        return match ($account->institution_name) {
-            CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME => app(
-                CumberlandValleyNationalBankTransactionImporter::class,
-            ),
-            CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME => app(
-                CumberlandValleyCreditCardTransactionImporter::class,
-            ),
-            CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME => app(
-                CapitalOneCreditCardTransactionImporter::class,
-            ),
-            default => throw new InvalidArgumentException(
+        $profile = $this->institutions->find($account->institution_name);
+
+        if ($profile === null) {
+            throw new InvalidArgumentException(
                 "No bank importer registered for institution [{$account->institution_name}].",
-            ),
-        };
+            );
+        }
+
+        return app($profile->importerClass);
     }
 }
