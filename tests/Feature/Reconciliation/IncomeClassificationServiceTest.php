@@ -277,7 +277,7 @@ class IncomeClassificationServiceTest extends TestCase
             ->post(route('reconciliation.transactions.confirm-income', $transaction), [
                 'match_mode' => TransactionClassificationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $this->assertSame('ignored', $transaction->fresh()->status);
 
@@ -311,7 +311,7 @@ class IncomeClassificationServiceTest extends TestCase
             ->post(route('reconciliation.transactions.confirm-income', $transaction), [
                 'match_mode' => TransactionClassificationRule::MATCH_ONCE,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $this->assertDatabaseCount('transaction_classification_rules', 0);
         $this->assertDatabaseCount('categorization_runs', 0);

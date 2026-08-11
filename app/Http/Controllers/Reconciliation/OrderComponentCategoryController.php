@@ -50,7 +50,7 @@ class OrderComponentCategoryController extends Controller
         }
 
         return redirect()
-            ->back(fallback: route('reconciliation.index'))
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Component categorized.');
     }
 }

@@ -35,7 +35,7 @@ class ReimbursementGroupTest extends TestCase
                 'transaction_ids' => [$chargeA->id, $chargeB->id, $chargeC->id, $credit->id],
                 'name' => 'Childcare Aug',
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $group = ReimbursementGroup::query()->firstOrFail();
@@ -55,7 +55,7 @@ class ReimbursementGroupTest extends TestCase
                 'remainder_category_id' => $fees->id,
                 'remainder_classification' => BankTransaction::CLASSIFICATION_EXPENSE,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $group->refresh();
         $this->assertSame(ReimbursementGroup::STATUS_CLOSED, $group->status);
@@ -282,7 +282,7 @@ class ReimbursementGroupTest extends TestCase
             ->post(route('reconciliation.reimbursement-groups.close', $group), [
                 'remainder_classification' => BankTransaction::CLASSIFICATION_INCOME,
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $group->refresh();
@@ -337,10 +337,10 @@ class ReimbursementGroupTest extends TestCase
         app(ReimbursementGroupService::class)->create($user->id, [$expense->id, $credit->id], 'Childcare');
 
         $this->actingAs($user)
-            ->get(route('reconciliation.index'))
+            ->get(route('reconciliation.needs-review'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Reconciliation/Index')
+                ->component('Reconciliation/NeedsReview')
                 ->where('summary.open_reimbursement_groups', 1)
                 ->has('openReimbursementGroups', 1)
                 ->where('openReimbursementGroups.0.net', 5)

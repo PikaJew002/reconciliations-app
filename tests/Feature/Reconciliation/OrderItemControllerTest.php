@@ -44,7 +44,7 @@ class OrderItemControllerTest extends TestCase
             ->patch(route('reconciliation.orders.items.update', [$order, $item]), [
                 'quantity' => 1,
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $this->assertDatabaseHas('order_items', [

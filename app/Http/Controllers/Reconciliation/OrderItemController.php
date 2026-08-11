@@ -49,7 +49,7 @@ class OrderItemController extends Controller
         });
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Item quantity updated. Re-run reconciliation when ready.');
     }
 }

@@ -21,7 +21,7 @@ class TransferLinkController extends Controller
         $pairing->confirmLink($transferLink);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Transfer confirmed and hidden from expense tracking.');
     }
 
@@ -36,7 +36,7 @@ class TransferLinkController extends Controller
         $pairing->rejectLink($transferLink);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Transfer suggestion dismissed.');
     }
 }

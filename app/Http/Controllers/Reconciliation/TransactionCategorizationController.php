@@ -72,7 +72,7 @@ class TransactionCategorizationController extends Controller
 
         if ($validated['match_mode'] === TransactionCategorizationRule::MATCH_ONCE) {
             return redirect()
-                ->route('reconciliation.index')
+                ->back(fallback: route('reconciliation.unmatched-transactions'))
                 ->with('success', 'Transaction categorized.');
         }
 
@@ -91,7 +91,7 @@ class TransactionCategorizationController extends Controller
         ApplyCategorizationRun::dispatch($run->id);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.unmatched-transactions'))
             ->with('success', 'Transaction categorized. Applying rule to similar transactions…');
     }
 }

@@ -79,10 +79,10 @@ class TransactionClassificationReviewTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('reconciliation.index'))
+            ->get(route('reconciliation.needs-review'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Reconciliation/Index')
+                ->component('Reconciliation/NeedsReview')
                 ->where('summary.suggested_transfers', 1)
                 ->where('summary.suggested_income', 1)
                 ->has('suggestedTransfers', 1)
@@ -123,11 +123,10 @@ class TransactionClassificationReviewTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('reconciliation.index'))
+            ->get(route('reconciliation.unmatched-transactions'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Reconciliation/Index')
-                ->has('incomeMatchModes')
+                ->component('Reconciliation/UnmatchedTransactions')
                 ->has('unmatchedTransactions', 2)
                 ->where('unmatchedTransactions', function ($transactions) use ($credit, $debit) {
                     $byId = collect($transactions)->keyBy('id');
@@ -180,7 +179,7 @@ class TransactionClassificationReviewTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('reconciliation.transfers.confirm', $link))
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $this->assertSame('ignored', $debit->fresh()->status);
         $this->assertSame(BankTransaction::CLASSIFICATION_TRANSFER, $credit->fresh()->classification);
@@ -203,7 +202,7 @@ class TransactionClassificationReviewTest extends TestCase
             ->post(route('reconciliation.transactions.confirm-income', $income), [
                 'match_mode' => TransactionClassificationRule::MATCH_DESCRIPTION,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $this->assertSame('ignored', $income->fresh()->status);
 
@@ -221,7 +220,7 @@ class TransactionClassificationReviewTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('reconciliation.transactions.reject-income', $rejectedIncome))
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $this->assertNull($rejectedIncome->fresh()->classification);
     }

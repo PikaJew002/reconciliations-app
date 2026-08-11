@@ -24,12 +24,12 @@ class OrderPaymentResolutionController extends Controller
             $resolution->resolve($order, $request->input('payments', []));
         } catch (InvalidArgumentException|RuntimeException $exception) {
             return redirect()
-                ->route('reconciliation.index')
+                ->route('reconciliation.needs-review')
                 ->with('error', $exception->getMessage());
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Multi-payment order reconciled.');
     }
 
@@ -45,12 +45,12 @@ class OrderPaymentResolutionController extends Controller
             $resolution->removePayment($order, $paymentIndex);
         } catch (InvalidArgumentException $exception) {
             return redirect()
-                ->route('reconciliation.index')
+                ->route('reconciliation.needs-review')
                 ->with('error', $exception->getMessage());
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Payment method removed.');
     }
 }

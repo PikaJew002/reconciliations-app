@@ -30,7 +30,7 @@ class OrderComponentController extends Controller
         ]);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Component added. Re-run reconciliation when ready.');
     }
 
@@ -44,7 +44,7 @@ class OrderComponentController extends Controller
         $component->delete();
 
         return redirect()
-            ->back(fallback: route('reconciliation.index'))
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Component removed.');
     }
 }

@@ -119,7 +119,7 @@ class OrderPaymentResolutionTest extends TestCase
                     ['index' => 1, 'amount' => 11.04, 'bank_transaction_id' => $cardTx->id],
                 ],
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $order->refresh();
@@ -174,10 +174,10 @@ class OrderPaymentResolutionTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('reconciliation.index'))
+            ->get(route('reconciliation.needs-review'))
             ->assertOk()
             ->assertInertia(fn ($page) => $page
-                ->component('Reconciliation/Index')
+                ->component('Reconciliation/NeedsReview')
                 ->where('summary.payment_review_orders', 1)
                 ->where('summary.needs_review', 1)
                 ->has('paymentReviewOrders', 1)
@@ -382,7 +382,7 @@ class OrderPaymentResolutionTest extends TestCase
                     ],
                 ],
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $order->refresh();
@@ -446,7 +446,7 @@ class OrderPaymentResolutionTest extends TestCase
 
         $this->actingAs($user)
             ->delete(route('reconciliation.orders.payments.destroy', [$order, 0]))
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $order->refresh();
@@ -483,7 +483,7 @@ class OrderPaymentResolutionTest extends TestCase
 
         $this->actingAs($user)
             ->delete(route('reconciliation.orders.payments.destroy', [$order, 0]))
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('error');
 
         $order->refresh();

@@ -17,31 +17,63 @@ use Inertia\Response;
 
 class ReconciliationController extends Controller
 {
-    public function index(Request $request, ReconciliationReviewService $review): Response
+    public function index(Request $request, ReconciliationReviewService $review): RedirectResponse
+    {
+        $summary = $review->summaryForUser($request->user()->id);
+
+        if (($summary['needs_review'] ?? 0) > 0) {
+            return redirect()->route('reconciliation.needs-review');
+        }
+
+        return redirect()->route('reconciliation.matched');
+    }
+
+    public function needsReview(Request $request, ReconciliationReviewService $review): Response
     {
         $userId = $request->user()->id;
-        $data = $review->forUser($userId);
+        $needsReview = $review->needsReviewForUser($userId);
 
-        $categories = Category::query()
-            ->where('user_id', $userId)
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'kind'])
-            ->map(fn (Category $category) => [
-                'id' => $category->id,
-                'name' => $category->name,
-                'kind' => $category->kind,
-            ])
-            ->values()
-            ->all();
-
-        return Inertia::render('Reconciliation/Index', [
-            ...$data,
-            'categories' => $categories,
-            'matchModes' => TransactionCategorizationRule::allMatchModes(),
+        return Inertia::render('Reconciliation/NeedsReview', [
+            'summary' => $review->summaryForUser($userId, $needsReview),
+            ...$needsReview,
+            'categories' => $this->categoriesPayload($userId),
             'incomeMatchModes' => TransactionClassificationRule::allMatchModes(),
-            'activeRun' => $this->activeRunPayload($userId),
-            'activeCategorizeRuns' => $this->activeCategorizeRunsPayload($userId),
+            ...$this->sharedRunProps($userId),
+        ]);
+    }
+
+    public function matched(Request $request, ReconciliationReviewService $review): Response
+    {
+        $userId = $request->user()->id;
+
+        return Inertia::render('Reconciliation/Matched', [
+            'summary' => $review->summaryForUser($userId),
+            ...$review->matchedForUser($userId),
+            ...$this->sharedRunProps($userId),
+        ]);
+    }
+
+    public function unmatchedOrders(Request $request, ReconciliationReviewService $review): Response
+    {
+        $userId = $request->user()->id;
+
+        return Inertia::render('Reconciliation/UnmatchedOrders', [
+            'summary' => $review->summaryForUser($userId),
+            ...$review->unmatchedOrdersForUser($userId),
+            ...$this->sharedRunProps($userId),
+        ]);
+    }
+
+    public function unmatchedTransactions(Request $request, ReconciliationReviewService $review): Response
+    {
+        $userId = $request->user()->id;
+
+        return Inertia::render('Reconciliation/UnmatchedTransactions', [
+            'summary' => $review->summaryForUser($userId),
+            ...$review->unmatchedTransactionsForUser($userId),
+            'categories' => $this->categoriesPayload($userId),
+            'matchModes' => TransactionCategorizationRule::allMatchModes(),
+            ...$this->sharedRunProps($userId),
         ]);
     }
 
@@ -57,7 +89,7 @@ class ReconciliationController extends Controller
 
         if ($existing) {
             return redirect()
-                ->route('reconciliation.index')
+                ->back(fallback: route('reconciliation.needs-review'))
                 ->with('success', 'A reconciliation run is already in progress.');
         }
 
@@ -70,8 +102,41 @@ class ReconciliationController extends Controller
         RunUserReconciliationPipeline::dispatch($run->id);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Reconciliation queued for your imported data.');
+    }
+
+    /**
+     * @return list<array{id: int, name: string, kind: string}>
+     */
+    protected function categoriesPayload(int $userId): array
+    {
+        return Category::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'kind'])
+            ->map(fn (Category $category) => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'kind' => $category->kind,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{
+     *     activeRun: array{id: int, status: string, error_message: ?string, metadata: array<string, mixed>}|null,
+     *     activeCategorizeRuns: list<array{id: int, status: string, error_message: ?string, metadata: array<string, mixed>}>
+     * }
+     */
+    protected function sharedRunProps(int $userId): array
+    {
+        return [
+            'activeRun' => $this->activeRunPayload($userId),
+            'activeCategorizeRuns' => $this->activeCategorizeRunsPayload($userId),
+        ];
     }
 
     /**

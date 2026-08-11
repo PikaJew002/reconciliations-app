@@ -34,7 +34,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Reimbursement group created.');
     }
 
@@ -57,7 +57,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Transactions added to reimbursement group.');
     }
 
@@ -77,7 +77,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Transaction removed from reimbursement group.');
     }
 
@@ -105,7 +105,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Reimbursement amount updated.');
     }
 
@@ -145,7 +145,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Reimbursement group closed.');
     }
 
@@ -163,7 +163,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Reimbursement group reopened.');
     }
 
@@ -181,7 +181,7 @@ class ReimbursementGroupController extends Controller
         }
 
         return redirect()
-            ->route('reconciliation.index')
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Reimbursement group deleted.');
     }
 }

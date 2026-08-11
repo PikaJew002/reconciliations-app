@@ -93,6 +93,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/merchants/{merchant}', [MerchantController::class, 'show'])->name('merchants.show');
 
     Route::get('/reconciliation', [ReconciliationController::class, 'index'])->name('reconciliation.index');
+    Route::get('/reconciliation/needs-review', [ReconciliationController::class, 'needsReview'])
+        ->name('reconciliation.needs-review');
+    Route::get('/reconciliation/matched', [ReconciliationController::class, 'matched'])
+        ->name('reconciliation.matched');
+    Route::get('/reconciliation/unmatched-orders', [ReconciliationController::class, 'unmatchedOrders'])
+        ->name('reconciliation.unmatched-orders');
+    Route::get('/reconciliation/unmatched-transactions', [ReconciliationController::class, 'unmatchedTransactions'])
+        ->name('reconciliation.unmatched-transactions');
     Route::post('/reconciliation/run', [ReconciliationController::class, 'run'])->name('reconciliation.run');
     Route::post('/reconciliation/orders/{order}/components', [OrderComponentController::class, 'store'])
         ->name('reconciliation.orders.components.store');

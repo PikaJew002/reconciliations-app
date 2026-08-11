@@ -47,7 +47,7 @@ class TransactionCategorizationTest extends TestCase
                 'category_id' => $category->id,
                 'match_mode' => TransactionCategorizationRule::MATCH_MERCHANT,
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.unmatched-transactions'))
             ->assertSessionHas('success');
 
         $transaction->refresh();
@@ -86,7 +86,7 @@ class TransactionCategorizationTest extends TestCase
             'classification' => BankTransaction::CLASSIFICATION_BILL,
             'category_id' => $category->id,
             'match_mode' => TransactionCategorizationRule::MATCH_ONCE,
-        ])->assertRedirect(route('reconciliation.index'));
+        ])->assertRedirect(route('reconciliation.unmatched-transactions'));
 
         $this->assertDatabaseCount('transaction_categorization_rules', 0);
         $this->assertDatabaseCount('categorization_runs', 0);
@@ -121,7 +121,7 @@ class TransactionCategorizationTest extends TestCase
                 'category_id' => $category->id,
                 'match_mode' => TransactionCategorizationRule::MATCH_MERCHANT,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.unmatched-transactions'));
 
         $run = CategorizationRun::query()->first();
         $this->assertNotNull($run);
@@ -229,7 +229,7 @@ class TransactionCategorizationTest extends TestCase
             ->patch(route('reconciliation.orders.components.category.update', [$order, $component]), [
                 'category_id' => $category->id,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $component->refresh();
         $product->refresh();
@@ -295,7 +295,7 @@ class TransactionCategorizationTest extends TestCase
                 'category_id' => $category->id,
                 'match_mode' => TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.unmatched-transactions'));
 
         $this->assertDatabaseHas('transaction_categorization_rules', [
             'user_id' => $user->id,
@@ -388,7 +388,7 @@ class TransactionCategorizationTest extends TestCase
                 'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
                 'normalized_pattern' => 'toyota financial',
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.unmatched-transactions'));
 
         $this->assertDatabaseHas('transaction_categorization_rules', [
             'user_id' => $user->id,
@@ -445,7 +445,7 @@ class TransactionCategorizationTest extends TestCase
                 'category_id' => $category->id,
                 'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
             ])
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.unmatched-transactions'));
 
         $this->assertDatabaseHas('transaction_categorization_rules', [
             'user_id' => $user->id,

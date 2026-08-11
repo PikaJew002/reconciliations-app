@@ -30,7 +30,7 @@ class TransactionClassificationController extends Controller
 
         if ($validated['match_mode'] === TransactionClassificationRule::MATCH_ONCE) {
             return redirect()
-                ->route('reconciliation.index')
+                ->route('reconciliation.needs-review')
                 ->with('success', 'Income confirmed.');
         }
 
@@ -47,7 +47,7 @@ class TransactionClassificationController extends Controller
         ApplyIncomeClassificationRun::dispatch($run->id);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Income confirmed. Applying rule to similar credits…');
     }
 
@@ -61,7 +61,7 @@ class TransactionClassificationController extends Controller
         $incomeClassification->rejectIncome($transaction);
 
         return redirect()
-            ->route('reconciliation.index')
+            ->route('reconciliation.needs-review')
             ->with('success', 'Income suggestion dismissed.');
     }
 }

@@ -37,7 +37,7 @@ class OrderComponentControllerTest extends TestCase
                 'description' => 'Fast delivery fee',
                 'amount' => 5.00,
             ])
-            ->assertRedirect(route('reconciliation.index'))
+            ->assertRedirect(route('reconciliation.needs-review'))
             ->assertSessionHas('success');
 
         $this->assertDatabaseHas('order_components', [
@@ -66,7 +66,7 @@ class OrderComponentControllerTest extends TestCase
 
         $this->actingAs($user)
             ->delete(route('reconciliation.orders.components.destroy', [$order, $component]))
-            ->assertRedirect(route('reconciliation.index'));
+            ->assertRedirect(route('reconciliation.needs-review'));
 
         $this->assertDatabaseMissing('order_components', ['id' => $component->id]);
     }
