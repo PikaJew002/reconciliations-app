@@ -18,10 +18,16 @@
         color: '',
     });
 
-    let colorPreview = computed(() => {
-        let value = (form.color || '').trim();
+    function stripColorHash(value) {
+        return String(value || '')
+            .trim()
+            .replace(/^#/, '');
+    }
 
-        return /^#[0-9A-Fa-f]{6}$/.test(value) ? value : null;
+    let colorPreview = computed(() => {
+        let hex = stripColorHash(form.color);
+
+        return /^[0-9A-Fa-f]{6}$/.test(hex) ? `#${hex}` : null;
     });
 
     let kindLabel = (kind) => {
@@ -34,8 +40,17 @@
         );
     };
 
+    let onColorInput = (event) => {
+        form.color = stripColorHash(event.target.value).slice(0, 6);
+    };
+
     let submit = () => {
-        form.post('/categories');
+        form
+            .transform((data) => ({
+                ...data,
+                color: data.color ? `#${stripColorHash(data.color)}` : null,
+            }))
+            .post('/categories');
     };
 </script>
 
@@ -91,7 +106,11 @@
                 <div class="flex items-center gap-3">
                     <span
                         class="h-10 w-10 shrink-0 rounded border"
-                        :class="colorPreview ? 'border-neutral-300' : 'border-dashed border-neutral-300 bg-neutral-50'"
+                        :class="
+                            colorPreview
+                                ? 'border-neutral-300'
+                                : 'border-dashed border-neutral-300 bg-neutral-50'
+                        "
                         :style="
                             colorPreview
                                 ? { backgroundColor: colorPreview }
@@ -100,14 +119,24 @@
                         :title="colorPreview || 'Enter a hex color'"
                         aria-hidden="true"
                     />
-                    <input
-                        id="color"
-                        v-model="form.color"
-                        type="text"
-                        placeholder="#336699"
-                        maxlength="7"
-                        class="w-full rounded border px-3 py-2 font-mono"
-                    />
+                    <div
+                        class="flex w-full items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-neutral-400"
+                    >
+                        <span
+                            class="flex items-center border-r bg-neutral-50 px-3 font-mono text-neutral-500"
+                            aria-hidden="true"
+                            >#</span
+                        >
+                        <input
+                            id="color"
+                            :value="form.color"
+                            type="text"
+                            placeholder="336699"
+                            maxlength="7"
+                            class="w-full border-0 px-3 py-2 font-mono outline-none"
+                            @input="onColorInput"
+                        />
+                    </div>
                 </div>
                 <p v-if="form.errors.color" class="mt-1 text-sm text-red-600">
                     {{ form.errors.color }}
