@@ -13,83 +13,127 @@ class DashboardController extends Controller
     public function index(Request $request, CategorySpendQuery $categorySpendQuery): Response
     {
         $userId = $request->user()->id;
-        $totals = $categorySpendQuery->categoryTotalsForUser($userId);
+
+        $spendTotals = $categorySpendQuery->categoryTotalsForUser($userId);
 
         foreach ($categorySpendQuery->orderComponentCategoryTotalsForUser($userId) as $categoryId => $amount) {
-            $totals[$categoryId] = round(($totals[$categoryId] ?? 0) + $amount, 2);
+            $spendTotals[$categoryId] = round(($spendTotals[$categoryId] ?? 0) + $amount, 2);
         }
 
-        $uncategorizedAmount = round(
+        $incomeTotals = $categorySpendQuery->incomeCategoryTotalsForUser($userId);
+
+        $uncategorizedSpend = round(
             $categorySpendQuery->uncategorizedSpendForUser($userId)
             + $categorySpendQuery->orderComponentUncategorizedSpendForUser($userId),
             2,
         );
+        $uncategorizedIncome = $categorySpendQuery->uncategorizedIncomeForUser($userId);
 
         $categories = Category::query()
             ->where('user_id', $userId)
             ->orderBy('name')
-            ->get()
+            ->get();
+
+        $billCategories = $this->categoryCards(
+            $categories->where('kind', Category::KIND_BILL),
+            $spendTotals,
+        );
+        $expenseCategories = $this->categoryCards(
+            $categories->where('kind', Category::KIND_EXPENSE),
+            $spendTotals,
+        );
+        $incomeCategories = $this->categoryCards(
+            $categories->where('kind', Category::KIND_INCOME),
+            $incomeTotals,
+        );
+
+        $billsAmount = round((float) collect($billCategories)->sum('amount'), 2);
+        $expensesAmount = round((float) collect($expenseCategories)->sum('amount'), 2);
+        $categorizedIncomeAmount = round((float) collect($incomeCategories)->sum('amount'), 2);
+
+        $billCategories = $this->withKindPercents($billCategories, $billsAmount);
+        $expenseCategories = $this->withKindPercents($expenseCategories, $expensesAmount);
+        $incomeCategories = $this->withKindPercents($incomeCategories, $categorizedIncomeAmount + $uncategorizedIncome);
+
+        $totalIncome = round($categorizedIncomeAmount + $uncategorizedIncome, 2);
+        $totalSpend = round($billsAmount + $expensesAmount + $uncategorizedSpend, 2);
+
+        return Inertia::render('Dashboard/Index', [
+            'total_income' => $totalIncome,
+            'total_spend' => $totalSpend,
+            'sections' => [
+                'income' => [
+                    'amount' => $totalIncome,
+                    'categories' => $incomeCategories,
+                    'uncategorized' => $this->uncategorizedPayload($uncategorizedIncome, $totalIncome),
+                ],
+                'spending' => [
+                    'amount' => $totalSpend,
+                    'bills' => [
+                        'amount' => $billsAmount,
+                        'categories' => $billCategories,
+                    ],
+                    'expenses' => [
+                        'amount' => $expensesAmount,
+                        'categories' => $expenseCategories,
+                    ],
+                    'uncategorized' => $this->uncategorizedPayload($uncategorizedSpend, $totalSpend),
+                ],
+            ],
+            'coverage' => $categorySpendQuery->spendCoverageForUser($userId),
+        ]);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Category>  $categories
+     * @param  array<int, float>  $totals
+     * @return list<array{id: int, name: string, kind: string, color: ?string, amount: float}>
+     */
+    protected function categoryCards($categories, array $totals): array
+    {
+        return $categories
             ->map(fn (Category $category) => [
                 'id' => $category->id,
                 'name' => $category->name,
                 'kind' => $category->kind,
+                'color' => $category->color,
                 'amount' => round((float) ($totals[$category->id] ?? 0), 2),
-            ]);
-
-        $billsAmount = round(
-            (float) $categories
-                ->where('kind', Category::KIND_BILL)
-                ->sum('amount'),
-            2,
-        );
-        $expensesAmount = round(
-            (float) $categories
-                ->where('kind', Category::KIND_EXPENSE)
-                ->sum('amount'),
-            2,
-        );
-
-        $categories = $categories
-            ->map(function (array $category) use ($billsAmount, $expensesAmount): array {
-                $kindTotal = $category['kind'] === Category::KIND_BILL
-                    ? $billsAmount
-                    : $expensesAmount;
-
-                $category['percent'] = $this->percentOf($category['amount'], $kindTotal);
-
-                return $category;
-            })
+            ])
+            ->filter(fn (array $category): bool => $category['amount'] > 0)
             ->sortBy([
                 ['amount', 'desc'],
                 ['name', 'asc'],
             ])
             ->values()
             ->all();
+    }
 
-        $categorizedTotal = round($billsAmount + $expensesAmount, 2);
-        $totalSpend = round($categorizedTotal + $uncategorizedAmount, 2);
+    /**
+     * @param  list<array{id: int, name: string, kind: string, color: ?string, amount: float}>  $categories
+     * @return list<array{id: int, name: string, kind: string, color: ?string, amount: float, percent: ?float}>
+     */
+    protected function withKindPercents(array $categories, float $kindTotal): array
+    {
+        return array_map(function (array $category) use ($kindTotal): array {
+            $category['percent'] = $this->percentOf($category['amount'], $kindTotal);
 
-        return Inertia::render('Dashboard/Index', [
-            'categories' => $categories,
-            'uncategorized_amount' => $uncategorizedAmount,
-            'uncategorized_percent' => $this->percentOf($uncategorizedAmount, $totalSpend),
-            'total_spend' => $totalSpend,
-            'breakdown' => [
-                'bills' => [
-                    'amount' => $billsAmount,
-                    'percent' => $this->percentOf($billsAmount, $totalSpend),
-                ],
-                'expenses' => [
-                    'amount' => $expensesAmount,
-                    'percent' => $this->percentOf($expensesAmount, $totalSpend),
-                ],
-                'uncategorized' => [
-                    'amount' => $uncategorizedAmount,
-                    'percent' => $this->percentOf($uncategorizedAmount, $totalSpend),
-                ],
-            ],
-            'coverage' => $categorySpendQuery->spendCoverageForUser($userId),
-        ]);
+            return $category;
+        }, $categories);
+    }
+
+    /**
+     * @return array{amount: float, percent: ?float}|null
+     */
+    protected function uncategorizedPayload(float $amount, float $sectionTotal): ?array
+    {
+        if ($amount <= 0) {
+            return null;
+        }
+
+        return [
+            'amount' => $amount,
+            'percent' => $this->percentOf($amount, $sectionTotal),
+        ];
     }
 
     protected function percentOf(float $part, float $whole): ?float

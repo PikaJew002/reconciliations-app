@@ -5,23 +5,15 @@
     defineOptions({ layout: AuthenticatedLayout });
 
     let props = defineProps({
-        categories: {
-            type: Array,
-            required: true,
-        },
-        uncategorized_amount: {
+        total_income: {
             type: Number,
             required: true,
-        },
-        uncategorized_percent: {
-            type: Number,
-            default: null,
         },
         total_spend: {
             type: Number,
             required: true,
         },
-        breakdown: {
+        sections: {
             type: Object,
             required: true,
         },
@@ -32,7 +24,13 @@
     });
 
     let kindLabel = (kind) => {
-        return kind === 'bill' ? 'Bill' : 'Expense';
+        return (
+            {
+                bill: 'Bill',
+                expense: 'Expense',
+                income: 'Income',
+            }[kind] ?? kind
+        );
     };
 
     let formatMoney = (amount) => {
@@ -76,7 +74,16 @@
         return `${formatDate(from)} → ${formatDate(to)}`;
     };
 
-    let hasSpend = computed(() => Number(props.total_spend) > 0);
+    let cardStyle = (color) => {
+        if (!color) {
+            return undefined;
+        }
+
+        return {
+            borderLeftColor: color,
+            backgroundColor: `${color}14`,
+        };
+    };
 
     let overallRange = computed(() =>
         formatRange(props.coverage.from, props.coverage.to),
@@ -89,56 +96,50 @@
     let ordersRange = computed(() =>
         formatRange(props.coverage.orders_from, props.coverage.orders_to),
     );
+
+    let hasIncomeContent = computed(() => {
+        let income = props.sections.income;
+
+        return income.categories.length > 0 || income.uncategorized !== null;
+    });
+
+    let hasSpendingContent = computed(() => {
+        let spending = props.sections.spending;
+
+        return (
+            spending.bills.categories.length > 0 ||
+            spending.expenses.categories.length > 0 ||
+            spending.uncategorized !== null
+        );
+    });
+
+    let isEmpty = computed(
+        () => !hasIncomeContent.value && !hasSpendingContent.value,
+    );
 </script>
 
 <template>
-    <div class="space-y-6">
+    <div class="space-y-8">
         <div>
             <h1 class="text-2xl font-semibold">Home</h1>
             <p class="text-sm text-neutral-600">
-                Spend by category. Reimbursement-group transactions are
-                excluded.
+                Income and spending by category. Reimbursement-group
+                transactions are excluded.
             </p>
         </div>
 
         <div class="space-y-3 rounded border px-4 py-3">
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-                <p class="text-sm text-neutral-600">Total spend</p>
-                <p class="text-xl font-semibold">
-                    {{ formatMoney(total_spend) }}
-                </p>
-            </div>
-
-            <div
-                class="grid gap-2 text-sm sm:grid-cols-3"
-            >
-                <div class="rounded border px-3 py-2">
-                    <p class="text-neutral-600">Bills</p>
-                    <p class="font-medium tabular-nums">
-                        {{ formatMoney(breakdown.bills.amount) }}
-                        <span class="text-neutral-600">
-                            ({{ formatPercent(breakdown.bills.percent) }})
-                        </span>
+            <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                    <p class="text-sm text-neutral-600">Income</p>
+                    <p class="text-xl font-semibold tabular-nums">
+                        {{ formatMoney(total_income) }}
                     </p>
                 </div>
-                <div class="rounded border px-3 py-2">
-                    <p class="text-neutral-600">Expenses</p>
-                    <p class="font-medium tabular-nums">
-                        {{ formatMoney(breakdown.expenses.amount) }}
-                        <span class="text-neutral-600">
-                            ({{ formatPercent(breakdown.expenses.percent) }})
-                        </span>
-                    </p>
-                </div>
-                <div class="rounded border px-3 py-2">
-                    <p class="text-neutral-600">Uncategorized</p>
-                    <p class="font-medium tabular-nums">
-                        {{ formatMoney(breakdown.uncategorized.amount) }}
-                        <span class="text-neutral-600">
-                            ({{
-                                formatPercent(breakdown.uncategorized.percent)
-                            }})
-                        </span>
+                <div>
+                    <p class="text-sm text-neutral-600">Spending</p>
+                    <p class="text-xl font-semibold tabular-nums">
+                        {{ formatMoney(total_spend) }}
                     </p>
                 </div>
             </div>
@@ -161,54 +162,180 @@
             </p>
         </div>
 
-        <div
-            v-if="!hasSpend && categories.length === 0"
-            class="text-sm text-neutral-600"
-        >
-            No spend yet. Import bank transactions and categorize bills and
-            expenses to see totals here.
+        <div v-if="isEmpty" class="text-sm text-neutral-600">
+            No income or spending yet. Import bank transactions and categorize
+            them to see totals here.
         </div>
 
-        <ul v-else class="divide-y rounded border">
-            <li
-                v-for="category in categories"
-                :key="category.id"
-                class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-            >
-                <div>
-                    <p class="font-medium">{{ category.name }}</p>
-                    <p class="text-sm text-neutral-600">
-                        {{ kindLabel(category.kind) }}
+        <template v-else>
+            <section v-if="hasIncomeContent" class="space-y-4">
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 class="text-lg font-semibold">Income</h2>
+                    <p class="text-sm font-medium tabular-nums text-neutral-700">
+                        {{ formatMoney(sections.income.amount) }}
                     </p>
                 </div>
-                <div class="text-right">
-                    <p class="font-medium tabular-nums">
-                        {{ formatMoney(category.amount) }}
-                    </p>
-                    <p class="text-sm text-neutral-600 tabular-nums">
-                        {{ formatPercent(category.percent) }} of
-                        {{ kindLabel(category.kind).toLowerCase() }}s
+
+                <div
+                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                >
+                    <div
+                        v-for="category in sections.income.categories"
+                        :key="category.id"
+                        class="rounded border border-l-4 px-4 py-3"
+                        :class="
+                            category.color
+                                ? ''
+                                : 'border-l-neutral-300 border-dashed bg-neutral-50'
+                        "
+                        :style="cardStyle(category.color)"
+                    >
+                        <p class="font-medium">{{ category.name }}</p>
+                        <p class="mt-2 text-lg font-semibold tabular-nums">
+                            {{ formatMoney(category.amount) }}
+                        </p>
+                        <p class="text-sm text-neutral-600 tabular-nums">
+                            {{ formatPercent(category.percent) }} of
+                            {{ kindLabel(category.kind).toLowerCase() }}
+                        </p>
+                    </div>
+
+                    <div
+                        v-if="sections.income.uncategorized"
+                        class="rounded border border-dashed border-l-4 border-l-neutral-400 bg-neutral-50 px-4 py-3"
+                    >
+                        <p class="font-medium">Uncategorized</p>
+                        <p class="mt-2 text-lg font-semibold tabular-nums">
+                            {{
+                                formatMoney(sections.income.uncategorized.amount)
+                            }}
+                        </p>
+                        <p class="text-sm text-neutral-600 tabular-nums">
+                            {{
+                                formatPercent(
+                                    sections.income.uncategorized.percent,
+                                )
+                            }}
+                            of income
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section v-if="hasSpendingContent" class="space-y-6">
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 class="text-lg font-semibold">Spending</h2>
+                    <p class="text-sm font-medium tabular-nums text-neutral-700">
+                        {{ formatMoney(sections.spending.amount) }}
                     </p>
                 </div>
-            </li>
-            <li
-                class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-            >
-                <div>
-                    <p class="font-medium">Uncategorized</p>
-                    <p class="text-sm text-neutral-600">
-                        Bills and expenses without a category
-                    </p>
+
+                <div
+                    v-if="sections.spending.bills.categories.length > 0"
+                    class="space-y-3"
+                >
+                    <div
+                        class="flex flex-wrap items-baseline justify-between gap-2"
+                    >
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-600">
+                            Bills
+                        </h3>
+                        <p class="text-sm tabular-nums text-neutral-600">
+                            {{ formatMoney(sections.spending.bills.amount) }}
+                        </p>
+                    </div>
+
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div
+                            v-for="category in sections.spending.bills
+                                .categories"
+                            :key="category.id"
+                            class="rounded border border-l-4 px-4 py-3"
+                            :class="
+                                category.color
+                                    ? ''
+                                    : 'border-l-neutral-300 border-dashed bg-neutral-50'
+                            "
+                            :style="cardStyle(category.color)"
+                        >
+                            <p class="font-medium">{{ category.name }}</p>
+                            <p class="mt-2 text-lg font-semibold tabular-nums">
+                                {{ formatMoney(category.amount) }}
+                            </p>
+                            <p class="text-sm text-neutral-600 tabular-nums">
+                                {{ formatPercent(category.percent) }} of
+                                {{ kindLabel(category.kind).toLowerCase() }}s
+                            </p>
+                        </div>
+                    </div>
                 </div>
-                <div class="text-right">
-                    <p class="font-medium tabular-nums">
-                        {{ formatMoney(uncategorized_amount) }}
-                    </p>
-                    <p class="text-sm text-neutral-600 tabular-nums">
-                        {{ formatPercent(uncategorized_percent) }} of total
-                    </p>
+
+                <div
+                    v-if="sections.spending.expenses.categories.length > 0"
+                    class="space-y-3"
+                >
+                    <div
+                        class="flex flex-wrap items-baseline justify-between gap-2"
+                    >
+                        <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-600">
+                            Expenses
+                        </h3>
+                        <p class="text-sm tabular-nums text-neutral-600">
+                            {{ formatMoney(sections.spending.expenses.amount) }}
+                        </p>
+                    </div>
+
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div
+                            v-for="category in sections.spending.expenses
+                                .categories"
+                            :key="category.id"
+                            class="rounded border border-l-4 px-4 py-3"
+                            :class="
+                                category.color
+                                    ? ''
+                                    : 'border-l-neutral-300 border-dashed bg-neutral-50'
+                            "
+                            :style="cardStyle(category.color)"
+                        >
+                            <p class="font-medium">{{ category.name }}</p>
+                            <p class="mt-2 text-lg font-semibold tabular-nums">
+                                {{ formatMoney(category.amount) }}
+                            </p>
+                            <p class="text-sm text-neutral-600 tabular-nums">
+                                {{ formatPercent(category.percent) }} of
+                                {{ kindLabel(category.kind).toLowerCase() }}s
+                            </p>
+                        </div>
+                    </div>
                 </div>
-            </li>
-        </ul>
+
+                <div
+                    v-if="sections.spending.uncategorized"
+                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                >
+                    <div
+                        class="rounded border border-dashed border-l-4 border-l-neutral-400 bg-neutral-50 px-4 py-3"
+                    >
+                        <p class="font-medium">Uncategorized</p>
+                        <p class="mt-2 text-lg font-semibold tabular-nums">
+                            {{
+                                formatMoney(
+                                    sections.spending.uncategorized.amount,
+                                )
+                            }}
+                        </p>
+                        <p class="text-sm text-neutral-600 tabular-nums">
+                            {{
+                                formatPercent(
+                                    sections.spending.uncategorized.percent,
+                                )
+                            }}
+                            of spending
+                        </p>
+                    </div>
+                </div>
+            </section>
+        </template>
     </div>
 </template>

@@ -18,7 +18,8 @@ use Carbon\Carbon;
  * - Order components with no category_id count as uncategorized spend (signed amounts).
  * - Transactions in any reimbursement group are excluded from those raw totals.
  * - Closed under-reimbursed groups contribute their positive net to remainder_category_id.
- * - Closed over-reimbursed groups contribute |net| to income (uncategorized surplus).
+ * - Ungrouped categorized income credits count toward their category_id.
+ * - Ungrouped income with no category_id, plus closed over-reimbursed |net|, counts as uncategorized income.
  * - Open positive nets are exposed separately as awaiting reimbursement (not category spend).
  */
 class CategorySpendQuery
@@ -238,10 +239,41 @@ class CategorySpendQuery
     }
 
     /**
-     * Credits classified as income that are not in a reimbursement group,
-     * plus closed over-reimbursement surplus booked as uncategorized income.
+     * Ungrouped income credits with a category_id.
+     *
+     * @return array<int, float> category_id => income amount (positive)
      */
-    public function incomeTotalForUser(int $userId): float
+    public function incomeCategoryTotalsForUser(int $userId): array
+    {
+        $groupedTransactionIds = $this->groupedTransactionIds($userId);
+
+        $totals = [];
+
+        $income = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->where('amount', '>', 0)
+            ->whereNotNull('category_id')
+            ->when(
+                $groupedTransactionIds !== [],
+                fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
+            )
+            ->get(['category_id', 'amount']);
+
+        foreach ($income as $transaction) {
+            $categoryId = (int) $transaction->category_id;
+            $amount = (float) $transaction->amount;
+            $totals[$categoryId] = round(($totals[$categoryId] ?? 0) + $amount, 2);
+        }
+
+        return $totals;
+    }
+
+    /**
+     * Ungrouped income with no category_id, plus closed over-reimbursement
+     * surplus booked as uncategorized income.
+     */
+    public function uncategorizedIncomeForUser(int $userId): float
     {
         $groupedTransactionIds = $this->groupedTransactionIds($userId);
 
@@ -249,6 +281,7 @@ class CategorySpendQuery
             ->where('user_id', $userId)
             ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
             ->where('amount', '>', 0)
+            ->whereNull('category_id')
             ->when(
                 $groupedTransactionIds !== [],
                 fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
@@ -273,6 +306,17 @@ class CategorySpendQuery
         }
 
         return round($total, 2);
+    }
+
+    /**
+     * Credits classified as income that are not in a reimbursement group,
+     * plus closed over-reimbursement surplus booked as uncategorized income.
+     */
+    public function incomeTotalForUser(int $userId): float
+    {
+        $categorized = array_sum($this->incomeCategoryTotalsForUser($userId));
+
+        return round($categorized + $this->uncategorizedIncomeForUser($userId), 2);
     }
 
     /**
