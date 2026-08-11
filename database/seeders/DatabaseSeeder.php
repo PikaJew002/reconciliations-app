@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Account;
 use App\Models\User;
 use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
+use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -37,6 +38,14 @@ class DatabaseSeeder extends Seeder
             'account_name' => 'Capital One Credit Card',
             'account_type' => Account::CREDIT_CARD,
             'last_four' => '5394',
+        ]);
+
+        Account::create([
+            'name' => 'CVNB Credit Card',
+            'institution_name' => CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_name' => 'CVNB Credit Card',
+            'account_type' => Account::CREDIT_CARD,
+            'last_four' => '7067',
         ]);
     }
 }

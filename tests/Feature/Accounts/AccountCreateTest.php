@@ -40,7 +40,7 @@ class AccountCreateTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Accounts/Create')
-                ->has('institutions', 2)
+                ->has('institutions', 3)
                 ->has('accountTypes', 4)
                 ->where('institutions.0', CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME));
     }

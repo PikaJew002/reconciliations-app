@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
+use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use App\Services\Imports\ImporterResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -172,6 +173,68 @@ CSV);
         $this->assertSame('2026-07-08', $transactions[2]->transaction_date->toDateString());
         $this->assertSame('-41.38', $transactions[2]->amount);
         $this->assertSame('WAL-MART #1190', $transactions[2]->description);
+    }
+
+    public function test_job_imports_cumberland_valley_credit_card_transactions(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'institution_name' => CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        $path = 'imports/cvnb-credit-card.csv';
+
+        Storage::disk('local')->put($path, <<<'CSV'
+Account Number,Cardholder Name,Trans Date,Posting Date,Type,Category,Merchant Name,Merchant City,Merchant State,Amount,Reference Number,Tran Type,MCC Code,MCC Description,
+"XXXX-7067","AARON JOSEPH EISENBERG","06/04/2026","06/05/2026","Debit","Auto Related","SPEEDWAY 44090           ","LEXINGTON    ","KY ","$28.56","02305376156000584360642	","Purchase","5542","Automated Gasoline Dispensers",
+"XXXX-7067","AARON JOSEPH EISENBERG","06/01/2026","06/01/2026","Credit","Payments and Fees","INTERNET PMT-THANK YOU   ","TAMPA        ","   ","($150.00)","99988877766655544433322	","Payment","6010","Financial Institutions - Banks Savings",
+"XXXX-7067","AARON JOSEPH EISENBERG","06/03/2026","06/04/2026","Debit","Groceries","WAL-MART #1190           ","BEREA        ","KY ","$18.06","55483826155025056839598	","Purchase","5411","Grocery Stores Supermarkets",
+CSV);
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'storage_path' => $path,
+            'status' => 'pending',
+            'record_count' => 0,
+            'started_at' => null,
+            'completed_at' => null,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $batch->refresh();
+
+        $this->assertSame('completed', $batch->status);
+        $this->assertSame(3, $batch->record_count);
+        $this->assertNotNull($batch->completed_at);
+
+        $transactions = BankTransaction::query()->orderBy('id')->get();
+
+        $this->assertCount(3, $transactions);
+
+        $this->assertSame('2026-06-05', $transactions[0]->posted_at->toDateString());
+        $this->assertSame('2026-06-04', $transactions[0]->transaction_date->toDateString());
+        $this->assertSame('-28.56', $transactions[0]->amount);
+        $this->assertSame('7067', $transactions[0]->card_last_four);
+        $this->assertSame('SPEEDWAY 44090', $transactions[0]->description);
+        $this->assertSame('02305376156000584360642', $transactions[0]->external_id);
+
+        $this->assertSame('2026-06-01', $transactions[1]->posted_at->toDateString());
+        $this->assertSame('2026-06-01', $transactions[1]->transaction_date->toDateString());
+        $this->assertSame('150.00', $transactions[1]->amount);
+        $this->assertSame('INTERNET PMT-THANK YOU', $transactions[1]->description);
+        $this->assertSame('99988877766655544433322', $transactions[1]->external_id);
+
+        $this->assertSame('2026-06-04', $transactions[2]->posted_at->toDateString());
+        $this->assertSame('2026-06-03', $transactions[2]->transaction_date->toDateString());
+        $this->assertSame('-18.06', $transactions[2]->amount);
+        $this->assertSame('WAL-MART #1190', $transactions[2]->description);
+        $this->assertSame('55483826155025056839598', $transactions[2]->external_id);
     }
 
     public function test_job_skips_duplicate_bank_transactions_on_reimport(): void

@@ -7,6 +7,7 @@ use App\Http\Requests\Accounts\StoreAccountRequest;
 use App\Models\Account;
 use App\Services\Accounts\AccountBrowseService;
 use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
+use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,7 @@ class AccountController extends Controller
             'institutions' => [
                 CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
                 CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
+                CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
             ],
             'accountTypes' => [
                 Account::CHECKING,
