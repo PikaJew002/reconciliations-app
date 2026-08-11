@@ -122,13 +122,16 @@ class ReimbursementGroupService
         $group->loadMissing('legs');
         $net = $group->net();
 
-        if ($net < -0.009) {
-            throw new InvalidArgumentException(
-                'Cannot close while over-reimbursed. Adjust leg amounts or remove credits first.',
-            );
-        }
+        if ($net <= -0.01) {
+            if ($remainderClassification !== BankTransaction::CLASSIFICATION_INCOME) {
+                throw new InvalidArgumentException(
+                    'Over-reimbursed groups must book the surplus as income.',
+                );
+            }
 
-        if (abs($net) >= 0.01) {
+            $remainderCategoryId = null;
+            $remainderClassification = BankTransaction::CLASSIFICATION_INCOME;
+        } elseif ($net >= 0.01) {
             if ($remainderCategoryId === null) {
                 throw new InvalidArgumentException('Choose a remainder category for the unreimbursed amount.');
             }

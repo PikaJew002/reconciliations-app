@@ -27,7 +27,7 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect('/imports');
+        $response->assertRedirect('/');
     }
 
     public function test_users_can_register(): void
@@ -40,6 +40,6 @@ class AuthenticationTest extends TestCase
         ]);
 
         $this->assertAuthenticated();
-        $response->assertRedirect('/imports');
+        $response->assertRedirect('/');
     }
 }

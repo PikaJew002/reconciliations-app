@@ -129,6 +129,7 @@ class ReimbursementGroupController extends Controller
                 Rule::in([
                     BankTransaction::CLASSIFICATION_EXPENSE,
                     BankTransaction::CLASSIFICATION_BILL,
+                    BankTransaction::CLASSIFICATION_INCOME,
                 ]),
             ],
         ]);

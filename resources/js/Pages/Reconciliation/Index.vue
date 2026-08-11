@@ -349,6 +349,20 @@
             : expenseCategories.value;
     }
 
+    function reimbursementNetState(net) {
+        let value = Number(net);
+
+        if (value <= -0.01) {
+            return 'surplus';
+        }
+
+        if (value >= 0.01) {
+            return 'under';
+        }
+
+        return 'balanced';
+    }
+
     function matchModeLabel(mode) {
         return (
             {
@@ -868,7 +882,10 @@
     function ensureCloseForm(group) {
         if (!closeForms[group.id]) {
             closeForms[group.id] = {
-                remainder_classification: 'expense',
+                remainder_classification:
+                    reimbursementNetState(group.net) === 'surplus'
+                        ? 'income'
+                        : 'expense',
                 remainder_category_id: '',
             };
         }
@@ -878,17 +895,23 @@
 
     function closeReimbursementGroup(group) {
         let form = ensureCloseForm(group);
-        let needsCategory = Math.abs(Number(group.net)) >= 0.01;
+        let netState = reimbursementNetState(group.net);
 
         reimbursementActionKey.value = `close-${group.id}`;
 
         router.post(
             `/reconciliation/reimbursement-groups/${group.id}/close`,
             {
-                remainder_classification: form.remainder_classification,
-                remainder_category_id: needsCategory
-                    ? Number(form.remainder_category_id)
-                    : null,
+                remainder_classification:
+                    netState === 'surplus'
+                        ? 'income'
+                        : netState === 'under'
+                          ? form.remainder_classification
+                          : null,
+                remainder_category_id:
+                    netState === 'under'
+                        ? Number(form.remainder_category_id)
+                        : null,
             },
             {
                 preserveScroll: true,
@@ -1599,9 +1622,10 @@
                             Open reimbursements
                         </h2>
                         <p class="text-sm text-neutral-600">
-                            Expenses awaiting reimbursement stay out of category
-                            totals until you close the group and assign any
-                            remainder.
+                            Grouped transactions stay out of category and income
+                            totals until you close. Unreimbursed amounts go to an
+                            expense/bill category; over-reimbursement surplus is
+                            booked as uncategorized income.
                         </p>
                     </div>
 
@@ -1762,60 +1786,93 @@
                             <div
                                 class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-3"
                             >
-                                <label class="block space-y-1">
-                                    <span class="text-neutral-600"
-                                        >Remainder type</span
-                                    >
-                                    <select
-                                        v-model="
-                                            ensureCloseForm(group)
-                                                .remainder_classification
-                                        "
-                                        class="w-full rounded border px-2 py-1.5"
-                                        :disabled="Math.abs(group.net) < 0.01"
-                                    >
-                                        <option value="expense">Expense</option>
-                                        <option value="bill">Bill</option>
-                                    </select>
-                                </label>
-                                <label class="block space-y-1">
-                                    <span class="text-neutral-600"
-                                        >Remainder category</span
-                                    >
-                                    <select
-                                        v-model="
-                                            ensureCloseForm(group)
-                                                .remainder_category_id
-                                        "
-                                        class="w-full rounded border px-2 py-1.5"
-                                        :disabled="Math.abs(group.net) < 0.01"
-                                    >
-                                        <option value="">
+                                <template
+                                    v-if="
+                                        reimbursementNetState(group.net) ===
+                                        'surplus'
+                                    "
+                                >
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <p class="text-neutral-600">
+                                            Remainder
+                                        </p>
+                                        <p class="font-medium">
+                                            Income surplus
                                             {{
-                                                Math.abs(group.net) < 0.01
-                                                    ? 'None (fully reimbursed)'
-                                                    : 'Select'
+                                                formatMoney(
+                                                    Math.abs(group.net),
+                                                )
                                             }}
-                                        </option>
-                                        <option
-                                            v-for="category in categoriesForClassification(
-                                                ensureCloseForm(group)
-                                                    .remainder_classification,
-                                            )"
-                                            :key="`close-cat-${group.id}-${category.id}`"
-                                            :value="category.id"
+                                            (uncategorized)
+                                        </p>
+                                    </div>
+                                </template>
+                                <template
+                                    v-else-if="
+                                        reimbursementNetState(group.net) ===
+                                        'under'
+                                    "
+                                >
+                                    <label class="block space-y-1">
+                                        <span class="text-neutral-600"
+                                            >Remainder type</span
                                         >
-                                            {{ category.name }}
-                                        </option>
-                                    </select>
-                                </label>
+                                        <select
+                                            v-model="
+                                                ensureCloseForm(group)
+                                                    .remainder_classification
+                                            "
+                                            class="w-full rounded border px-2 py-1.5"
+                                        >
+                                            <option value="expense">
+                                                Expense
+                                            </option>
+                                            <option value="bill">Bill</option>
+                                        </select>
+                                    </label>
+                                    <label class="block space-y-1">
+                                        <span class="text-neutral-600"
+                                            >Remainder category</span
+                                        >
+                                        <select
+                                            v-model="
+                                                ensureCloseForm(group)
+                                                    .remainder_category_id
+                                            "
+                                            class="w-full rounded border px-2 py-1.5"
+                                        >
+                                            <option value="">Select</option>
+                                            <option
+                                                v-for="category in categoriesForClassification(
+                                                    ensureCloseForm(group)
+                                                        .remainder_classification,
+                                                )"
+                                                :key="`close-cat-${group.id}-${category.id}`"
+                                                :value="category.id"
+                                            >
+                                                {{ category.name }}
+                                            </option>
+                                        </select>
+                                    </label>
+                                </template>
+                                <template v-else>
+                                    <div class="space-y-1 sm:col-span-2">
+                                        <p class="text-neutral-600">
+                                            Remainder
+                                        </p>
+                                        <p class="font-medium">
+                                            None (fully reimbursed)
+                                        </p>
+                                    </div>
+                                </template>
                                 <div class="flex items-end">
                                     <button
                                         type="button"
                                         class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
                                         :disabled="
                                             reimbursementActionKey !== null ||
-                                            (Math.abs(group.net) >= 0.01 &&
+                                            (reimbursementNetState(group.net) ===
+                                                'under' &&
                                                 !ensureCloseForm(group)
                                                     .remainder_category_id)
                                         "
@@ -1843,8 +1900,9 @@
                             Closed reimbursements
                         </h2>
                         <p class="text-sm text-neutral-600">
-                            Net remainder booked to a category. Reopen to add
-                            late charges or payments.
+                            Under-reimbursed remainder booked to a category;
+                            surplus booked as income. Reopen to add late charges
+                            or payments.
                         </p>
                     </div>
 
@@ -1860,7 +1918,15 @@
                                 </p>
                                 <p class="text-neutral-600">
                                     Net {{ formatMoney(group.net) }}
-                                    <span v-if="group.remainder_category">
+                                    <span
+                                        v-if="
+                                            group.remainder_classification ===
+                                            'income'
+                                        "
+                                    >
+                                        · income surplus
+                                    </span>
+                                    <span v-else-if="group.remainder_category">
                                         · {{ group.remainder_category }}
                                     </span>
                                     <span v-else> · fully reimbursed</span>

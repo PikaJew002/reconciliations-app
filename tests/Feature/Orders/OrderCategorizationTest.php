@@ -455,4 +455,117 @@ class OrderCategorizationTest extends TestCase
         $this->assertDatabaseMissing('order_items', ['id' => $firstItem->id]);
         $this->assertDatabaseHas('products', ['id' => $product->id]);
     }
+
+    public function test_categorize_all_applies_category_to_walmart_order_lines(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $productA = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'A1',
+            'normalized_name' => 'milk',
+        ]);
+        $productB = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'B1',
+            'normalized_name' => 'eggs',
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $productA->id,
+            'line_number' => 1,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $productB->id,
+            'line_number' => 2,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => null,
+            'line_number' => 3,
+            'sku' => 'C1',
+            'description' => 'Butter',
+            'normalized_description' => 'butter',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.categorize-all', $order), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->assertSame($category->id, $productA->fresh()->category_id);
+        $this->assertSame($category->id, $productB->fresh()->category_id);
+        $this->assertDatabaseHas('products', [
+            'user_id' => $user->id,
+            'sku' => 'C1',
+            'category_id' => $category->id,
+        ]);
+        $this->assertNotNull($order->items()->where('line_number', 3)->first()?->product_id);
+    }
+
+    public function test_categorize_all_applies_category_to_amazon_components(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $first = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+            'description' => 'Item A',
+        ]);
+        $second = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+            'description' => 'Item B',
+        ]);
+        $already = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => Category::factory()->for($user)->expense()->create()->id,
+            'description' => 'Done',
+        ]);
+        $previous = $already->category_id;
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.categorize-all', $order), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->assertSame($category->id, $first->fresh()->category_id);
+        $this->assertSame($category->id, $second->fresh()->category_id);
+        $this->assertSame($previous, $already->fresh()->category_id);
+    }
 }

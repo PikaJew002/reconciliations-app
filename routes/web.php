@@ -4,6 +4,7 @@ use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Categories\CategoryController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Categories\CategorizationRuleController;
 use App\Http\Controllers\Rules\IncomeClassificationRuleController;
 use App\Http\Controllers\Rules\RuleController;
@@ -27,8 +28,6 @@ use App\Http\Controllers\Reconciliation\TransactionClassificationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/imports');
-
 Route::middleware('guest')->group(function () {
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store']);
@@ -39,6 +38,8 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/imports', [ImportBatchController::class, 'index'])->name('imports.index');
 
@@ -77,6 +78,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders', [OrderController::class, 'index'])->name('orders.index');
     Route::get('/orders/categorize', [OrderCategorizationController::class, 'index'])
         ->name('orders.categorize');
+    Route::post('/orders/{order}/categorize-all', [OrderCategorizationController::class, 'categorizeAll'])
+        ->name('orders.categorize-all');
     Route::post('/orders/items/{item}/categorize-as-product', [OrderItemCategorizationController::class, 'store'])
         ->name('orders.items.categorize-as-product');
     Route::delete('/orders/items/{item}', [OrderItemCategorizationController::class, 'destroy'])

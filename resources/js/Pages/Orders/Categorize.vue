@@ -28,6 +28,7 @@
     let flashSuccess = computed(() => page.props.flash?.success);
     let search = ref(props.filters.q ?? '');
     let categorySelections = reactive({});
+    let orderCategorySelections = reactive({});
     let savingKey = ref(null);
     let dismissedProductIds = ref(new Set());
     let dismissedItemIds = ref(new Set());
@@ -85,6 +86,10 @@
     };
 
     for (let order of props.orders) {
+        if (orderCategorySelections[order.id] === undefined) {
+            orderCategorySelections[order.id] = '';
+        }
+
         for (let line of order.lines) {
             ensureSelection(selectionKey(order, line));
         }
@@ -94,6 +99,10 @@
         () => props.orders,
         (orders) => {
             for (let order of orders) {
+                if (orderCategorySelections[order.id] === undefined) {
+                    orderCategorySelections[order.id] = '';
+                }
+
                 for (let line of order.lines) {
                     ensureSelection(selectionKey(order, line));
                 }
@@ -148,6 +157,44 @@
         let next = new Set(dismissedComponentIds.value);
         next.add(componentId);
         dismissedComponentIds.value = next;
+    };
+
+    let dismissOrder = (order) => {
+        for (let line of order.lines) {
+            if (line.kind === 'component') {
+                dismissComponent(line.id);
+            } else if (line.product?.id) {
+                dismissProduct(line.product.id);
+            } else {
+                dismissItem(line.id);
+            }
+        }
+    };
+
+    let submitOrderCategory = (order) => {
+        let key = `order:${order.id}`;
+        let categoryId = orderCategorySelections[order.id];
+
+        if (!categoryId || savingKey.value) {
+            return;
+        }
+
+        savingKey.value = key;
+        dismissOrder(order);
+
+        router.post(
+            `/orders/${order.id}/categorize-all`,
+            { category_id: Number(categoryId) },
+            {
+                ...reloadOptions,
+                onFinish: () => {
+                    savingKey.value = null;
+                },
+                onError: () => {
+                    router.reload(reloadOptions);
+                },
+            },
+        );
     };
 
     let submitProductCategory = (order, line) => {
@@ -358,9 +405,48 @@
                             · {{ order.status || '—' }}
                         </p>
                     </div>
-                    <p class="text-sm font-medium">
-                        {{ formatMoney(order.total) }}
-                    </p>
+                    <div class="flex flex-wrap items-end gap-3">
+                        <p class="text-sm font-medium">
+                            {{ formatMoney(order.total) }}
+                        </p>
+                        <form
+                            class="flex flex-wrap items-end gap-2"
+                            @submit.prevent="submitOrderCategory(order)"
+                        >
+                            <label class="block text-sm">
+                                <span class="text-neutral-600"
+                                    >Whole order</span
+                                >
+                                <select
+                                    v-model="orderCategorySelections[order.id]"
+                                    class="mt-1 block rounded border px-3 py-1.5"
+                                >
+                                    <option value="">Select…</option>
+                                    <option
+                                        v-for="category in categories"
+                                        :key="category.id"
+                                        :value="category.id"
+                                    >
+                                        {{ category.name }}
+                                    </option>
+                                </select>
+                            </label>
+                            <button
+                                type="submit"
+                                class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                :disabled="
+                                    !orderCategorySelections[order.id] ||
+                                    savingKey === `order:${order.id}`
+                                "
+                            >
+                                {{
+                                    savingKey === `order:${order.id}`
+                                        ? 'Saving…'
+                                        : 'Categorize all'
+                                }}
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
                 <div class="space-y-4 px-4 py-3">

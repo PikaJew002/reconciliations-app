@@ -23,7 +23,7 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended('/imports');
+        return redirect()->intended('/');
     }
 
     public function destroy(Request $request): RedirectResponse

@@ -223,6 +223,33 @@ class ReimbursementGroupTest extends TestCase
         $this->assertSame(30.0, $query->awaitingReimbursementBalance($user->id));
     }
 
+    public function test_uncategorized_spend_counts_ungrouped_null_category_and_excludes_grouped(): void
+    {
+        $user = User::factory()->create();
+
+        $this->transaction($user, [
+            'amount' => -45.0,
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'category_id' => null,
+        ]);
+        $this->transaction($user, [
+            'amount' => -15.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'category_id' => null,
+        ]);
+
+        $groupedExpense = $this->transaction($user, [
+            'amount' => -90.0,
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'category_id' => null,
+        ]);
+        $credit = $this->transaction($user, ['amount' => 50.0]);
+
+        app(ReimbursementGroupService::class)->create($user->id, [$groupedExpense->id, $credit->id]);
+
+        $this->assertSame(60.0, app(CategorySpendQuery::class)->uncategorizedSpendForUser($user->id));
+    }
+
     public function test_fully_reimbursed_close_skips_remainder_category(): void
     {
         $user = User::factory()->create();
@@ -236,6 +263,69 @@ class ReimbursementGroupTest extends TestCase
         $this->assertSame(ReimbursementGroup::STATUS_CLOSED, $group->status);
         $this->assertNull($group->remainder_category_id);
         $this->assertSame([], app(CategorySpendQuery::class)->categoryTotalsForUser($user->id));
+    }
+
+    public function test_over_reimbursed_close_books_uncategorized_income_surplus(): void
+    {
+        $user = User::factory()->create();
+
+        $hotel = $this->transaction($user, ['amount' => -200.0, 'description' => 'HOTEL']);
+        $meals = $this->transaction($user, ['amount' => -50.0, 'description' => 'MEALS']);
+        $credit = $this->transaction($user, ['amount' => 300.0, 'description' => 'WORK REIMBURSEMENT']);
+
+        $service = app(ReimbursementGroupService::class);
+        $group = $service->create($user->id, [$hotel->id, $meals->id, $credit->id], 'Work trip');
+
+        $this->assertSame(-50.0, $group->net());
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.reimbursement-groups.close', $group), [
+                'remainder_classification' => BankTransaction::CLASSIFICATION_INCOME,
+            ])
+            ->assertRedirect(route('reconciliation.index'))
+            ->assertSessionHas('success');
+
+        $group->refresh();
+        $this->assertSame(ReimbursementGroup::STATUS_CLOSED, $group->status);
+        $this->assertNull($group->remainder_category_id);
+        $this->assertSame(BankTransaction::CLASSIFICATION_INCOME, $group->remainder_classification);
+
+        $query = app(CategorySpendQuery::class);
+        $this->assertSame([], $query->categoryTotalsForUser($user->id));
+        $this->assertSame(50.0, $query->incomeTotalForUser($user->id));
+    }
+
+    public function test_over_reimbursed_close_rejects_expense_remainder(): void
+    {
+        $user = User::factory()->create();
+        $fees = Category::factory()->for($user)->expense()->create(['name' => 'Fees']);
+
+        $expense = $this->transaction($user, ['amount' => -100.0]);
+        $credit = $this->transaction($user, ['amount' => 150.0]);
+
+        $group = app(ReimbursementGroupService::class)->create($user->id, [$expense->id, $credit->id]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.reimbursement-groups.close', $group), [
+                'remainder_category_id' => $fees->id,
+                'remainder_classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame(ReimbursementGroup::STATUS_OPEN, $group->fresh()->status);
+    }
+
+    public function test_open_over_reimbursed_group_does_not_reduce_awaiting_balance(): void
+    {
+        $user = User::factory()->create();
+
+        $expense = $this->transaction($user, ['amount' => -40.0]);
+        $credit = $this->transaction($user, ['amount' => 100.0]);
+
+        app(ReimbursementGroupService::class)->create($user->id, [$expense->id, $credit->id]);
+
+        $this->assertSame(0.0, app(CategorySpendQuery::class)->awaitingReimbursementBalance($user->id));
     }
 
     public function test_review_page_includes_open_reimbursement_groups(): void

@@ -7,6 +7,7 @@
     let currentUrl = computed(() => page.url.split('?')[0]);
 
     let navItems = [
+        { label: 'Home', href: '/' },
         { label: 'Imports', href: '/imports' },
         { label: 'Accounts', href: '/accounts' },
         { label: 'Categories', href: '/categories' },
@@ -17,6 +18,10 @@
 
     let isActive = (href) => {
         let url = currentUrl.value;
+
+        if (href === '/') {
+            return url === '/';
+        }
 
         if (href === '/imports') {
             return url === '/imports' || url.startsWith('/imports/');
