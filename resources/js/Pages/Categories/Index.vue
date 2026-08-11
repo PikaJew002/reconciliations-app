@@ -82,7 +82,11 @@
                     Rules
                 </Link>
                 <Link
-                    href="/categories/create"
+                    :href="
+                        filters.kind
+                            ? `/categories/create?kind=${filters.kind}`
+                            : '/categories/create'
+                    "
                     class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
                 >
                     Add category

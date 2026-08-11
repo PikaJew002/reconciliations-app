@@ -124,7 +124,7 @@
                         aria-hidden="true"
                     />
                     <div
-                        class="flex w-full items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-neutral-400"
+                        class="flex w-full items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
                     >
                         <span
                             class="flex items-center border-r bg-neutral-50 px-3 font-mono text-neutral-500"

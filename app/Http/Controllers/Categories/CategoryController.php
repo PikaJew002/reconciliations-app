@@ -46,10 +46,17 @@ class CategoryController extends Controller
         ]);
     }
 
-    public function create(): Response
+    public function create(Request $request): Response
     {
+        $kind = $request->string('kind')->toString();
+
+        if (! in_array($kind, Category::kinds(), true)) {
+            $kind = Category::KIND_EXPENSE;
+        }
+
         return Inertia::render('Categories/Create', [
             'kinds' => Category::kinds(),
+            'selectedKind' => $kind,
         ]);
     }
 

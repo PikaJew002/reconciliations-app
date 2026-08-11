@@ -37,7 +37,15 @@ class CategoryCrudTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Categories/Create')
-                ->has('kinds', 3));
+                ->has('kinds', 3)
+                ->where('selectedKind', Category::KIND_EXPENSE));
+
+        $this->actingAs($user)
+            ->get(route('categories.create', ['kind' => Category::KIND_INCOME]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Categories/Create')
+                ->where('selectedKind', Category::KIND_INCOME));
     }
 
     public function test_user_can_create_income_category(): void
