@@ -351,6 +351,176 @@ class TransactionCategorizationTest extends TestCase
         $this->assertNull($transaction->classification);
     }
 
+    public function test_description_prefix_and_amount_bill_rule_matches_peers(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->bill()->create(['name' => 'Auto Loan']);
+
+        $first = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -412.33,
+            'description' => 'TOYOTA FINANCIAL 9X7K2A',
+            'normalized_description' => 'toyota financial 9x7k2a',
+        ]);
+        $second = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -412.33,
+            'description' => 'TOYOTA FINANCIAL A1B2C3',
+            'normalized_description' => 'toyota financial a1b2c3',
+        ]);
+        $wrongAmount = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -400.0,
+            'description' => 'TOYOTA FINANCIAL ZZZ999',
+            'normalized_description' => 'toyota financial zzz999',
+        ]);
+        $differentPrefix = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -412.33,
+            'description' => 'TOYOTA LEASE 9X7K2A',
+            'normalized_description' => 'toyota lease 9x7k2a',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $first), [
+                'classification' => BankTransaction::CLASSIFICATION_BILL,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'toyota financial',
+            ])
+            ->assertRedirect(route('reconciliation.index'));
+
+        $this->assertDatabaseHas('transaction_categorization_rules', [
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+            'merchant_id' => null,
+            'normalized_pattern' => 'toyota financial',
+            'amount' => 412.33,
+            'is_active' => true,
+        ]);
+
+        $run = CategorizationRun::query()->first();
+        $this->assertNotNull($run);
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(1, $run->metadata['applied'] ?? null);
+
+        $second->refresh();
+        $this->assertSame('ignored', $second->status);
+        $this->assertSame(BankTransaction::CLASSIFICATION_BILL, $second->classification);
+        $this->assertSame($category->id, $second->category_id);
+        $this->assertSame(BankTransaction::CLASSIFICATION_SOURCE_LEARNED, $second->classification_source);
+
+        $wrongAmount->refresh();
+        $this->assertSame('unmatched', $wrongAmount->status);
+        $this->assertNull($wrongAmount->classification);
+
+        $differentPrefix->refresh();
+        $this->assertSame('unmatched', $differentPrefix->status);
+        $this->assertNull($differentPrefix->classification);
+    }
+
+    public function test_description_prefix_and_amount_suggests_prefix_when_omitted(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->bill()->create(['name' => 'Tithe']);
+
+        $first = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -250.0,
+            'description' => 'CM ALLIANCE ACH DRAFT CONF9XK2',
+            'normalized_description' => 'cm alliance ach draft conf9xk2',
+        ]);
+        $second = $this->debitTransaction($user, [
+            'merchant_id' => null,
+            'amount' => -250.0,
+            'description' => 'CM ALLIANCE ACH DRAFT CONFABCD',
+            'normalized_description' => 'cm alliance ach draft confabcd',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $first), [
+                'classification' => BankTransaction::CLASSIFICATION_BILL,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+            ])
+            ->assertRedirect(route('reconciliation.index'));
+
+        $this->assertDatabaseHas('transaction_categorization_rules', [
+            'user_id' => $user->id,
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+            'normalized_pattern' => 'cm alliance ach draft',
+            'amount' => 250.0,
+        ]);
+
+        $second->refresh();
+        $this->assertSame(BankTransaction::CLASSIFICATION_BILL, $second->classification);
+        $this->assertSame($category->id, $second->category_id);
+    }
+
+    public function test_description_prefix_and_amount_rejects_expense_classification(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $transaction = $this->debitTransaction($user, [
+            'amount' => -50.0,
+            'description' => 'TOYOTA FINANCIAL 1234',
+            'normalized_description' => 'toyota financial 1234',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $transaction), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'toyota financial',
+            ])
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('transaction_categorization_rules', 0);
+    }
+
+    public function test_description_prefix_and_amount_rejects_short_prefix(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->bill()->create();
+        $transaction = $this->debitTransaction($user, [
+            'amount' => -50.0,
+            'description' => 'ACH DRAFT 1234',
+            'normalized_description' => 'ach draft 1234',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $transaction), [
+                'classification' => BankTransaction::CLASSIFICATION_BILL,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'ach',
+            ])
+            ->assertStatus(422);
+
+        $this->assertDatabaseCount('transaction_categorization_rules', 0);
+    }
+
+    public function test_suggest_description_prefix_strips_confirmation_tokens(): void
+    {
+        $service = app(TransactionCategorizationService::class);
+
+        $this->assertSame(
+            'toyota financial',
+            $service->suggestDescriptionPrefix('TOYOTA FINANCIAL 9X7K2A'),
+        );
+        $this->assertSame(
+            'cm alliance ach draft',
+            $service->suggestDescriptionPrefix('cm alliance ach draft conf9xk2'),
+        );
+        $this->assertSame(
+            'cm alliance ach draft',
+            $service->suggestDescriptionPrefix('cm alliance ach draft 12345678'),
+        );
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      */

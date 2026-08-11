@@ -371,6 +371,7 @@
                     : 'expense',
             category_id: '',
             match_mode: 'once',
+            normalized_pattern: '',
         };
 
         return categorizeForms[transaction.id];
@@ -425,18 +426,68 @@
                 merchant: 'Merchant only',
                 description: 'Description only',
                 check_and_amount: 'Check + amount',
+                description_prefix_and_amount: 'Starts with + amount',
                 once: 'This transaction only',
             }[mode] ?? mode
         );
     }
 
     function matchModesForClassification(classification) {
-        let billOnlyModes = ['check_and_amount'];
+        let billOnlyModes = [
+            'check_and_amount',
+            'description_prefix_and_amount',
+        ];
 
         return props.matchModes.filter(
             (mode) =>
                 !billOnlyModes.includes(mode) || classification === 'bill',
         );
+    }
+
+    function looksLikeConfirmationToken(token) {
+        if (/^\d{4,}$/.test(token)) {
+            return true;
+        }
+
+        if (/^(?=.*[a-z])(?=.*\d)[a-z0-9#*\-]{4,}$/i.test(token)) {
+            return true;
+        }
+
+        return /^conf[a-z0-9]*$/i.test(token);
+    }
+
+    function suggestDescriptionPrefix(description) {
+        let squished = String(description || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!squished) {
+            return '';
+        }
+
+        let tokens = squished.split(' ');
+
+        while (
+            tokens.length > 1 &&
+            looksLikeConfirmationToken(tokens[tokens.length - 1])
+        ) {
+            tokens.pop();
+        }
+
+        return tokens.join(' ');
+    }
+
+    function onCategorizeMatchModeChange(transaction) {
+        let form = ensureCategorizeForm(transaction);
+
+        if (
+            form.match_mode === 'description_prefix_and_amount' &&
+            !form.normalized_pattern
+        ) {
+            form.normalized_pattern = suggestDescriptionPrefix(
+                transaction.description,
+            );
+        }
     }
 
     function categorizeTransaction(transaction) {
@@ -448,9 +499,19 @@
 
         categorizingTransactionId.value = transaction.id;
 
+        let payload = {
+            classification: form.classification,
+            category_id: form.category_id,
+            match_mode: form.match_mode,
+        };
+
+        if (form.match_mode === 'description_prefix_and_amount') {
+            payload.normalized_pattern = form.normalized_pattern;
+        }
+
         router.post(
             `/reconciliation/transactions/${transaction.id}/categorize`,
-            form,
+            payload,
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -2901,6 +2962,9 @@
                                             .match_mode
                                     "
                                     class="w-full rounded border px-2 py-1.5"
+                                    @change="
+                                        onCategorizeMatchModeChange(transaction)
+                                    "
                                 >
                                     <option
                                         v-for="mode in matchModesForClassification(
@@ -2926,7 +2990,12 @@
                                         categoriesForClassification(
                                             ensureCategorizeForm(transaction)
                                                 .classification,
-                                        ).length === 0
+                                        ).length === 0 ||
+                                        (ensureCategorizeForm(transaction)
+                                            .match_mode ===
+                                            'description_prefix_and_amount' &&
+                                            !ensureCategorizeForm(transaction)
+                                                .normalized_pattern)
                                     "
                                 >
                                     {{
@@ -2937,6 +3006,32 @@
                                     }}
                                 </button>
                             </div>
+                            <label
+                                v-if="
+                                    ensureCategorizeForm(transaction)
+                                        .match_mode ===
+                                    'description_prefix_and_amount'
+                                "
+                                class="block space-y-1 sm:col-span-4"
+                            >
+                                <span class="text-neutral-600"
+                                    >Match prefix</span
+                                >
+                                <input
+                                    v-model="
+                                        ensureCategorizeForm(transaction)
+                                            .normalized_pattern
+                                    "
+                                    type="text"
+                                    class="w-full rounded border px-2 py-1.5"
+                                    placeholder="e.g. toyota financial"
+                                    required
+                                />
+                                <span class="text-xs text-neutral-500">
+                                    Matches other bills that start with this
+                                    text and have the same amount.
+                                </span>
+                            </label>
                             <p
                                 v-if="
                                     categoriesForClassification(

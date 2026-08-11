@@ -57,6 +57,7 @@
                 merchant: 'Merchant only',
                 description: 'Description only',
                 check_and_amount: 'Check + amount',
+                description_prefix_and_amount: 'Starts with + amount',
                 once: 'This transaction only',
             }[mode] ?? (mode ? mode : 'Description only')
         );

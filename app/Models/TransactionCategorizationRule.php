@@ -21,9 +21,14 @@ class TransactionCategorizationRule extends Model
     /** Bill-only: description starts with "CHECK " and amount matches. */
     public const MATCH_CHECK_AND_AMOUNT = 'check_and_amount';
 
+    /** Bill-only: description starts with a user/suggested prefix and amount matches. */
+    public const MATCH_DESCRIPTION_PREFIX_AND_AMOUNT = 'description_prefix_and_amount';
+
     public const MATCH_ONCE = 'once';
 
     public const CHECK_DESCRIPTION_PREFIX = 'check ';
+
+    public const MIN_DESCRIPTION_PREFIX_LENGTH = 6;
 
     /**
      * @return list<string>
@@ -36,6 +41,7 @@ class TransactionCategorizationRule extends Model
             self::MATCH_MERCHANT,
             self::MATCH_DESCRIPTION,
             self::MATCH_CHECK_AND_AMOUNT,
+            self::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
         ];
     }
 
@@ -48,6 +54,7 @@ class TransactionCategorizationRule extends Model
     {
         return [
             self::MATCH_CHECK_AND_AMOUNT,
+            self::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
         ];
     }
 

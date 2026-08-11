@@ -75,6 +75,7 @@ class TransactionCategorizationService
         Category $category,
         string $classification,
         string $matchMode,
+        ?string $normalizedPattern = null,
     ): void {
         if ((float) $transaction->amount >= 0) {
             throw new InvalidArgumentException('Only debit transactions can be categorized as bills or expenses.');
@@ -111,14 +112,38 @@ class TransactionCategorizationService
             in_array($matchMode, TransactionCategorizationRule::billOnlyMatchModes(), true)
             && $classification !== BankTransaction::CLASSIFICATION_BILL
         ) {
-            throw new InvalidArgumentException('Check + amount matching is only available for bills.');
+            throw new InvalidArgumentException('This match mode is only available for bills.');
         }
+
+        $normalized = $this->normalizedDescription($transaction);
 
         if (
             $matchMode === TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT
-            && ! $this->isCheckDescription($this->normalizedDescription($transaction))
+            && ! $this->isCheckDescription($normalized)
         ) {
             throw new InvalidArgumentException('Check + amount matching requires a description that starts with "CHECK ".');
+        }
+
+        if ($matchMode === TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT) {
+            $prefix = $this->resolveDescriptionPrefix($normalized, $normalizedPattern);
+
+            if ($prefix === '') {
+                throw new InvalidArgumentException('A description prefix is required for this match mode.');
+            }
+
+            if (strlen($prefix) < TransactionCategorizationRule::MIN_DESCRIPTION_PREFIX_LENGTH) {
+                throw new InvalidArgumentException(
+                    'Description prefix must be at least '
+                    .TransactionCategorizationRule::MIN_DESCRIPTION_PREFIX_LENGTH
+                    .' characters.'
+                );
+            }
+
+            if (! $this->descriptionMatchesPrefix($normalized, $prefix)) {
+                throw new InvalidArgumentException('Description must start with the chosen prefix.');
+            }
+
+            $normalizedPattern = $prefix;
         }
 
         $transaction->update([
@@ -133,7 +158,27 @@ class TransactionCategorizationService
             return;
         }
 
-        $this->upsertRule($transaction, $category, $classification, $matchMode);
+        $this->upsertRule($transaction, $category, $classification, $matchMode, $normalizedPattern);
+    }
+
+    /**
+     * Suggest a stable description prefix by stripping trailing confirmation-like tokens.
+     */
+    public function suggestDescriptionPrefix(string $description): string
+    {
+        $normalized = Str::of($description)->lower()->squish()->toString();
+
+        if ($normalized === '') {
+            return '';
+        }
+
+        $tokens = preg_split('/\s+/', $normalized) ?: [];
+
+        while (count($tokens) > 1 && $this->looksLikeConfirmationToken((string) end($tokens))) {
+            array_pop($tokens);
+        }
+
+        return implode(' ', $tokens);
     }
 
     /**
@@ -163,6 +208,12 @@ class TransactionCategorizationService
                     && $this->isCheckDescription($normalized)
                     && $rule->amount !== null
                     && abs((float) $rule->amount - $amount) < 0.01,
+                TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT => $rule->classification === BankTransaction::CLASSIFICATION_BILL
+                    && is_string($rule->normalized_pattern)
+                    && $rule->normalized_pattern !== ''
+                    && $this->descriptionMatchesPrefix($normalized, $rule->normalized_pattern)
+                    && $rule->amount !== null
+                    && abs((float) $rule->amount - $amount) < 0.01,
                 default => false,
             };
         })->values();
@@ -187,6 +238,7 @@ class TransactionCategorizationService
         Category $category,
         string $classification,
         string $matchMode,
+        ?string $normalizedPattern = null,
     ): void {
         $normalized = $this->normalizedDescription($transaction);
         $amount = round(abs((float) $transaction->amount), 2);
@@ -217,6 +269,23 @@ class TransactionCategorizationService
 
             $attributes['normalized_pattern'] = TransactionCategorizationRule::CHECK_DESCRIPTION_PREFIX;
             $attributes['amount'] = $amount;
+        } elseif ($matchMode === TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT) {
+            if ($classification !== BankTransaction::CLASSIFICATION_BILL) {
+                return;
+            }
+
+            $prefix = $this->resolveDescriptionPrefix($normalized, $normalizedPattern);
+
+            if (
+                $prefix === ''
+                || strlen($prefix) < TransactionCategorizationRule::MIN_DESCRIPTION_PREFIX_LENGTH
+                || ! $this->descriptionMatchesPrefix($normalized, $prefix)
+            ) {
+                return;
+            }
+
+            $attributes['normalized_pattern'] = $prefix;
+            $attributes['amount'] = $amount;
         }
 
         if (
@@ -233,6 +302,7 @@ class TransactionCategorizationService
                 TransactionCategorizationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
                 TransactionCategorizationRule::MATCH_DESCRIPTION,
                 TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
+                TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
             ], true) && ($attributes['normalized_pattern'] === null || $attributes['normalized_pattern'] === '')
         ) {
             return;
@@ -252,6 +322,39 @@ class TransactionCategorizationService
                 'is_active' => true,
             ],
         );
+    }
+
+    protected function resolveDescriptionPrefix(string $normalizedDescription, ?string $providedPrefix): string
+    {
+        $prefix = $providedPrefix !== null && trim($providedPrefix) !== ''
+            ? Str::of($providedPrefix)->lower()->squish()->toString()
+            : $this->suggestDescriptionPrefix($normalizedDescription);
+
+        return $prefix;
+    }
+
+    protected function descriptionMatchesPrefix(string $normalized, string $prefix): bool
+    {
+        $prefix = Str::of($prefix)->lower()->squish()->toString();
+
+        if ($prefix === '' || $normalized === '') {
+            return false;
+        }
+
+        return $normalized === $prefix || str_starts_with($normalized, $prefix.' ');
+    }
+
+    protected function looksLikeConfirmationToken(string $token): bool
+    {
+        if (preg_match('/^\d{4,}$/', $token) === 1) {
+            return true;
+        }
+
+        if (preg_match('/^(?=.*[a-z])(?=.*\d)[a-z0-9#*\-]{4,}$/i', $token) === 1) {
+            return true;
+        }
+
+        return preg_match('/^conf[a-z0-9]*$/i', $token) === 1;
     }
 
     protected function normalizedDescription(BankTransaction $transaction): string

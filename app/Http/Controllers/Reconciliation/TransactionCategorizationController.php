@@ -12,6 +12,7 @@ use App\Services\Reconciliation\TransactionCategorizationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class TransactionCategorizationController extends Controller
 {
@@ -32,6 +33,7 @@ class TransactionCategorizationController extends Controller
             ],
             'category_id' => ['required', 'integer', 'exists:categories,id'],
             'match_mode' => ['required', Rule::in(TransactionCategorizationRule::allMatchModes())],
+            'normalized_pattern' => ['nullable', 'string', 'max:255'],
         ]);
 
         $category = Category::query()->findOrFail($validated['category_id']);
@@ -53,15 +55,20 @@ class TransactionCategorizationController extends Controller
             in_array($validated['match_mode'], TransactionCategorizationRule::billOnlyMatchModes(), true)
             && $validated['classification'] !== BankTransaction::CLASSIFICATION_BILL
         ) {
-            abort(422, 'Check + amount matching is only available for bills.');
+            abort(422, 'This match mode is only available for bills.');
         }
 
-        $categorization->categorizeTransaction(
-            $transaction,
-            $category,
-            $validated['classification'],
-            $validated['match_mode'],
-        );
+        try {
+            $categorization->categorizeTransaction(
+                $transaction,
+                $category,
+                $validated['classification'],
+                $validated['match_mode'],
+                $validated['normalized_pattern'] ?? null,
+            );
+        } catch (InvalidArgumentException $exception) {
+            abort(422, $exception->getMessage());
+        }
 
         if ($validated['match_mode'] === TransactionCategorizationRule::MATCH_ONCE) {
             return redirect()
@@ -77,6 +84,7 @@ class TransactionCategorizationController extends Controller
                 'category_id' => $category->id,
                 'classification' => $validated['classification'],
                 'match_mode' => $validated['match_mode'],
+                'normalized_pattern' => $validated['normalized_pattern'] ?? null,
             ],
         ]);
 
