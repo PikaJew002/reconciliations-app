@@ -189,7 +189,7 @@
                             </p>
                             <p class="text-sm text-neutral-600">
                                 Income ·
-                                {{ rule.category?.name ?? 'Uncategorized' }}
+                                {{ rule.category?.name ?? 'No category' }}
                             </p>
                             <p
                                 v-if="rule.amount !== null"

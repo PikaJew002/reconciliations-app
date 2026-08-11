@@ -359,10 +359,6 @@
     function canSubmitCategorize(transaction) {
         let form = ensureCategorizeForm(transaction);
 
-        if (form.classification === 'income') {
-            return true;
-        }
-
         return (
             Boolean(form.category_id) &&
             categoriesForClassification(form.classification).length > 0 &&
@@ -376,7 +372,7 @@
     function categorizeTransaction(transaction) {
         let form = ensureCategorizeForm(transaction);
 
-        if (form.classification !== 'income' && !form.category_id) {
+        if (!form.category_id) {
             return;
         }
 
@@ -384,12 +380,9 @@
 
         let payload = {
             classification: form.classification,
+            category_id: form.category_id,
             match_mode: form.match_mode,
         };
-
-        if (form.category_id) {
-            payload.category_id = form.category_id;
-        }
 
         if (form.match_mode === 'description_prefix_and_amount') {
             payload.normalized_pattern = form.normalized_pattern;
@@ -538,27 +531,9 @@
                                 ensureCategorizeForm(transaction).category_id
                             "
                             class="w-full rounded border px-2 py-1.5"
-                            :required="
-                                ensureCategorizeForm(transaction)
-                                    .classification !== 'income'
-                            "
+                            required
                         >
-                            <option
-                                v-if="
-                                    ensureCategorizeForm(transaction)
-                                        .classification === 'income'
-                                "
-                                value=""
-                            >
-                                Uncategorized
-                            </option>
-                            <option
-                                v-else
-                                disabled
-                                value=""
-                            >
-                                Select
-                            </option>
+                            <option disabled value="">Select</option>
                             <option
                                 v-for="category in categoriesForClassification(
                                     ensureCategorizeForm(transaction)
@@ -634,8 +609,6 @@
                     </label>
                     <p
                         v-if="
-                            ensureCategorizeForm(transaction).classification !==
-                                'income' &&
                             categoriesForClassification(
                                 ensureCategorizeForm(transaction)
                                     .classification,

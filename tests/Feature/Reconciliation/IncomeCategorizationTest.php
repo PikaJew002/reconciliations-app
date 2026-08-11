@@ -19,10 +19,8 @@ class IncomeCategorizationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_can_categorize_credit_as_uncategorized_income(): void
+    public function test_income_requires_a_category(): void
     {
-        Queue::fake();
-
         $user = User::factory()->create();
         $transaction = $this->creditTransaction($user, [
             'amount' => 2500.0,
@@ -35,24 +33,10 @@ class IncomeCategorizationTest extends TestCase
                 'classification' => BankTransaction::CLASSIFICATION_INCOME,
                 'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
             ])
-            ->assertRedirect(route('reconciliation.unmatched-transactions'))
-            ->assertSessionHas('success');
+            ->assertSessionHasErrors('category_id');
 
-        $transaction->refresh();
-        $this->assertSame('ignored', $transaction->status);
-        $this->assertSame(BankTransaction::CLASSIFICATION_INCOME, $transaction->classification);
-        $this->assertNull($transaction->category_id);
-
-        $this->assertDatabaseHas('transaction_categorization_rules', [
-            'user_id' => $user->id,
-            'category_id' => null,
-            'classification' => BankTransaction::CLASSIFICATION_INCOME,
-            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
-            'normalized_pattern' => 'direct dep payroll',
-            'is_active' => true,
-        ]);
-
-        Queue::assertPushed(ApplyCategorizationRun::class);
+        $this->assertSame('unmatched', $transaction->fresh()->status);
+        $this->assertNull($transaction->fresh()->classification);
     }
 
     public function test_user_can_categorize_credit_with_income_category(): void
@@ -199,6 +183,7 @@ class IncomeCategorizationTest extends TestCase
         Queue::fake();
 
         $user = User::factory()->create();
+        $category = Category::factory()->for($user)->income()->create(['name' => 'Other']);
         $transaction = $this->creditTransaction($user, [
             'amount' => 50.0,
             'description' => 'ONE TIME CREDIT',
@@ -208,6 +193,7 @@ class IncomeCategorizationTest extends TestCase
         $this->actingAs($user)
             ->post(route('reconciliation.transactions.categorize', $transaction), [
                 'classification' => BankTransaction::CLASSIFICATION_INCOME,
+                'category_id' => $category->id,
                 'match_mode' => TransactionCategorizationRule::MATCH_ONCE,
             ])
             ->assertRedirect(route('reconciliation.unmatched-transactions'));
@@ -216,6 +202,7 @@ class IncomeCategorizationTest extends TestCase
         $this->assertDatabaseCount('categorization_runs', 0);
         Queue::assertNotPushed(ApplyCategorizationRun::class);
         $this->assertSame('ignored', $transaction->fresh()->status);
+        $this->assertSame($category->id, $transaction->fresh()->category_id);
     }
 
     public function test_apply_run_applies_income_rule_to_similar_credits(): void

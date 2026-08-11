@@ -75,7 +75,7 @@ class TransactionCategorizationService
 
     public function categorizeTransaction(
         BankTransaction $transaction,
-        ?Category $category,
+        Category $category,
         string $classification,
         string $matchMode,
         ?string $normalizedPattern = null,
@@ -88,10 +88,6 @@ class TransactionCategorizationService
 
         if ((float) $transaction->amount >= 0) {
             throw new InvalidArgumentException('Only debit transactions can be categorized as bills or expenses.');
-        }
-
-        if ($category === null) {
-            throw new InvalidArgumentException('A category is required for bills and expenses.');
         }
 
         if ($transaction->user_id !== $category->user_id) {
@@ -196,21 +192,19 @@ class TransactionCategorizationService
 
     protected function categorizeIncome(
         BankTransaction $transaction,
-        ?Category $category,
+        Category $category,
         string $matchMode,
     ): void {
         if ((float) $transaction->amount <= 0) {
             throw new InvalidArgumentException('Only credits can be categorized as income.');
         }
 
-        if ($category !== null) {
-            if ($transaction->user_id !== $category->user_id) {
-                throw new InvalidArgumentException('Category does not belong to this transaction’s user.');
-            }
+        if ($transaction->user_id !== $category->user_id) {
+            throw new InvalidArgumentException('Category does not belong to this transaction’s user.');
+        }
 
-            if ($category->kind !== Category::KIND_INCOME) {
-                throw new InvalidArgumentException('Category kind must match classification.');
-            }
+        if ($category->kind !== Category::KIND_INCOME) {
+            throw new InvalidArgumentException('Category kind must match classification.');
         }
 
         if (! in_array($matchMode, TransactionCategorizationRule::incomeAllMatchModes(), true)) {
@@ -221,7 +215,7 @@ class TransactionCategorizationService
             'classification' => BankTransaction::CLASSIFICATION_INCOME,
             'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
             'classification_confidence' => 100,
-            'category_id' => $category?->id,
+            'category_id' => $category->id,
             'status' => 'ignored',
         ]);
 
@@ -325,7 +319,7 @@ class TransactionCategorizationService
 
     protected function upsertRule(
         BankTransaction $transaction,
-        ?Category $category,
+        Category $category,
         string $classification,
         string $matchMode,
         ?string $normalizedPattern = null,
@@ -408,7 +402,7 @@ class TransactionCategorizationService
                 'amount' => $attributes['amount'],
             ],
             [
-                'category_id' => $category?->id,
+                'category_id' => $category->id,
                 'is_active' => true,
             ],
         );
