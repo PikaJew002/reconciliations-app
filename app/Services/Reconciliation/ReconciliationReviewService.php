@@ -339,12 +339,15 @@ class ReconciliationReviewService
     protected function unmatchedTransactions(int $userId): array
     {
         return $this->unmatchedTransactionsQuery($userId)
-            ->with('merchant:id,name,normalized_name,supports_order_import')
+            ->with([
+                'merchant:id,name,normalized_name,supports_order_import',
+                'account:id,name,last_four,account_type',
+            ])
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
             ->limit($this->unmatchedTransactionsLimit)
             ->get()
-            ->map(fn (BankTransaction $transaction): array => $this->transactionPayload($transaction))
+            ->map(fn (BankTransaction $transaction): array => $this->transactionPayload($transaction, includeAccount: true))
             ->all();
     }
 
@@ -433,6 +436,7 @@ class ReconciliationReviewService
         ];
 
         if ($includeAccount) {
+            $payload['account_id'] = $transaction->account_id;
             $payload['account'] = $transaction->account?->name;
             $payload['account_last_four'] = $transaction->account?->last_four;
         }

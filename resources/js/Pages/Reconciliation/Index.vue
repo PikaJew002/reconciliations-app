@@ -103,6 +103,7 @@
         (props.summary.needs_review ?? 0) > 0 ? 'needs-review' : 'matched',
     );
     let unmatchedTransactionFilter = ref('all');
+    let unmatchedTransactionAccountFilter = ref('all');
     let pollId = null;
     let categorizePollId = null;
     let componentForms = reactive({});
@@ -222,16 +223,29 @@
         return 'Untagged transaction (Other)';
     }
 
+    let unmatchedTransactionsForAccount = computed(() => {
+        if (unmatchedTransactionAccountFilter.value === 'all') {
+            return props.unmatchedTransactions;
+        }
+
+        return props.unmatchedTransactions.filter(
+            (transaction) =>
+                String(transaction.account_id) ===
+                unmatchedTransactionAccountFilter.value,
+        );
+    });
+
     let unmatchedTransactionFilters = computed(() => {
+        let transactions = unmatchedTransactionsForAccount.value;
         let counts = {
-            all: props.unmatchedTransactions.length,
+            all: transactions.length,
             walmart: 0,
             amazon: 0,
             'untagged-transfer': 0,
             'untagged-other': 0,
         };
 
-        for (let transaction of props.unmatchedTransactions) {
+        for (let transaction of transactions) {
             let category = unmatchedTransactionCategory(transaction);
 
             if (category in counts) {
@@ -256,12 +270,49 @@
         ];
     });
 
-    let filteredUnmatchedTransactions = computed(() => {
-        if (unmatchedTransactionFilter.value === 'all') {
-            return props.unmatchedTransactions;
+    let unmatchedTransactionAccountFilters = computed(() => {
+        let countsByAccount = new Map();
+
+        for (let transaction of props.unmatchedTransactions) {
+            let accountId = transaction.account_id
+                ? String(transaction.account_id)
+                : 'unknown';
+            let existing = countsByAccount.get(accountId);
+
+            if (existing) {
+                existing.count += 1;
+                continue;
+            }
+
+            countsByAccount.set(accountId, {
+                id: accountId,
+                label: accountLabel(transaction),
+                count: 1,
+            });
         }
 
-        return props.unmatchedTransactions.filter(
+        let accountFilters = [...countsByAccount.values()].sort((a, b) =>
+            a.label.localeCompare(b.label),
+        );
+
+        return [
+            {
+                id: 'all',
+                label: 'All accounts',
+                count: props.unmatchedTransactions.length,
+            },
+            ...accountFilters,
+        ];
+    });
+
+    let filteredUnmatchedTransactions = computed(() => {
+        let transactions = unmatchedTransactionsForAccount.value;
+
+        if (unmatchedTransactionFilter.value === 'all') {
+            return transactions;
+        }
+
+        return transactions.filter(
             (transaction) =>
                 unmatchedTransactionCategory(transaction) ===
                 unmatchedTransactionFilter.value,
@@ -2585,25 +2636,48 @@
             <section v-else class="space-y-3">
                 <div
                     v-if="unmatchedTransactions.length > 0"
-                    class="flex flex-wrap gap-2"
+                    class="space-y-2"
                 >
-                    <button
-                        v-for="filter in unmatchedTransactionFilters"
-                        :key="filter.id"
-                        type="button"
-                        class="rounded px-3 py-1.5 text-sm"
-                        :class="
-                            unmatchedTransactionFilter === filter.id
-                                ? 'bg-neutral-900 text-white'
-                                : 'border text-neutral-700 hover:bg-neutral-100'
-                        "
-                        @click="unmatchedTransactionFilter = filter.id"
-                    >
-                        {{ filter.label }}
-                        <span class="ml-1 opacity-80"
-                            >({{ filter.count }})</span
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="filter in unmatchedTransactionAccountFilters"
+                            :key="`account-${filter.id}`"
+                            type="button"
+                            class="rounded px-3 py-1.5 text-sm"
+                            :class="
+                                unmatchedTransactionAccountFilter === filter.id
+                                    ? 'bg-neutral-900 text-white'
+                                    : 'border text-neutral-700 hover:bg-neutral-100'
+                            "
+                            @click="
+                                unmatchedTransactionAccountFilter = filter.id
+                            "
                         >
-                    </button>
+                            {{ filter.label }}
+                            <span class="ml-1 opacity-80"
+                                >({{ filter.count }})</span
+                            >
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="filter in unmatchedTransactionFilters"
+                            :key="filter.id"
+                            type="button"
+                            class="rounded px-3 py-1.5 text-sm"
+                            :class="
+                                unmatchedTransactionFilter === filter.id
+                                    ? 'bg-neutral-900 text-white'
+                                    : 'border text-neutral-700 hover:bg-neutral-100'
+                            "
+                            @click="unmatchedTransactionFilter = filter.id"
+                        >
+                            {{ filter.label }}
+                            <span class="ml-1 opacity-80"
+                                >({{ filter.count }})</span
+                            >
+                        </button>
+                    </div>
                 </div>
 
                 <div

@@ -154,6 +154,8 @@ class ReconciliationReviewTest extends TestCase
                 ->has('unmatchedTransactions', 1)
                 ->where('unmatchedTransactions.0.id', $unmatchedTransaction->id)
                 ->where('unmatchedTransactions.0.description', 'Unmatched purchase')
+                ->where('unmatchedTransactions.0.account_id', $unmatchedTransaction->account_id)
+                ->where('unmatchedTransactions.0.account', $unmatchedTransaction->account->name)
                 ->has('matchedPairs', 1)
                 ->where('matchedPairs.0.transaction.id', $matchedTransaction->id)
                 ->where('matchedPairs.0.order.id', $reconciledOrder->id)
