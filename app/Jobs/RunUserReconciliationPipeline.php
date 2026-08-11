@@ -4,7 +4,6 @@ namespace App\Jobs;
 
 use App\Models\ReconciliationRun;
 use App\Services\Reconciliation\CreditCardPaymentPairingService;
-use App\Services\Reconciliation\IncomeClassificationService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
@@ -25,7 +24,6 @@ class RunUserReconciliationPipeline implements ShouldQueue
     public function handle(
         CreditCardPaymentPairingService $creditCardPaymentPairing,
         TransferPairingService $transferPairing,
-        IncomeClassificationService $incomeClassification,
         TransactionCategorizationService $transactionCategorization,
         ProductMatchingService $productMatching,
         OrderComponentGenerator $components,
@@ -44,7 +42,6 @@ class RunUserReconciliationPipeline implements ShouldQueue
         try {
             $creditCardPayments = $creditCardPaymentPairing->pairForUser($run->user_id);
             $transfers = $transferPairing->pairForUser($run->user_id);
-            $income = $incomeClassification->classifyForUser($run->user_id);
             $categorized = $transactionCategorization->categorizeForUser($run->user_id);
             $productsMatched = $productMatching->matchForUser($run->user_id);
             $ordersWithComponents = $components->generateForUser($run->user_id);
@@ -57,8 +54,6 @@ class RunUserReconciliationPipeline implements ShouldQueue
                 'credit_card_payments_suggested' => $creditCardPayments['suggested'],
                 'transfers_confirmed' => $transfers['confirmed'],
                 'transfers_suggested' => $transfers['suggested'],
-                'income_learned' => $income['learned'],
-                'income_suggested' => $income['suggested'],
                 'transactions_categorized' => $categorized['applied'],
                 'transactions_categorization_ambiguous' => $categorized['ambiguous'],
                 'products_created' => $productsMatched['created'],

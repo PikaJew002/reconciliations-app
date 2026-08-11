@@ -25,7 +25,13 @@
     let flashError = computed(() => page.props.flash?.error);
 
     let kindLabel = (kind) => {
-        return kind === 'bill' ? 'Bill' : 'Expense';
+        return (
+            {
+                bill: 'Bill',
+                expense: 'Expense',
+                income: 'Income',
+            }[kind] ?? kind
+        );
     };
 
     let setKindFilter = (kind) => {
@@ -58,7 +64,8 @@
             <div>
                 <h1 class="text-2xl font-semibold">Categories</h1>
                 <p class="text-sm text-neutral-600">
-                    Bill and expense categories used when classifying spend.
+                    Bill, expense, and income categories used when classifying
+                    transactions.
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -126,7 +133,7 @@
         </div>
 
         <div v-if="categories.length === 0" class="text-sm text-neutral-600">
-            No categories yet. Add one to start classifying bills and expenses.
+            No categories yet. Add one to start classifying transactions.
         </div>
 
         <ul v-else class="divide-y rounded border">

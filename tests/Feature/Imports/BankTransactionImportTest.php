@@ -2,13 +2,12 @@
 
 namespace Tests\Feature\Imports;
 
-use App\Jobs\ClassifyIncome;
+use App\Jobs\CategorizeTransactions;
 use App\Jobs\GenerateOrderComponents;
 use App\Jobs\MatchMerchants;
 use App\Jobs\PairCreditCardPayments;
 use App\Jobs\PairTransfers;
 use App\Jobs\ProcessImportBatch;
-use App\Jobs\CategorizeTransactions;
 use App\Jobs\RunReconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
@@ -100,7 +99,6 @@ CSV);
         Bus::assertChained([
             PairCreditCardPayments::class,
             PairTransfers::class,
-            ClassifyIncome::class,
             CategorizeTransactions::class,
             GenerateOrderComponents::class,
             MatchMerchants::class,

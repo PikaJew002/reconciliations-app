@@ -19,14 +19,6 @@
             type: Array,
             default: () => [],
         },
-        incomeMatchModes: {
-            type: Array,
-            default: () => [
-                'exact_description_and_amount',
-                'description',
-                'once',
-            ],
-        },
         selectedTransactionIds: {
             type: Array,
             default: () => [],
@@ -38,9 +30,7 @@
     let unmatchedTransactionFilter = ref('all');
     let unmatchedTransactionAccountFilter = ref('all');
     let categorizeForms = reactive({});
-    let incomeForms = reactive({});
     let categorizingTransactionId = ref(null);
-    let incomeActionId = ref(null);
 
     let billCategories = computed(() =>
         props.categories.filter((category) => category.kind === 'bill'),
@@ -48,6 +38,15 @@
     let expenseCategories = computed(() =>
         props.categories.filter((category) => category.kind === 'expense'),
     );
+    let incomeCategories = computed(() =>
+        props.categories.filter((category) => category.kind === 'income'),
+    );
+
+    let incomeMatchModes = [
+        'exact_description_and_amount',
+        'description',
+        'once',
+    ];
 
     function isWalmartTransaction(transaction) {
         let merchant = (transaction.merchant || '').toLowerCase();
@@ -131,6 +130,7 @@
             amazon: 0,
             'untagged-transfer': 0,
             'untagged-other': 0,
+            credits: 0,
         };
 
         for (let transaction of transactions) {
@@ -138,6 +138,10 @@
 
             if (category in counts) {
                 counts[category] += 1;
+            }
+
+            if (isCreditTransaction(transaction)) {
+                counts.credits += 1;
             }
         }
 
@@ -155,6 +159,7 @@
                 label: 'Untagged (Other)',
                 count: counts['untagged-other'],
             },
+            { id: 'credits', label: 'Credits', count: counts.credits },
         ];
     });
 
@@ -200,6 +205,12 @@
             return transactions;
         }
 
+        if (unmatchedTransactionFilter.value === 'credits') {
+            return transactions.filter((transaction) =>
+                isCreditTransaction(transaction),
+            );
+        }
+
         return transactions.filter(
             (transaction) =>
                 unmatchedTransactionCategory(transaction) ===
@@ -225,13 +236,27 @@
         );
     }
 
+    function isCreditTransaction(transaction) {
+        return Number(transaction.amount) > 0;
+    }
+
     function categoriesForClassification(classification) {
-        return classification === 'bill'
-            ? billCategories.value
-            : expenseCategories.value;
+        if (classification === 'bill') {
+            return billCategories.value;
+        }
+
+        if (classification === 'income') {
+            return incomeCategories.value;
+        }
+
+        return expenseCategories.value;
     }
 
     function matchModesForClassification(classification, transaction = null) {
+        if (classification === 'income') {
+            return incomeMatchModes;
+        }
+
         let billOnlyModes = [
             'check_and_amount',
             'description_prefix_and_amount',
@@ -290,29 +315,20 @@
             return categorizeForms[transaction.id];
         }
 
+        let defaultClassification = isCreditTransaction(transaction)
+            ? 'income'
+            : transaction.account_default_classification === 'bill'
+              ? 'bill'
+              : 'expense';
+
         categorizeForms[transaction.id] = {
-            classification:
-                transaction.account_default_classification === 'bill'
-                    ? 'bill'
-                    : 'expense',
+            classification: defaultClassification,
             category_id: '',
             match_mode: 'once',
             normalized_pattern: '',
         };
 
         return categorizeForms[transaction.id];
-    }
-
-    function ensureIncomeForm(transaction) {
-        if (incomeForms[transaction.id]) {
-            return incomeForms[transaction.id];
-        }
-
-        incomeForms[transaction.id] = {
-            match_mode: 'exact_description_and_amount',
-        };
-
-        return incomeForms[transaction.id];
     }
 
     function onCategorizeClassificationChange(transaction) {
@@ -340,10 +356,27 @@
         }
     }
 
+    function canSubmitCategorize(transaction) {
+        let form = ensureCategorizeForm(transaction);
+
+        if (form.classification === 'income') {
+            return true;
+        }
+
+        return (
+            Boolean(form.category_id) &&
+            categoriesForClassification(form.classification).length > 0 &&
+            !(
+                form.match_mode === 'description_prefix_and_amount' &&
+                !form.normalized_pattern
+            )
+        );
+    }
+
     function categorizeTransaction(transaction) {
         let form = ensureCategorizeForm(transaction);
 
-        if (!form.category_id) {
+        if (form.classification !== 'income' && !form.category_id) {
             return;
         }
 
@@ -351,9 +384,12 @@
 
         let payload = {
             classification: form.classification,
-            category_id: form.category_id,
             match_mode: form.match_mode,
         };
+
+        if (form.category_id) {
+            payload.category_id = form.category_id;
+        }
 
         if (form.match_mode === 'description_prefix_and_amount') {
             payload.normalized_pattern = form.normalized_pattern;
@@ -366,21 +402,6 @@
                 preserveScroll: true,
                 onFinish: () => {
                     categorizingTransactionId.value = null;
-                },
-            },
-        );
-    }
-
-    function confirmIncome(transaction) {
-        let form = ensureIncomeForm(transaction);
-        incomeActionId.value = `confirm-${transaction.id}`;
-        router.post(
-            `/reconciliation/transactions/${transaction.id}/confirm-income`,
-            { match_mode: form.match_mode },
-            {
-                preserveScroll: true,
-                onFinish: () => {
-                    incomeActionId.value = null;
                 },
             },
         );
@@ -485,42 +506,7 @@
                 </div>
 
                 <form
-                    v-if="transaction.can_mark_income"
-                    class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-3"
-                    @submit.prevent="confirmIncome(transaction)"
-                >
-                    <label class="block space-y-1 sm:col-span-2">
-                        <span class="text-neutral-600">Future match</span>
-                        <select
-                            v-model="ensureIncomeForm(transaction).match_mode"
-                            class="w-full rounded border px-2 py-1.5"
-                            :disabled="incomeActionId !== null"
-                        >
-                            <option
-                                v-for="mode in incomeMatchModes"
-                                :key="mode"
-                                :value="mode"
-                            >
-                                {{ matchModeLabel(mode) }}
-                            </option>
-                        </select>
-                    </label>
-                    <div class="flex items-end">
-                        <button
-                            type="submit"
-                            class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
-                            :disabled="incomeActionId !== null"
-                        >
-                            {{
-                                incomeActionId === `confirm-${transaction.id}`
-                                    ? 'Saving…'
-                                    : 'Mark as income'
-                            }}
-                        </button>
-                    </div>
-                </form>
-                <form
-                    v-else-if="transaction.can_categorize"
+                    v-if="transaction.can_categorize"
                     class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-4"
                     @submit.prevent="categorizeTransaction(transaction)"
                 >
@@ -531,12 +517,18 @@
                                 ensureCategorizeForm(transaction).classification
                             "
                             class="w-full rounded border px-2 py-1.5"
+                            :disabled="isCreditTransaction(transaction)"
                             @change="
                                 onCategorizeClassificationChange(transaction)
                             "
                         >
-                            <option value="expense">Expense</option>
-                            <option value="bill">Bill</option>
+                            <template v-if="isCreditTransaction(transaction)">
+                                <option value="income">Income</option>
+                            </template>
+                            <template v-else>
+                                <option value="expense">Expense</option>
+                                <option value="bill">Bill</option>
+                            </template>
                         </select>
                     </label>
                     <label class="block space-y-1">
@@ -546,9 +538,27 @@
                                 ensureCategorizeForm(transaction).category_id
                             "
                             class="w-full rounded border px-2 py-1.5"
-                            required
+                            :required="
+                                ensureCategorizeForm(transaction)
+                                    .classification !== 'income'
+                            "
                         >
-                            <option disabled value="">Select</option>
+                            <option
+                                v-if="
+                                    ensureCategorizeForm(transaction)
+                                        .classification === 'income'
+                                "
+                                value=""
+                            >
+                                Uncategorized
+                            </option>
+                            <option
+                                v-else
+                                disabled
+                                value=""
+                            >
+                                Select
+                            </option>
                             <option
                                 v-for="category in categoriesForClassification(
                                     ensureCategorizeForm(transaction)
@@ -589,17 +599,7 @@
                             class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
                             :disabled="
                                 categorizingTransactionId === transaction.id ||
-                                !ensureCategorizeForm(transaction)
-                                    .category_id ||
-                                categoriesForClassification(
-                                    ensureCategorizeForm(transaction)
-                                        .classification,
-                                ).length === 0 ||
-                                (ensureCategorizeForm(transaction)
-                                    .match_mode ===
-                                    'description_prefix_and_amount' &&
-                                    !ensureCategorizeForm(transaction)
-                                        .normalized_pattern)
+                                !canSubmitCategorize(transaction)
                             "
                         >
                             {{
@@ -634,6 +634,8 @@
                     </label>
                     <p
                         v-if="
+                            ensureCategorizeForm(transaction).classification !==
+                                'income' &&
                             categoriesForClassification(
                                 ensureCategorizeForm(transaction)
                                     .classification,

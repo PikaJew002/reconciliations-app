@@ -2,7 +2,6 @@
     import PaymentReviewOrders from '../../Components/Reconciliation/PaymentReviewOrders.vue';
     import ReimbursementGroups from '../../Components/Reconciliation/ReimbursementGroups.vue';
     import ReconciliationShell from '../../Components/Reconciliation/ReconciliationShell.vue';
-    import SuggestedIncome from '../../Components/Reconciliation/SuggestedIncome.vue';
     import SuggestedTransfers from '../../Components/Reconciliation/SuggestedTransfers.vue';
     import UnbalancedOrders from '../../Components/Reconciliation/UnbalancedOrders.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
@@ -26,10 +25,6 @@
             type: Array,
             default: () => [],
         },
-        suggestedIncome: {
-            type: Array,
-            default: () => [],
-        },
         openReimbursementGroups: {
             type: Array,
             default: () => [],
@@ -46,14 +41,6 @@
             type: Array,
             default: () => [],
         },
-        incomeMatchModes: {
-            type: Array,
-            default: () => [
-                'exact_description_and_amount',
-                'description',
-                'once',
-            ],
-        },
         activeRun: {
             type: Object,
             default: null,
@@ -68,7 +55,6 @@
         'unbalancedOrders',
         'paymentReviewOrders',
         'suggestedTransfers',
-        'suggestedIncome',
         'openReimbursementGroups',
         'closedReimbursementGroups',
         'reimbursementEligibleTransactions',
@@ -86,11 +72,6 @@
     >
         <section class="space-y-8">
             <SuggestedTransfers :suggested-transfers="suggestedTransfers" />
-            <SuggestedIncome
-                :suggested-income="suggestedIncome"
-                :open-reimbursement-groups="openReimbursementGroups"
-                :income-match-modes="incomeMatchModes"
-            />
             <ReimbursementGroups
                 :open-reimbursement-groups="openReimbursementGroups"
                 :closed-reimbursement-groups="closedReimbursementGroups"

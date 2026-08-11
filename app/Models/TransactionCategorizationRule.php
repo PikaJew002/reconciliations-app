@@ -59,6 +59,30 @@ class TransactionCategorizationRule extends Model
     }
 
     /**
+     * Persistable match modes for income credits.
+     *
+     * @return list<string>
+     */
+    public static function incomeMatchModes(): array
+    {
+        return [
+            self::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
+            self::MATCH_DESCRIPTION,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function incomeAllMatchModes(): array
+    {
+        return [
+            ...self::incomeMatchModes(),
+            self::MATCH_ONCE,
+        ];
+    }
+
+    /**
      * @return list<string>
      */
     public static function allMatchModes(): array

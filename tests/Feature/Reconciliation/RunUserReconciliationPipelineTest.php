@@ -16,7 +16,6 @@ use App\Models\ReconciliationRun;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
 use App\Services\Reconciliation\CreditCardPaymentPairingService;
-use App\Services\Reconciliation\IncomeClassificationService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
@@ -76,7 +75,6 @@ class RunUserReconciliationPipelineTest extends TestCase
         (new RunUserReconciliationPipeline($run->id))->handle(
             app(CreditCardPaymentPairingService::class),
             app(TransferPairingService::class),
-            app(IncomeClassificationService::class),
             app(TransactionCategorizationService::class),
             app(ProductMatchingService::class),
             app(OrderComponentGenerator::class),
@@ -146,7 +144,6 @@ class RunUserReconciliationPipelineTest extends TestCase
         (new RunUserReconciliationPipeline($run->id))->handle(
             app(CreditCardPaymentPairingService::class),
             app(TransferPairingService::class),
-            app(IncomeClassificationService::class),
             app(TransactionCategorizationService::class),
             app(ProductMatchingService::class),
             app(OrderComponentGenerator::class),

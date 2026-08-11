@@ -5,11 +5,9 @@ namespace Tests\Feature\Reconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\ImportBatch;
-use App\Models\TransactionClassificationRule;
 use App\Models\TransactionTransferLink;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -18,7 +16,7 @@ class TransactionClassificationReviewTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_review_includes_suggested_transfers_and_income(): void
+    public function test_review_includes_suggested_transfers_without_suggested_income(): void
     {
         $user = User::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -65,35 +63,21 @@ class TransactionClassificationReviewTest extends TestCase
             'metadata' => [],
         ]);
 
-        $income = BankTransaction::factory()->create([
-            'user_id' => $user->id,
-            'import_batch_id' => $batch->id,
-            'account_id' => $checkingA->id,
-            'amount' => 2000.00,
-            'posted_at' => '2026-08-02',
-            'description' => 'ACME CORP PAYROLL',
-            'status' => 'unmatched',
-            'classification' => BankTransaction::CLASSIFICATION_INCOME,
-            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_HEURISTIC,
-            'classification_confidence' => 70,
-        ]);
-
         $this->actingAs($user)
             ->get(route('reconciliation.needs-review'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Reconciliation/NeedsReview')
                 ->where('summary.suggested_transfers', 1)
-                ->where('summary.suggested_income', 1)
+                ->missing('summary.suggested_income')
                 ->has('suggestedTransfers', 1)
                 ->where('suggestedTransfers.0.id', $link->id)
-                ->has('suggestedIncome', 1)
-                ->where('suggestedIncome.0.id', $income->id)
+                ->missing('suggestedIncome')
                 ->where('summary.unmatched_transactions', 0)
             );
     }
 
-    public function test_unmatched_credit_exposes_can_mark_income(): void
+    public function test_unmatched_credit_and_debit_expose_can_categorize(): void
     {
         $user = User::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -131,15 +115,15 @@ class TransactionClassificationReviewTest extends TestCase
                 ->where('unmatchedTransactions', function ($transactions) use ($credit, $debit) {
                     $byId = collect($transactions)->keyBy('id');
 
-                    return $byId[$credit->id]['can_mark_income'] === true
-                        && $byId[$credit->id]['can_categorize'] === false
-                        && $byId[$debit->id]['can_mark_income'] === false
-                        && $byId[$debit->id]['can_categorize'] === true;
+                    return $byId[$credit->id]['can_categorize'] === true
+                        && $byId[$credit->id]['account_default_classification'] === 'income'
+                        && $byId[$debit->id]['can_categorize'] === true
+                        && ! array_key_exists('can_mark_income', $byId[$credit->id]);
                 })
             );
     }
 
-    public function test_user_can_confirm_and_reject_transfer_and_income(): void
+    public function test_user_can_confirm_and_reject_transfer(): void
     {
         $user = User::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -184,44 +168,38 @@ class TransactionClassificationReviewTest extends TestCase
         $this->assertSame('ignored', $debit->fresh()->status);
         $this->assertSame(BankTransaction::CLASSIFICATION_TRANSFER, $credit->fresh()->classification);
 
-        $income = BankTransaction::factory()->create([
+        $rejectDebit = BankTransaction::factory()->create([
             'user_id' => $user->id,
             'import_batch_id' => $batch->id,
             'account_id' => $checkingA->id,
-            'amount' => 900.00,
-            'description' => 'PAYROLL DEPOSIT',
-            'normalized_description' => 'payroll deposit',
+            'amount' => -40.00,
             'status' => 'unmatched',
-            'classification' => BankTransaction::CLASSIFICATION_INCOME,
-            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_HEURISTIC,
         ]);
-
-        Queue::fake();
-
-        $this->actingAs($user)
-            ->post(route('reconciliation.transactions.confirm-income', $income), [
-                'match_mode' => TransactionClassificationRule::MATCH_DESCRIPTION,
-            ])
-            ->assertRedirect(route('reconciliation.needs-review'));
-
-        $this->assertSame('ignored', $income->fresh()->status);
-
-        $rejectedIncome = BankTransaction::factory()->create([
+        $rejectCredit = BankTransaction::factory()->create([
             'user_id' => $user->id,
             'import_batch_id' => $batch->id,
-            'account_id' => $checkingA->id,
-            'amount' => 25.00,
-            'description' => 'INTEREST PAYMENT',
-            'normalized_description' => 'interest payment',
+            'account_id' => $checkingB->id,
+            'amount' => 40.00,
             'status' => 'unmatched',
-            'classification' => BankTransaction::CLASSIFICATION_INCOME,
-            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_HEURISTIC,
+        ]);
+
+        $rejectLink = TransactionTransferLink::query()->create([
+            'user_id' => $user->id,
+            'debit_transaction_id' => $rejectDebit->id,
+            'credit_transaction_id' => $rejectCredit->id,
+            'transfer_group_id' => (string) Str::uuid(),
+            'match_confidence' => 70,
+            'status' => TransactionTransferLink::STATUS_SUGGESTED,
+            'metadata' => [],
         ]);
 
         $this->actingAs($user)
-            ->post(route('reconciliation.transactions.reject-income', $rejectedIncome))
+            ->post(route('reconciliation.transfers.reject', $rejectLink))
             ->assertRedirect(route('reconciliation.needs-review'));
 
-        $this->assertNull($rejectedIncome->fresh()->classification);
+        $this->assertSame(
+            TransactionTransferLink::STATUS_REJECTED,
+            $rejectLink->fresh()->status,
+        );
     }
 }

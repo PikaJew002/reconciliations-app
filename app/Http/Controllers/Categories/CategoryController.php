@@ -18,7 +18,7 @@ class CategoryController extends Controller
     {
         $kind = $request->string('kind')->toString();
 
-        if (! in_array($kind, [Category::KIND_BILL, Category::KIND_EXPENSE, ''], true)) {
+        if (! in_array($kind, [...Category::kinds(), ''], true)) {
             $kind = '';
         }
 
@@ -42,20 +42,14 @@ class CategoryController extends Controller
             'filters' => [
                 'kind' => $kind !== '' ? $kind : null,
             ],
-            'kinds' => [
-                Category::KIND_BILL,
-                Category::KIND_EXPENSE,
-            ],
+            'kinds' => Category::kinds(),
         ]);
     }
 
     public function create(): Response
     {
         return Inertia::render('Categories/Create', [
-            'kinds' => [
-                Category::KIND_BILL,
-                Category::KIND_EXPENSE,
-            ],
+            'kinds' => Category::kinds(),
         ]);
     }
 
@@ -94,10 +88,7 @@ class CategoryController extends Controller
                 'kind' => $category->kind,
                 'color' => $category->color,
             ],
-            'kinds' => [
-                Category::KIND_BILL,
-                Category::KIND_EXPENSE,
-            ],
+            'kinds' => Category::kinds(),
         ]);
     }
 

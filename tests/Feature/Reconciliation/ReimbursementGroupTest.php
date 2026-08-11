@@ -9,7 +9,6 @@ use App\Models\ImportBatch;
 use App\Models\ReimbursementGroup;
 use App\Models\ReimbursementGroupTransaction;
 use App\Models\User;
-use App\Services\Reconciliation\IncomeClassificationService;
 use App\Services\Reconciliation\ReimbursementGroupService;
 use App\Services\Reporting\CategorySpendQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -167,7 +166,7 @@ class ReimbursementGroupTest extends TestCase
         $this->assertSame(ReimbursementGroup::STATUS_OPEN, $group->fresh()->status);
     }
 
-    public function test_grouped_credit_is_excluded_from_income_classification(): void
+    public function test_grouped_credit_is_excluded_from_expense_matching_availability(): void
     {
         $user = User::factory()->create();
         $expense = $this->transaction($user, ['amount' => -100.0, 'description' => 'Brightwheel']);
@@ -179,10 +178,12 @@ class ReimbursementGroupTest extends TestCase
 
         app(ReimbursementGroupService::class)->create($user->id, [$expense->id, $credit->id]);
 
-        $result = app(IncomeClassificationService::class)->classifyForUser($user->id);
-
-        $this->assertSame(0, $result['learned']);
-        $this->assertSame(0, $result['suggested']);
+        $this->assertFalse(
+            BankTransaction::query()
+                ->availableForExpenseMatching()
+                ->whereKey($credit->id)
+                ->exists(),
+        );
         $credit->refresh();
         $this->assertSame(BankTransaction::CLASSIFICATION_REIMBURSEMENT, $credit->classification);
     }

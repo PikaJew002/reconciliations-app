@@ -31,38 +31,41 @@ class TransactionCategorizationService
             return ['applied' => 0, 'ambiguous' => 0];
         }
 
-        BankTransaction::query()
-            ->where('user_id', $userId)
-            ->availableForExpenseMatching()
-            ->where('amount', '<', 0)
-            ->whereDoesntHave('merchant', fn ($query) => $query->where('supports_order_import', true))
-            ->with('merchant')
-            ->orderBy('id')
-            ->each(function (BankTransaction $transaction) use ($rules, &$applied, &$ambiguous): void {
-                $matches = $this->matchingRules($transaction, $rules);
+        $debitRules = $rules->filter(
+            fn (TransactionCategorizationRule $rule): bool => in_array($rule->classification, [
+                BankTransaction::CLASSIFICATION_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE,
+            ], true),
+        )->values();
 
-                if ($matches->isEmpty()) {
-                    return;
-                }
+        $incomeRules = $rules->filter(
+            fn (TransactionCategorizationRule $rule): bool => $rule->classification === BankTransaction::CLASSIFICATION_INCOME
+                && in_array($rule->match_mode, TransactionCategorizationRule::incomeMatchModes(), true),
+        )->values();
 
-                if ($matches->count() > 1) {
-                    $uniqueTargets = $matches
-                        ->map(fn (TransactionCategorizationRule $rule) => $rule->classification.'|'.$rule->category_id)
-                        ->unique()
-                        ->count();
+        if ($debitRules->isNotEmpty()) {
+            BankTransaction::query()
+                ->where('user_id', $userId)
+                ->availableForExpenseMatching()
+                ->where('amount', '<', 0)
+                ->whereDoesntHave('merchant', fn ($query) => $query->where('supports_order_import', true))
+                ->with('merchant')
+                ->orderBy('id')
+                ->each(function (BankTransaction $transaction) use ($debitRules, &$applied, &$ambiguous): void {
+                    $this->applyMatchingRules($transaction, $debitRules, $applied, $ambiguous);
+                });
+        }
 
-                    if ($uniqueTargets > 1) {
-                        $ambiguous++;
-
-                        return;
-                    }
-                }
-
-                /** @var TransactionCategorizationRule $rule */
-                $rule = $matches->first();
-                $this->applyRule($transaction, $rule, BankTransaction::CLASSIFICATION_SOURCE_LEARNED);
-                $applied++;
-            });
+        if ($incomeRules->isNotEmpty()) {
+            BankTransaction::query()
+                ->where('user_id', $userId)
+                ->availableForExpenseMatching()
+                ->where('amount', '>', 0)
+                ->orderBy('id')
+                ->each(function (BankTransaction $transaction) use ($incomeRules, &$applied, &$ambiguous): void {
+                    $this->applyMatchingRules($transaction, $incomeRules, $applied, $ambiguous);
+                });
+        }
 
         return [
             'applied' => $applied,
@@ -72,13 +75,23 @@ class TransactionCategorizationService
 
     public function categorizeTransaction(
         BankTransaction $transaction,
-        Category $category,
+        ?Category $category,
         string $classification,
         string $matchMode,
         ?string $normalizedPattern = null,
     ): void {
+        if ($classification === BankTransaction::CLASSIFICATION_INCOME) {
+            $this->categorizeIncome($transaction, $category, $matchMode);
+
+            return;
+        }
+
         if ((float) $transaction->amount >= 0) {
             throw new InvalidArgumentException('Only debit transactions can be categorized as bills or expenses.');
+        }
+
+        if ($category === null) {
+            throw new InvalidArgumentException('A category is required for bills and expenses.');
         }
 
         if ($transaction->user_id !== $category->user_id) {
@@ -89,7 +102,7 @@ class TransactionCategorizationService
             BankTransaction::CLASSIFICATION_BILL,
             BankTransaction::CLASSIFICATION_EXPENSE,
         ], true)) {
-            throw new InvalidArgumentException('Classification must be bill or expense.');
+            throw new InvalidArgumentException('Classification must be bill, expense, or income.');
         }
 
         $expectedKind = $classification === BankTransaction::CLASSIFICATION_BILL
@@ -181,6 +194,83 @@ class TransactionCategorizationService
         return implode(' ', $tokens);
     }
 
+    protected function categorizeIncome(
+        BankTransaction $transaction,
+        ?Category $category,
+        string $matchMode,
+    ): void {
+        if ((float) $transaction->amount <= 0) {
+            throw new InvalidArgumentException('Only credits can be categorized as income.');
+        }
+
+        if ($category !== null) {
+            if ($transaction->user_id !== $category->user_id) {
+                throw new InvalidArgumentException('Category does not belong to this transaction’s user.');
+            }
+
+            if ($category->kind !== Category::KIND_INCOME) {
+                throw new InvalidArgumentException('Category kind must match classification.');
+            }
+        }
+
+        if (! in_array($matchMode, TransactionCategorizationRule::incomeAllMatchModes(), true)) {
+            throw new InvalidArgumentException('Invalid match mode for income.');
+        }
+
+        $transaction->update([
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
+            'classification_confidence' => 100,
+            'category_id' => $category?->id,
+            'status' => 'ignored',
+        ]);
+
+        if ($matchMode === TransactionCategorizationRule::MATCH_ONCE) {
+            return;
+        }
+
+        $this->upsertRule(
+            $transaction,
+            $category,
+            BankTransaction::CLASSIFICATION_INCOME,
+            $matchMode,
+        );
+    }
+
+    /**
+     * @param  Collection<int, TransactionCategorizationRule>  $rules
+     */
+    protected function applyMatchingRules(
+        BankTransaction $transaction,
+        Collection $rules,
+        int &$applied,
+        int &$ambiguous,
+    ): void {
+        $matches = $this->matchingRules($transaction, $rules);
+
+        if ($matches->isEmpty()) {
+            return;
+        }
+
+        if ($matches->count() > 1) {
+            $uniqueTargets = $matches
+                ->map(fn (TransactionCategorizationRule $rule) => $rule->classification.'|'.($rule->category_id ?? 'null'))
+                ->unique()
+                ->count();
+
+            if ($uniqueTargets > 1) {
+                $ambiguous++;
+
+                return;
+            }
+        }
+
+        /** @var TransactionCategorizationRule $rule */
+        $rule = $matches->first();
+        $this->applyRule($transaction, $rule, BankTransaction::CLASSIFICATION_SOURCE_LEARNED);
+        $applied++;
+    }
+
     /**
      * @param  Collection<int, TransactionCategorizationRule>  $rules
      * @return Collection<int, TransactionCategorizationRule>
@@ -235,7 +325,7 @@ class TransactionCategorizationService
 
     protected function upsertRule(
         BankTransaction $transaction,
-        Category $category,
+        ?Category $category,
         string $classification,
         string $matchMode,
         ?string $normalizedPattern = null,
@@ -318,7 +408,7 @@ class TransactionCategorizationService
                 'amount' => $attributes['amount'],
             ],
             [
-                'category_id' => $category->id,
+                'category_id' => $category?->id,
                 'is_active' => true,
             ],
         );

@@ -37,7 +37,25 @@ class CategoryCrudTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Categories/Create')
-                ->has('kinds', 2));
+                ->has('kinds', 3));
+    }
+
+    public function test_user_can_create_income_category(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('categories.store'), [
+            'name' => 'Salary',
+            'kind' => Category::KIND_INCOME,
+            'color' => '#112233',
+        ])->assertRedirect(route('categories.index', ['kind' => Category::KIND_INCOME]));
+
+        $this->assertDatabaseHas('categories', [
+            'user_id' => $user->id,
+            'name' => 'Salary',
+            'kind' => Category::KIND_INCOME,
+            'slug' => 'salary',
+        ]);
     }
 
     public function test_user_can_create_bill_and_expense_categories_with_same_name(): void
@@ -79,7 +97,7 @@ class CategoryCrudTest extends TestCase
             ->from(route('categories.create'))
             ->post(route('categories.store'), [
                 'name' => 'Bad',
-                'kind' => 'income',
+                'kind' => 'not-a-kind',
                 'color' => 'blue',
             ])
             ->assertRedirect(route('categories.create'))

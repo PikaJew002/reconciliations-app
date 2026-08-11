@@ -29,33 +29,63 @@ class TransactionCategorizationController extends Controller
                 Rule::in([
                     BankTransaction::CLASSIFICATION_BILL,
                     BankTransaction::CLASSIFICATION_EXPENSE,
+                    BankTransaction::CLASSIFICATION_INCOME,
                 ]),
             ],
-            'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'match_mode' => ['required', Rule::in(TransactionCategorizationRule::allMatchModes())],
+            'category_id' => ['nullable', 'integer', 'exists:categories,id'],
+            'match_mode' => ['required', 'string'],
             'normalized_pattern' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $category = Category::query()->findOrFail($validated['category_id']);
+        $isIncome = $validated['classification'] === BankTransaction::CLASSIFICATION_INCOME;
+        $categoryId = $validated['category_id'] ?? null;
 
-        abort_unless($category->user_id === $request->user()->id, 403);
+        if ($isIncome) {
+            abort_unless((float) $transaction->amount > 0, 422, 'Only credits can be categorized as income.');
+            abort_unless(
+                in_array($validated['match_mode'], TransactionCategorizationRule::incomeAllMatchModes(), true),
+                422,
+                'Invalid match mode for income.',
+            );
+        } else {
+            abort_unless((float) $transaction->amount < 0, 422, 'Only debit transactions can be categorized as bills or expenses.');
+            abort_unless($categoryId !== null, 422, 'A category is required for bills and expenses.');
+            abort_unless(
+                in_array($validated['match_mode'], TransactionCategorizationRule::allMatchModes(), true),
+                422,
+                'Invalid match mode.',
+            );
+        }
+
+        $category = null;
+
+        if ($categoryId !== null) {
+            $category = Category::query()->findOrFail($categoryId);
+            abort_unless($category->user_id === $request->user()->id, 403);
+
+            $expectedKind = match ($validated['classification']) {
+                BankTransaction::CLASSIFICATION_BILL => Category::KIND_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE => Category::KIND_EXPENSE,
+                BankTransaction::CLASSIFICATION_INCOME => Category::KIND_INCOME,
+                default => null,
+            };
+
+            abort_unless($expectedKind !== null && $category->kind === $expectedKind, 422, 'Category kind must match classification.');
+        } elseif (! $isIncome) {
+            abort(422, 'A category is required for bills and expenses.');
+        }
 
         $transaction->loadMissing('merchant');
 
-        abort_unless((float) $transaction->amount < 0, 422, 'Only debit transactions can be categorized.');
-        abort_unless(! $transaction->merchant?->supports_order_import, 422, 'Order-import merchant transactions wait for real orders.');
+        if (! $isIncome) {
+            abort_unless(! $transaction->merchant?->supports_order_import, 422, 'Order-import merchant transactions wait for real orders.');
 
-        $expectedKind = $validated['classification'] === BankTransaction::CLASSIFICATION_BILL
-            ? Category::KIND_BILL
-            : Category::KIND_EXPENSE;
-
-        abort_unless($category->kind === $expectedKind, 422, 'Category kind must match classification.');
-
-        if (
-            in_array($validated['match_mode'], TransactionCategorizationRule::billOnlyMatchModes(), true)
-            && $validated['classification'] !== BankTransaction::CLASSIFICATION_BILL
-        ) {
-            abort(422, 'This match mode is only available for bills.');
+            if (
+                in_array($validated['match_mode'], TransactionCategorizationRule::billOnlyMatchModes(), true)
+                && $validated['classification'] !== BankTransaction::CLASSIFICATION_BILL
+            ) {
+                abort(422, 'This match mode is only available for bills.');
+            }
         }
 
         try {
@@ -81,7 +111,7 @@ class TransactionCategorizationController extends Controller
             'status' => 'pending',
             'metadata' => [
                 'source_transaction_id' => $transaction->id,
-                'category_id' => $category->id,
+                'category_id' => $category?->id,
                 'classification' => $validated['classification'],
                 'match_mode' => $validated['match_mode'],
                 'normalized_pattern' => $validated['normalized_pattern'] ?? null,

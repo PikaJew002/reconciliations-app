@@ -374,9 +374,11 @@
             {{ activeRun.metadata?.transfers_confirmed ?? 0 }} transfers,
             suggested
             {{ activeRun.metadata?.credit_card_payments_suggested ?? 0 }} card
-            payments,
-            {{ activeRun.metadata?.transfers_suggested ?? 0 }} transfers and
-            {{ activeRun.metadata?.income_suggested ?? 0 }} income, matched
+            payments and
+            {{ activeRun.metadata?.transfers_suggested ?? 0 }} transfers,
+            categorized
+            {{ activeRun.metadata?.transactions_categorized ?? 0 }}
+            transactions, matched
             {{ activeRun.metadata?.merchants_matched ?? 0 }} merchants,
             {{ activeRun.metadata?.transactions_matched ?? 0 }} order
             transactions, and

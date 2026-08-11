@@ -43,9 +43,7 @@
     let descriptionOnlyConfirmedCount = computed(
         () =>
             props.incomeRules.filter(
-                (rule) =>
-                    rule.match_mode === 'description' &&
-                    rule.origin === 'user_confirmed',
+                (rule) => rule.match_mode === 'description',
             ).length,
     );
 
@@ -60,15 +58,6 @@
                 description_prefix_and_amount: 'Starts with + amount',
                 once: 'This transaction only',
             }[mode] ?? (mode ? mode : 'Description only')
-        );
-    };
-
-    let originLabel = (origin) => {
-        return (
-            {
-                user_confirmed: 'Confirmed',
-                user_rejected: 'Dismissed / suppressed',
-            }[origin] ?? origin
         );
     };
 
@@ -97,9 +86,9 @@
         let count = descriptionOnlyConfirmedCount.value;
         if (
             !window.confirm(
-                `Delete ${count} description-only confirmed income rule${
+                `Delete ${count} description-only income rule${
                     count === 1 ? '' : 's'
-                }? Same-memo reimbursements will no longer be auto-classified from those rules.`,
+                }? Similar credits will no longer be auto-categorized from those rules.`,
             )
         ) {
             return;
@@ -158,8 +147,8 @@
         <section v-if="activeTab === 'income'" class="space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <p class="text-sm text-neutral-600">
-                    Income rules created when you mark credits as income on
-                    Reconciliation.
+                    Income rules created when you categorize credits as income
+                    on Reconciliation.
                 </p>
                 <button
                     v-if="descriptionOnlyConfirmedCount > 0"
@@ -167,7 +156,7 @@
                     class="rounded border px-3 py-1.5 text-sm text-red-700"
                     @click="deleteDescriptionOnlyIncomeRules"
                 >
-                    Delete description-only confirmed ({{
+                    Delete description-only ({{
                         descriptionOnlyConfirmedCount
                     }})
                 </button>
@@ -177,8 +166,8 @@
                 v-if="incomeRules.length === 0"
                 class="text-sm text-neutral-600"
             >
-                No income rules yet. Mark a credit as income on Reconciliation
-                to create one.
+                No income rules yet. Categorize a credit as income on
+                Reconciliation to create one.
             </div>
 
             <ul v-else class="divide-y rounded border">
@@ -199,7 +188,8 @@
                                 {{ matchModeLabel(rule.match_mode) }}
                             </p>
                             <p class="text-sm text-neutral-600">
-                                Income · {{ originLabel(rule.origin) }}
+                                Income ·
+                                {{ rule.category?.name ?? 'Uncategorized' }}
                             </p>
                             <p
                                 v-if="rule.amount !== null"

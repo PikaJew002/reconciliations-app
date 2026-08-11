@@ -38,12 +38,6 @@ class ReconciliationReviewService
             ->where('status', TransactionTransferLink::STATUS_SUGGESTED)
             ->count();
 
-        $suggestedIncomeCount = BankTransaction::query()
-            ->where('user_id', $userId)
-            ->where('status', 'unmatched')
-            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
-            ->count();
-
         $openReimbursementGroupsCount = isset($needsReviewPayload['openReimbursementGroups'])
             ? count($needsReviewPayload['openReimbursementGroups'])
             : ReimbursementGroup::query()
@@ -75,11 +69,9 @@ class ReconciliationReviewService
             'unbalanced_orders' => count($unbalancedOrders),
             'payment_review_orders' => count($paymentReviewOrders),
             'suggested_transfers' => $suggestedTransfersCount,
-            'suggested_income' => $suggestedIncomeCount,
             'open_reimbursement_groups' => $openReimbursementGroupsCount,
             'needs_review' => $orderReviewCount
                 + $suggestedTransfersCount
-                + $suggestedIncomeCount
                 + $openReimbursementGroupsCount,
         ];
     }
@@ -89,7 +81,6 @@ class ReconciliationReviewService
      *     unbalancedOrders: list<array<string, mixed>>,
      *     paymentReviewOrders: list<array<string, mixed>>,
      *     suggestedTransfers: list<array<string, mixed>>,
-     *     suggestedIncome: list<array<string, mixed>>,
      *     openReimbursementGroups: list<array<string, mixed>>,
      *     closedReimbursementGroups: list<array<string, mixed>>,
      *     reimbursementEligibleTransactions: list<array<string, mixed>>
@@ -101,7 +92,6 @@ class ReconciliationReviewService
             'unbalancedOrders' => $this->unbalancedOrders($userId),
             'paymentReviewOrders' => $this->paymentReviewOrders($userId),
             'suggestedTransfers' => $this->suggestedTransfers($userId),
-            'suggestedIncome' => $this->suggestedIncome($userId),
             'openReimbursementGroups' => $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_OPEN),
             'closedReimbursementGroups' => $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_CLOSED),
             'reimbursementEligibleTransactions' => $this->reimbursementEligibleTransactions($userId),
@@ -401,31 +391,6 @@ class ReconciliationReviewService
             ->all();
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function suggestedIncome(int $userId): array
-    {
-        return BankTransaction::query()
-            ->where('user_id', $userId)
-            ->where('status', 'unmatched')
-            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
-            ->with('account:id,name,last_four,account_type')
-            ->orderByDesc('posted_at')
-            ->orderByDesc('id')
-            ->limit($this->listLimit)
-            ->get()
-            ->map(fn (BankTransaction $transaction): array => [
-                ...$this->transactionPayload($transaction, includeAccount: true),
-                'classification' => $transaction->classification,
-                'classification_source' => $transaction->classification_source,
-                'classification_confidence' => $transaction->classification_confidence !== null
-                    ? (float) $transaction->classification_confidence
-                    : null,
-            ])
-            ->all();
-    }
-
     protected function unmatchedTransactionsQuery(int $userId)
     {
         return BankTransaction::query()
@@ -438,6 +403,11 @@ class ReconciliationReviewService
      */
     protected function transactionPayload(BankTransaction $transaction, bool $includeAccount = false): array
     {
+        $isCredit = (float) $transaction->amount > 0;
+        $isDebit = (float) $transaction->amount < 0;
+        $canCategorizeBase = $transaction->status === 'unmatched'
+            && $transaction->classification === null;
+
         $payload = [
             'id' => $transaction->id,
             'posted_at' => $transaction->posted_at?->toDateString(),
@@ -448,21 +418,20 @@ class ReconciliationReviewService
             'status' => $transaction->status,
             'merchant' => $transaction->merchant?->name,
             'supports_order_import' => (bool) ($transaction->merchant?->supports_order_import),
-            'can_categorize' => (float) $transaction->amount < 0
-                && $transaction->status === 'unmatched'
-                && $transaction->classification === null
-                && ! (bool) ($transaction->merchant?->supports_order_import),
-            'can_mark_income' => (float) $transaction->amount > 0
-                && $transaction->status === 'unmatched'
-                && $transaction->classification === null,
+            'can_categorize' => $canCategorizeBase && (
+                $isCredit
+                || ($isDebit && ! (bool) ($transaction->merchant?->supports_order_import))
+            ),
         ];
 
         if ($includeAccount) {
             $payload['account_id'] = $transaction->account_id;
             $payload['account'] = $transaction->account?->name;
             $payload['account_last_four'] = $transaction->account?->last_four;
-            $payload['account_default_classification'] = $transaction->account?->default_classification
-                ?? BankTransaction::CLASSIFICATION_EXPENSE;
+            $payload['account_default_classification'] = $isCredit
+                ? BankTransaction::CLASSIFICATION_INCOME
+                : ($transaction->account?->default_classification
+                    ?? BankTransaction::CLASSIFICATION_EXPENSE);
         }
 
         return $payload;

@@ -17,6 +17,20 @@ class Category extends Model
 
     public const KIND_EXPENSE = 'expense';
 
+    public const KIND_INCOME = 'income';
+
+    /**
+     * @return list<string>
+     */
+    public static function kinds(): array
+    {
+        return [
+            self::KIND_BILL,
+            self::KIND_EXPENSE,
+            self::KIND_INCOME,
+        ];
+    }
+
     protected $fillable = [
         'user_id',
         'parent_id',
@@ -82,6 +96,11 @@ class Category extends Model
         return $this->kind === self::KIND_EXPENSE;
     }
 
+    public function isIncome(): bool
+    {
+        return $this->kind === self::KIND_INCOME;
+    }
+
     public function isInUse(): bool
     {
         return $this->products()->exists()
@@ -123,7 +142,7 @@ class Category extends Model
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'kind' => ['required', Rule::in([self::KIND_BILL, self::KIND_EXPENSE])],
+            'kind' => ['required', Rule::in(self::kinds())],
             'color' => ['nullable', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
         ];
     }

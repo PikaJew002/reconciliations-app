@@ -21,7 +21,7 @@ class CategoryFactory extends Factory
         return [
             'user_id' => User::factory(),
             'parent_id' => null,
-            'kind' => fake()->randomElement([Category::KIND_BILL, Category::KIND_EXPENSE]),
+            'kind' => fake()->randomElement(Category::kinds()),
             'name' => Str::title($name),
             'slug' => Str::slug($name),
             'color' => fake()->optional()->hexColor(),
@@ -41,5 +41,10 @@ class CategoryFactory extends Factory
     public function expense(): static
     {
         return $this->state(fn () => ['kind' => Category::KIND_EXPENSE]);
+    }
+
+    public function income(): static
+    {
+        return $this->state(fn () => ['kind' => Category::KIND_INCOME]);
     }
 }

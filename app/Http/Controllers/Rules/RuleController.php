@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Rules;
 
 use App\Http\Controllers\Controller;
+use App\Models\BankTransaction;
 use App\Models\TransactionCategorizationRule;
-use App\Models\TransactionClassificationRule;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,23 +21,32 @@ class RuleController extends Controller
 
         $userId = $request->user()->id;
 
-        $incomeRules = TransactionClassificationRule::query()
+        $incomeRules = TransactionCategorizationRule::query()
             ->where('user_id', $userId)
-            ->where('classification', TransactionClassificationRule::CLASSIFICATION_INCOME)
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->with(['category:id,name,kind'])
             ->orderByDesc('updated_at')
             ->get()
-            ->map(fn (TransactionClassificationRule $rule) => [
+            ->map(fn (TransactionCategorizationRule $rule) => [
                 'id' => $rule->id,
                 'classification' => $rule->classification,
                 'match_mode' => $rule->match_mode,
                 'normalized_pattern' => $rule->normalized_pattern,
                 'amount' => $rule->amount !== null ? (float) $rule->amount : null,
-                'origin' => $rule->origin,
                 'is_active' => $rule->is_active,
+                'category' => $rule->category ? [
+                    'id' => $rule->category->id,
+                    'name' => $rule->category->name,
+                    'kind' => $rule->category->kind,
+                ] : null,
             ]);
 
         $expenseRules = TransactionCategorizationRule::query()
             ->where('user_id', $userId)
+            ->whereIn('classification', [
+                BankTransaction::CLASSIFICATION_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE,
+            ])
             ->with(['category:id,name,kind', 'merchant:id,name'])
             ->orderByDesc('updated_at')
             ->get()
@@ -63,7 +72,7 @@ class RuleController extends Controller
             'tab' => $tab,
             'incomeRules' => $incomeRules,
             'expenseRules' => $expenseRules,
-            'incomeMatchModes' => TransactionClassificationRule::persistableMatchModes(),
+            'incomeMatchModes' => TransactionCategorizationRule::incomeMatchModes(),
             'expenseMatchModes' => TransactionCategorizationRule::persistableMatchModes(),
         ]);
     }

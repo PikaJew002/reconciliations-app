@@ -29,7 +29,13 @@
     });
 
     let kindLabel = (kind) => {
-        return kind === 'bill' ? 'Bill' : 'Expense';
+        return (
+            {
+                bill: 'Bill',
+                expense: 'Expense',
+                income: 'Income',
+            }[kind] ?? kind
+        );
     };
 
     let submit = () => {

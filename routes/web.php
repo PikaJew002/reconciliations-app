@@ -24,7 +24,6 @@ use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
-use App\Http\Controllers\Reconciliation\TransactionClassificationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
 use Illuminate\Support\Facades\Route;
 
@@ -117,10 +116,6 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.transfers.confirm');
     Route::post('/reconciliation/transfers/{transferLink}/reject', [TransferLinkController::class, 'reject'])
         ->name('reconciliation.transfers.reject');
-    Route::post('/reconciliation/transactions/{transaction}/confirm-income', [TransactionClassificationController::class, 'confirmIncome'])
-        ->name('reconciliation.transactions.confirm-income');
-    Route::post('/reconciliation/transactions/{transaction}/reject-income', [TransactionClassificationController::class, 'rejectIncome'])
-        ->name('reconciliation.transactions.reject-income');
     Route::post('/reconciliation/transactions/{transaction}/categorize', [TransactionCategorizationController::class, 'store'])
         ->name('reconciliation.transactions.categorize');
     Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])
