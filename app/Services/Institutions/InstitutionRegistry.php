@@ -6,8 +6,7 @@ use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
 use App\Services\Reconciliation\BankMerchantNameExtractor;
-use App\Services\Reconciliation\CapitalOneMerchantNameExtractor;
-use App\Services\Reconciliation\CumberlandValleyCreditCardMerchantNameExtractor;
+use App\Services\Reconciliation\CreditCardMerchantNameExtractor;
 use InvalidArgumentException;
 
 class InstitutionRegistry
@@ -26,7 +25,14 @@ class InstitutionRegistry
             new InstitutionProfile(
                 name: CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
                 importerClass: CapitalOneCreditCardTransactionImporter::class,
-                extractorClass: CapitalOneMerchantNameExtractor::class,
+                extractorClass: CreditCardMerchantNameExtractor::class,
+                merchantSkipPatterns: [
+                    'interest charge',
+                    'capital one mobile pymt',
+                    'credit-cash back',
+                    'payment thank you',
+                    'autopath',
+                ],
             ),
             new InstitutionProfile(
                 name: CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
@@ -36,7 +42,14 @@ class InstitutionRegistry
             new InstitutionProfile(
                 name: CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
                 importerClass: CumberlandValleyCreditCardTransactionImporter::class,
-                extractorClass: CumberlandValleyCreditCardMerchantNameExtractor::class,
+                extractorClass: CreditCardMerchantNameExtractor::class,
+                merchantSkipPatterns: [
+                    'interest charge',
+                    'payment adjustment',
+                    'payment thank you',
+                    'online payment',
+                    'credit card payment',
+                ],
             ),
         ];
     }

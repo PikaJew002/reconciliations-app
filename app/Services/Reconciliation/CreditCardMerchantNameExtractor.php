@@ -5,18 +5,14 @@ namespace App\Services\Reconciliation;
 use App\Services\Reconciliation\Contracts\MerchantNameExtractor;
 use Illuminate\Support\Str;
 
-class CumberlandValleyCreditCardMerchantNameExtractor implements MerchantNameExtractor
+class CreditCardMerchantNameExtractor implements MerchantNameExtractor
 {
     /**
-     * @var list<string>
+     * @param  list<string>  $skipPatterns
      */
-    protected array $skipPatterns = [
-        'interest charge',
-        'payment adjustment',
-        'payment thank you',
-        'online payment',
-        'credit card payment',
-    ];
+    public function __construct(
+        protected array $skipPatterns = [],
+    ) {}
 
     public function canExtract(string $normalizedDescription): bool
     {
@@ -73,7 +69,7 @@ class CumberlandValleyCreditCardMerchantNameExtractor implements MerchantNameExt
         // Domains and paths: "apple.com/bill", "digitalocean.com", "netflix.com".
         $description = preg_replace('/\.(?:com|net|org|io)(?:\/\S*)?/u', ' ', $description) ?? $description;
 
-        // Store numbers and trailing location codes: "#1190", "021543", "029523".
+        // Store numbers and trailing location codes: "#1190", "021543".
         $description = preg_replace('/#\d+/u', '', $description) ?? $description;
         $description = preg_replace('/\b\d{4,}\b/u', '', $description) ?? $description;
 

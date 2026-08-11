@@ -19,10 +19,6 @@ class MerchantNameExtractorResolver
 
         $profile = $this->institutions->find($institutionName);
 
-        if ($profile === null) {
-            return app(BankMerchantNameExtractor::class);
-        }
-
-        return app($profile->extractorClass);
+        return $profile?->makeExtractor() ?? app(BankMerchantNameExtractor::class);
     }
 }
