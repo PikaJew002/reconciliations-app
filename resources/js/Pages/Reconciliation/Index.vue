@@ -392,7 +392,10 @@
     function onCategorizeClassificationChange(transaction) {
         let form = ensureCategorizeForm(transaction);
         form.category_id = '';
-        let availableModes = matchModesForClassification(form.classification);
+        let availableModes = matchModesForClassification(
+            form.classification,
+            transaction,
+        );
         if (!availableModes.includes(form.match_mode)) {
             form.match_mode = 'once';
         }
@@ -432,16 +435,25 @@
         );
     }
 
-    function matchModesForClassification(classification) {
+    function matchModesForClassification(classification, transaction = null) {
         let billOnlyModes = [
             'check_and_amount',
             'description_prefix_and_amount',
         ];
+        let merchantModes = ['merchant', 'amount_and_merchant'];
+        let hasMerchant = Boolean(transaction?.merchant);
 
-        return props.matchModes.filter(
-            (mode) =>
-                !billOnlyModes.includes(mode) || classification === 'bill',
-        );
+        return props.matchModes.filter((mode) => {
+            if (billOnlyModes.includes(mode) && classification !== 'bill') {
+                return false;
+            }
+
+            if (merchantModes.includes(mode) && !hasMerchant) {
+                return false;
+            }
+
+            return true;
+        });
     }
 
     function looksLikeConfirmationToken(token) {
@@ -2970,6 +2982,7 @@
                                         v-for="mode in matchModesForClassification(
                                             ensureCategorizeForm(transaction)
                                                 .classification,
+                                            transaction,
                                         )"
                                         :key="mode"
                                         :value="mode"
