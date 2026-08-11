@@ -24,6 +24,7 @@ class Account extends Model
         'institution_name',
         'account_name',
         'account_type',
+        'default_classification',
         'currency',
         'last_four',
         'external_id',
@@ -68,6 +69,14 @@ class Account extends Model
                     self::SAVINGS,
                     self::CREDIT_CARD,
                     self::CASH,
+                ]),
+            ],
+
+            'default_classification' => [
+                'required',
+                Rule::in([
+                    BankTransaction::CLASSIFICATION_BILL,
+                    BankTransaction::CLASSIFICATION_EXPENSE,
                 ]),
             ],
 

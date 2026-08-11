@@ -1,10 +1,15 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, useForm } from '@inertiajs/vue3';
+    import { Link, useForm, usePage } from '@inertiajs/vue3';
+    import { computed } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
-    defineProps({
+    let props = defineProps({
+        account: {
+            type: Object,
+            required: true,
+        },
         institutions: {
             type: Array,
             required: true,
@@ -19,14 +24,18 @@
         },
     });
 
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
+
     let form = useForm({
-        name: '',
-        institution_name: '',
-        account_name: '',
-        account_type: '',
-        default_classification: 'expense',
-        currency: 'USD',
-        last_four: '',
+        name: props.account.name ?? '',
+        institution_name: props.account.institution_name ?? '',
+        account_name: props.account.account_name ?? '',
+        account_type: props.account.account_type ?? '',
+        default_classification:
+            props.account.default_classification ?? 'expense',
+        currency: props.account.currency ?? 'USD',
+        last_four: props.account.last_four ?? '',
     });
 
     let accountTypeLabel = (type) => {
@@ -38,7 +47,7 @@
     };
 
     let submit = () => {
-        form.post('/accounts');
+        form.put(`/accounts/${props.account.id}`);
     };
 </script>
 
@@ -46,11 +55,19 @@
     <div class="space-y-6">
         <div>
             <Link href="/accounts" class="text-sm underline">Back to accounts</Link>
-            <h1 class="mt-2 text-2xl font-semibold">Add account</h1>
+            <h1 class="mt-2 text-2xl font-semibold">Edit account</h1>
             <p class="text-sm text-neutral-600">
-                Create an account so you can import bank transactions for it.
+                Update account details and the default type used when
+                categorizing transactions.
             </p>
         </div>
+
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
 
         <form class="space-y-4" @submit.prevent="submit">
             <div>
@@ -220,7 +237,7 @@
                     class="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
                     :disabled="form.processing"
                 >
-                    Create account
+                    Save changes
                 </button>
                 <Link
                     href="/accounts"

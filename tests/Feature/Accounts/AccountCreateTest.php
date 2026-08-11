@@ -3,6 +3,7 @@
 namespace Tests\Feature\Accounts;
 
 use App\Models\Account;
+use App\Models\BankTransaction;
 use App\Models\User;
 use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,8 +41,9 @@ class AccountCreateTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Accounts/Create')
-                ->has('institutions', 3)
+                ->has('institutions')
                 ->has('accountTypes', 4)
+                ->has('defaultClassifications', 2)
                 ->where('institutions.0', CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME));
     }
 
@@ -54,6 +56,7 @@ class AccountCreateTest extends TestCase
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_name' => 'Rewards Card',
             'account_type' => Account::CREDIT_CARD,
+            'default_classification' => BankTransaction::CLASSIFICATION_EXPENSE,
             'currency' => 'usd',
             'last_four' => '5394',
         ]);
@@ -65,6 +68,7 @@ class AccountCreateTest extends TestCase
         $this->assertSame(CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME, $account->institution_name);
         $this->assertSame('Rewards Card', $account->account_name);
         $this->assertSame(Account::CREDIT_CARD, $account->account_type);
+        $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $account->default_classification);
         $this->assertSame('USD', $account->currency);
         $this->assertSame('5394', $account->last_four);
         $this->assertTrue($account->is_active);
@@ -72,6 +76,41 @@ class AccountCreateTest extends TestCase
         $response
             ->assertRedirect(route('imports.bank-transactions.create'))
             ->assertSessionHas('success');
+    }
+
+    public function test_store_defaults_classification_to_expense_when_omitted(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('accounts.store'), [
+            'name' => 'Joint Account 1',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CHECKING,
+            'currency' => 'USD',
+        ])->assertRedirect(route('imports.bank-transactions.create'));
+
+        $account = Account::query()->first();
+
+        $this->assertNotNull($account);
+        $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $account->default_classification);
+    }
+
+    public function test_authenticated_user_can_create_an_account_with_bill_default(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->post(route('accounts.store'), [
+            'name' => 'Joint Account 1',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CHECKING,
+            'default_classification' => BankTransaction::CLASSIFICATION_BILL,
+            'currency' => 'USD',
+        ])->assertRedirect(route('imports.bank-transactions.create'));
+
+        $account = Account::query()->first();
+
+        $this->assertNotNull($account);
+        $this->assertSame(BankTransaction::CLASSIFICATION_BILL, $account->default_classification);
     }
 
     public function test_store_validates_required_fields(): void

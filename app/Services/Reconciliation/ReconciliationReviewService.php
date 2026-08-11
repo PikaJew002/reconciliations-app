@@ -341,7 +341,7 @@ class ReconciliationReviewService
         return $this->unmatchedTransactionsQuery($userId)
             ->with([
                 'merchant:id,name,normalized_name,supports_order_import',
-                'account:id,name,last_four,account_type',
+                'account:id,name,last_four,account_type,default_classification',
             ])
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
@@ -439,6 +439,8 @@ class ReconciliationReviewService
             $payload['account_id'] = $transaction->account_id;
             $payload['account'] = $transaction->account?->name;
             $payload['account_last_four'] = $transaction->account?->last_four;
+            $payload['account_default_classification'] = $transaction->account?->default_classification
+                ?? BankTransaction::CLASSIFICATION_EXPENSE;
         }
 
         return $payload;

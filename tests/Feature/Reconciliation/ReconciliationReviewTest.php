@@ -3,6 +3,7 @@
 namespace Tests\Feature\Reconciliation;
 
 use App\Jobs\RunUserReconciliationPipeline;
+use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\Merchant;
 use App\Models\Order;
@@ -156,6 +157,7 @@ class ReconciliationReviewTest extends TestCase
                 ->where('unmatchedTransactions.0.description', 'Unmatched purchase')
                 ->where('unmatchedTransactions.0.account_id', $unmatchedTransaction->account_id)
                 ->where('unmatchedTransactions.0.account', $unmatchedTransaction->account->name)
+                ->where('unmatchedTransactions.0.account_default_classification', 'expense')
                 ->has('matchedPairs', 1)
                 ->where('matchedPairs.0.transaction.id', $matchedTransaction->id)
                 ->where('matchedPairs.0.order.id', $reconciledOrder->id)
@@ -227,5 +229,35 @@ class ReconciliationReviewTest extends TestCase
 
         $this->assertSame(1, ReconciliationRun::query()->where('user_id', $user->id)->count());
         Queue::assertNothingPushed();
+    }
+
+    public function test_unmatched_transactions_expose_account_default_classification(): void
+    {
+        $user = User::factory()->create();
+
+        $billAccount = Account::factory()->create([
+            'name' => 'Joint Account 1',
+            'default_classification' => BankTransaction::CLASSIFICATION_BILL,
+        ]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $billAccount->id,
+            'description' => 'Electric bill',
+            'amount' => -85.00,
+            'status' => 'unmatched',
+            'merchant_id' => null,
+            'classification' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reconciliation/Index')
+                ->has('unmatchedTransactions', 1)
+                ->where('unmatchedTransactions.0.id', $transaction->id)
+                ->where('unmatchedTransactions.0.account_default_classification', 'bill')
+            );
     }
 }

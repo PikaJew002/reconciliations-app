@@ -365,7 +365,10 @@
         }
 
         categorizeForms[transaction.id] = {
-            classification: 'expense',
+            classification:
+                transaction.account_default_classification === 'bill'
+                    ? 'bill'
+                    : 'expense',
             category_id: '',
             match_mode: 'once',
         };

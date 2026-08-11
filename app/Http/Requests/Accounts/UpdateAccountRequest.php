@@ -6,7 +6,7 @@ use App\Models\Account;
 use App\Models\BankTransaction;
 use Illuminate\Foundation\Http\FormRequest;
 
-class StoreAccountRequest extends FormRequest
+class UpdateAccountRequest extends FormRequest
 {
     public function authorize(): bool
     {
