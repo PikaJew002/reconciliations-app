@@ -320,7 +320,39 @@
                 </div>
             </div>
 
-            <div class="grid gap-3 sm:grid-cols-2">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div class="rounded border px-3 py-2">
+                    <p class="text-sm font-medium">Income vs budget</p>
+                    <p class="mt-1 text-sm text-neutral-600">
+                        Received {{ formatMoney(summary.income) }} of
+                        {{ formatMoney(summary.income_budget_allowed) }}
+                    </p>
+                    <p
+                        class="mt-1 font-semibold tabular-nums"
+                        :class="
+                            differenceClass(summary.income_vs_budget_difference)
+                        "
+                    >
+                        {{ formatMoney(summary.income_vs_budget_difference) }}
+                        vs target
+                    </p>
+                </div>
+                <div class="rounded border px-3 py-2">
+                    <p class="text-sm font-medium">Bills vs budget</p>
+                    <p class="mt-1 text-sm text-neutral-600">
+                        Spent {{ formatMoney(summary.bills) }} of
+                        {{ formatMoney(summary.bills_budget_allowed) }}
+                    </p>
+                    <p
+                        class="mt-1 font-semibold tabular-nums"
+                        :class="
+                            differenceClass(summary.bills_vs_budget_difference)
+                        "
+                    >
+                        {{ formatMoney(summary.bills_vs_budget_difference) }}
+                        remaining
+                    </p>
+                </div>
                 <div class="rounded border px-3 py-2">
                     <p class="text-sm font-medium">Expenses vs budget</p>
                     <p class="mt-1 text-sm text-neutral-600">
@@ -339,7 +371,8 @@
                     <p class="text-sm font-medium">Expenses vs leftover</p>
                     <p class="mt-1 text-sm text-neutral-600">
                         Spent {{ formatMoney(summary.expenses) }} of
-                        {{ formatMoney(summary.leftover_income) }}
+                        {{ formatMoney(summary.leftover_income) }} leftover
+                        after bills
                     </p>
                     <p
                         class="mt-1 font-semibold tabular-nums"
@@ -384,13 +417,40 @@
                         :style="cardStyle(category.color)"
                     >
                         <p class="font-medium">{{ category.name }}</p>
-                        <p class="mt-2 text-lg font-semibold tabular-nums">
-                            {{ formatMoney(category.amount) }}
-                        </p>
-                        <p class="text-sm text-neutral-600 tabular-nums">
-                            {{ formatPercent(category.percent) }} of
-                            {{ kindLabel(category.kind).toLowerCase() }}
-                        </p>
+                        <div
+                            class="mt-2 flex items-start justify-between gap-3"
+                        >
+                            <div>
+                                <p class="text-lg font-semibold tabular-nums">
+                                    {{ formatMoney(category.amount) }}
+                                </p>
+                                <p class="text-sm text-neutral-600 tabular-nums">
+                                    {{ formatPercent(category.percent) }} of
+                                    {{ kindLabel(category.kind).toLowerCase() }}
+                                </p>
+                            </div>
+                            <div class="text-right text-sm">
+                                <p class="text-neutral-600">Budget</p>
+                                <p class="font-semibold tabular-nums">
+                                    {{ formatMoney(category.budget_allowed) }}
+                                </p>
+                                <p
+                                    class="tabular-nums"
+                                    :class="
+                                        differenceClass(
+                                            category.vs_budget_difference,
+                                        )
+                                    "
+                                >
+                                    {{
+                                        formatMoney(
+                                            category.vs_budget_difference,
+                                        )
+                                    }}
+                                    vs budget
+                                </p>
+                            </div>
+                        </div>
                     </div>
 
                     <div
@@ -457,13 +517,50 @@
                             :style="cardStyle(category.color)"
                         >
                             <p class="font-medium">{{ category.name }}</p>
-                            <p class="mt-2 text-lg font-semibold tabular-nums">
-                                {{ formatMoney(category.amount) }}
-                            </p>
-                            <p class="text-sm text-neutral-600 tabular-nums">
-                                {{ formatPercent(category.percent) }} of
-                                {{ kindLabel(category.kind).toLowerCase() }}s
-                            </p>
+                            <div
+                                class="mt-2 flex items-start justify-between gap-3"
+                            >
+                                <div>
+                                    <p
+                                        class="text-lg font-semibold tabular-nums"
+                                    >
+                                        {{ formatMoney(category.amount) }}
+                                    </p>
+                                    <p
+                                        class="text-sm text-neutral-600 tabular-nums"
+                                    >
+                                        {{ formatPercent(category.percent) }} of
+                                        {{
+                                            kindLabel(
+                                                category.kind,
+                                            ).toLowerCase()
+                                        }}s
+                                    </p>
+                                </div>
+                                <div class="text-right text-sm">
+                                    <p class="text-neutral-600">Budget</p>
+                                    <p class="font-semibold tabular-nums">
+                                        {{
+                                            formatMoney(category.budget_allowed)
+                                        }}
+                                    </p>
+                                    <p
+                                        class="tabular-nums"
+                                        :class="
+                                            differenceClass(
+                                                category.vs_budget_difference,
+                                            )
+                                        "
+                                    >
+                                        {{
+                                            formatMoney(
+                                                category.vs_budget_difference,
+                                            )
+                                        }}
+                                        vs budget
+                                    </p>
+                                </div>
+                            </div>
                         </div>
 
                         <div
@@ -566,21 +663,6 @@
                                         }}
                                         vs budget
                                     </p>
-                                    <p
-                                        class="tabular-nums"
-                                        :class="
-                                            differenceClass(
-                                                category.vs_leftover_difference,
-                                            )
-                                        "
-                                    >
-                                        {{
-                                            formatMoney(
-                                                category.vs_leftover_difference,
-                                            )
-                                        }}
-                                        vs leftover
-                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -590,56 +672,23 @@
                             class="rounded border border-dashed border-l-4 border-l-neutral-400 bg-neutral-50 px-4 py-3"
                         >
                             <p class="font-medium">Uncategorized</p>
-                            <div
-                                class="mt-2 flex items-start justify-between gap-3"
-                            >
-                                <div>
-                                    <p
-                                        class="text-lg font-semibold tabular-nums"
-                                    >
-                                        {{
-                                            formatMoney(
-                                                sections.spending.expenses
-                                                    .uncategorized.amount,
-                                            )
-                                        }}
-                                    </p>
-                                    <p
-                                        class="text-sm text-neutral-600 tabular-nums"
-                                    >
-                                        {{
-                                            formatPercent(
-                                                sections.spending.expenses
-                                                    .uncategorized.percent,
-                                            )
-                                        }}
-                                        of expenses
-                                    </p>
-                                </div>
-                                <div class="text-right text-sm">
-                                    <p class="text-neutral-600">Budget</p>
-                                    <p class="font-semibold tabular-nums">—</p>
-                                    <p
-                                        class="tabular-nums"
-                                        :class="
-                                            differenceClass(
-                                                sections.spending.expenses
-                                                    .uncategorized
-                                                    .vs_leftover_difference,
-                                            )
-                                        "
-                                    >
-                                        {{
-                                            formatMoney(
-                                                sections.spending.expenses
-                                                    .uncategorized
-                                                    .vs_leftover_difference,
-                                            )
-                                        }}
-                                        vs leftover
-                                    </p>
-                                </div>
-                            </div>
+                            <p class="mt-2 text-lg font-semibold tabular-nums">
+                                {{
+                                    formatMoney(
+                                        sections.spending.expenses.uncategorized
+                                            .amount,
+                                    )
+                                }}
+                            </p>
+                            <p class="text-sm text-neutral-600 tabular-nums">
+                                {{
+                                    formatPercent(
+                                        sections.spending.expenses.uncategorized
+                                            .percent,
+                                    )
+                                }}
+                                of expenses
+                            </p>
                         </div>
                     </div>
                 </div>

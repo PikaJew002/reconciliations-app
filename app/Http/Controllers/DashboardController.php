@@ -62,9 +62,12 @@ class DashboardController extends Controller
 
         $budgetByCategoryId = collect($progress['categories'])->keyBy('id');
 
-        $billCategories = $this->categoryCards(
-            $categories->where('kind', Category::KIND_BILL),
-            $spendTotals,
+        $billCategories = $this->withBudgetProgress(
+            $this->categoryCards(
+                $categories->where('kind', Category::KIND_BILL),
+                $spendTotals,
+            ),
+            $budgetByCategoryId,
         );
         $expenseCategories = $this->withBudgetProgress(
             $this->categoryCards(
@@ -72,11 +75,13 @@ class DashboardController extends Controller
                 $spendTotals,
             ),
             $budgetByCategoryId,
-            $progress['summary']['leftover_income'],
         );
-        $incomeCategories = $this->categoryCards(
-            $categories->where('kind', Category::KIND_INCOME),
-            $incomeTotals,
+        $incomeCategories = $this->withBudgetProgress(
+            $this->categoryCards(
+                $categories->where('kind', Category::KIND_INCOME),
+                $incomeTotals,
+            ),
+            $budgetByCategoryId,
         );
 
         $billsAmount = round(
@@ -127,10 +132,9 @@ class DashboardController extends Controller
                         'vs_budget_difference' => $progress['summary']['vs_budget_difference'],
                         'vs_leftover_difference' => $progress['summary']['vs_leftover_difference'],
                         'categories' => $expenseCategories,
-                        'uncategorized' => $this->uncategorizedExpensePayload(
+                        'uncategorized' => $this->uncategorizedPayload(
                             $uncategorizedExpense,
                             $expensesAmount,
-                            $progress['summary']['leftover_income'],
                         ),
                     ],
                 ],
@@ -168,16 +172,14 @@ class DashboardController extends Controller
      * @param  Collection<int, array<string, mixed>>  $budgetByCategoryId
      * @return list<array<string, mixed>>
      */
-    protected function withBudgetProgress($categories, $budgetByCategoryId, float $leftoverIncome): array
+    protected function withBudgetProgress($categories, $budgetByCategoryId): array
     {
-        return array_map(function (array $category) use ($budgetByCategoryId, $leftoverIncome): array {
+        return array_map(function (array $category) use ($budgetByCategoryId): array {
             $budget = $budgetByCategoryId->get($category['id']);
 
             $category['monthly_budget'] = $budget['monthly_budget'] ?? null;
             $category['budget_allowed'] = $budget['budget_allowed'] ?? null;
             $category['vs_budget_difference'] = $budget['vs_budget_difference'] ?? null;
-            $category['leftover_income'] = $leftoverIncome;
-            $category['vs_leftover_difference'] = round($leftoverIncome - $category['amount'], 2);
 
             return $category;
         }, $categories);
@@ -208,26 +210,6 @@ class DashboardController extends Controller
         return [
             'amount' => $amount,
             'percent' => $this->percentOf($amount, $sectionTotal),
-        ];
-    }
-
-    /**
-     * @return array{amount: float, percent: ?float, leftover_income: float, vs_leftover_difference: float}|null
-     */
-    protected function uncategorizedExpensePayload(
-        float $amount,
-        float $sectionTotal,
-        float $leftoverIncome,
-    ): ?array {
-        if ($amount <= 0) {
-            return null;
-        }
-
-        return [
-            'amount' => $amount,
-            'percent' => $this->percentOf($amount, $sectionTotal),
-            'leftover_income' => $leftoverIncome,
-            'vs_leftover_difference' => round($leftoverIncome - $amount, 2),
         ];
     }
 

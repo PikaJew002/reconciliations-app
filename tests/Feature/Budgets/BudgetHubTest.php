@@ -46,6 +46,8 @@ class BudgetHubTest extends TestCase
             'color' => '#FF6600',
         ]);
         Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+        Category::factory()->for($user)->income()->create(['name' => 'Salary']);
 
         BudgetCategoryLimit::factory()->create([
             'user_id' => $user->id,
@@ -65,10 +67,12 @@ class BudgetHubTest extends TestCase
                 ->where('budget_year.is_current', true)
                 ->where('total_monthly', 100)
                 ->where('total_annual', 1200)
-                ->has('categories', 2)
-                ->where('categories.0.name', 'Dining')
-                ->where('categories.0.monthly_budget', 100)
-                ->where('categories.0.annual_budget', 1200));
+                ->has('sections.income', 1)
+                ->has('sections.bills', 1)
+                ->has('sections.expenses', 2)
+                ->where('sections.expenses.0.name', 'Dining')
+                ->where('sections.expenses.0.monthly_budget', 100)
+                ->where('sections.expenses.0.annual_budget', 1200));
     }
 
     public function test_user_can_create_budget_year(): void
@@ -174,7 +178,7 @@ class BudgetHubTest extends TestCase
         ]);
     }
 
-    public function test_bill_and_income_category_limits_are_rejected(): void
+    public function test_user_can_budget_income_and_bill_categories(): void
     {
         $user = User::factory()->create();
         $year = BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
@@ -182,21 +186,25 @@ class BudgetHubTest extends TestCase
         $income = Category::factory()->for($user)->income()->create();
 
         $this->actingAs($user)
-            ->from('/budgets')
             ->put('/budgets', [
                 'budget_year_id' => $year->id,
                 'limits' => [
                     ['category_id' => $bill->id, 'amount' => 100],
-                    ['category_id' => $income->id, 'amount' => 100],
+                    ['category_id' => $income->id, 'amount' => 5000],
                 ],
             ])
-            ->assertRedirect('/budgets')
-            ->assertSessionHasErrors([
-                'limits.0.category_id',
-                'limits.1.category_id',
-            ]);
+            ->assertRedirect('/budgets?budget_year_id='.$year->id);
 
-        $this->assertDatabaseCount('budget_category_limits', 0);
+        $this->assertDatabaseHas('budget_category_limits', [
+            'budget_year_id' => $year->id,
+            'category_id' => $bill->id,
+            'amount' => 100,
+        ]);
+        $this->assertDatabaseHas('budget_category_limits', [
+            'budget_year_id' => $year->id,
+            'category_id' => $income->id,
+            'amount' => 5000,
+        ]);
     }
 
     public function test_set_current_budget_year(): void

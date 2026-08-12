@@ -61,15 +61,14 @@ class UpdateBudgetRequest extends FormRequest
                 return;
             }
 
-            $ownedExpenseIds = Category::query()
+            $ownedCategoryIds = Category::query()
                 ->where('user_id', $this->user()->id)
-                ->where('kind', Category::KIND_EXPENSE)
                 ->whereIn('id', $categoryIds)
                 ->pluck('id')
                 ->map(fn ($id) => (int) $id)
                 ->all();
 
-            $ownedLookup = array_flip($ownedExpenseIds);
+            $ownedLookup = array_flip($ownedCategoryIds);
 
             foreach ($limits as $index => $limit) {
                 $categoryId = (int) ($limit['category_id'] ?? 0);
@@ -81,7 +80,7 @@ class UpdateBudgetRequest extends FormRequest
                 if (! isset($ownedLookup[$categoryId])) {
                     $validator->errors()->add(
                         "limits.{$index}.category_id",
-                        'Budget limits may only be set on your expense categories.',
+                        'Budget limits may only be set on your categories.',
                     );
                 }
             }

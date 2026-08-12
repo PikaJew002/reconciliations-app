@@ -31,22 +31,25 @@ class BudgetProgressService
      *         bills: float,
      *         leftover_income: float,
      *         expenses: float,
+     *         income_budget_allowed: float,
+     *         bills_budget_allowed: float,
      *         budget_allowed: float,
+     *         income_vs_budget_difference: float,
+     *         bills_vs_budget_difference: float,
      *         vs_budget_difference: float,
      *         vs_leftover_difference: float
      *     },
      *     categories: list<array{
      *         id: int,
      *         name: string,
+     *         kind: string,
      *         color: ?string,
      *         monthly_budget: ?float,
      *         budget_allowed: ?float,
      *         spend: float,
-     *         vs_budget_difference: ?float,
-     *         leftover_income: float,
-     *         vs_leftover_difference: float
+     *         vs_budget_difference: ?float
      *     }>,
-     *     uncategorized_expense: array{spend: float, leftover_income: float, vs_leftover_difference: float}
+     *     uncategorized_expense: array{spend: float}
      * }
      */
     public function build(
@@ -76,6 +79,8 @@ class BudgetProgressService
             $spendTotals[$categoryId] = round(($spendTotals[$categoryId] ?? 0) + $amount, 2);
         }
 
+        $incomeTotals = $this->categorySpendQuery->incomeCategoryTotalsForUser($userId, $from, $to);
+
         $uncategorizedExpense = round(
             $this->categorySpendQuery->uncategorizedExpenseSpendForUser($userId, $from, $to)
             + $this->categorySpendQuery->orderComponentUncategorizedSpendForUser($userId, $from, $to),
@@ -87,6 +92,7 @@ class BudgetProgressService
             ->orderBy('name')
             ->get();
 
+        $incomeCategories = $categories->where('kind', Category::KIND_INCOME);
         $billCategories = $categories->where('kind', Category::KIND_BILL);
         $expenseCategories = $categories->where('kind', Category::KIND_EXPENSE);
 
@@ -110,40 +116,40 @@ class BudgetProgressService
 
         $budgetMultiplier = $view === 'ytm' ? $monthsElapsed : 1;
 
-        $categoryRows = [];
-        $totalBudgetAllowed = 0.0;
-        $categorizedExpenseSpend = 0.0;
+        $incomeRows = $this->budgetCategoryRows(
+            $incomeCategories,
+            $incomeTotals,
+            $limits,
+            $limitsYear,
+            $budgetMultiplier,
+            surplusStyle: true,
+        );
+        $billRows = $this->budgetCategoryRows(
+            $billCategories,
+            $spendTotals,
+            $limits,
+            $limitsYear,
+            $budgetMultiplier,
+            surplusStyle: false,
+        );
+        $expenseRows = $this->budgetCategoryRows(
+            $expenseCategories,
+            $spendTotals,
+            $limits,
+            $limitsYear,
+            $budgetMultiplier,
+            surplusStyle: false,
+        );
 
-        foreach ($expenseCategories as $category) {
-            $spend = round((float) ($spendTotals[$category->id] ?? 0), 2);
-            $categorizedExpenseSpend = round($categorizedExpenseSpend + $spend, 2);
-
-            $limit = $limits->get($category->id);
-            $monthlyBudget = $limit !== null ? round((float) $limit->amount, 2) : null;
-            $budgetAllowed = ($monthlyBudget !== null && $limitsYear !== null && $budgetMultiplier > 0)
-                ? round($monthlyBudget * $budgetMultiplier, 2)
-                : null;
-
-            if ($budgetAllowed !== null) {
-                $totalBudgetAllowed = round($totalBudgetAllowed + $budgetAllowed, 2);
-            }
-
-            $categoryRows[] = [
-                'id' => $category->id,
-                'name' => $category->name,
-                'color' => $category->color,
-                'monthly_budget' => $monthlyBudget,
-                'budget_allowed' => $budgetAllowed,
-                'spend' => $spend,
-                'vs_budget_difference' => $budgetAllowed !== null
-                    ? round($budgetAllowed - $spend, 2)
-                    : null,
-                'leftover_income' => $leftoverIncome,
-                'vs_leftover_difference' => round($leftoverIncome - $spend, 2),
-            ];
-        }
-
+        $categorizedExpenseSpend = round(
+            (float) collect($expenseRows)->sum('spend'),
+            2,
+        );
         $totalExpenses = round($categorizedExpenseSpend + $uncategorizedExpense, 2);
+
+        $incomeBudgetAllowed = $this->sumBudgetAllowed($incomeRows);
+        $billsBudgetAllowed = $this->sumBudgetAllowed($billRows);
+        $expenseBudgetAllowed = $this->sumBudgetAllowed($expenseRows);
 
         return [
             'view' => $view,
@@ -161,15 +167,17 @@ class BudgetProgressService
                 'bills' => $billsAmount,
                 'leftover_income' => $leftoverIncome,
                 'expenses' => $totalExpenses,
-                'budget_allowed' => $totalBudgetAllowed,
-                'vs_budget_difference' => round($totalBudgetAllowed - $totalExpenses, 2),
+                'income_budget_allowed' => $incomeBudgetAllowed,
+                'bills_budget_allowed' => $billsBudgetAllowed,
+                'budget_allowed' => $expenseBudgetAllowed,
+                'income_vs_budget_difference' => round($income - $incomeBudgetAllowed, 2),
+                'bills_vs_budget_difference' => round($billsBudgetAllowed - $billsAmount, 2),
+                'vs_budget_difference' => round($expenseBudgetAllowed - $totalExpenses, 2),
                 'vs_leftover_difference' => round($leftoverIncome - $totalExpenses, 2),
             ],
-            'categories' => $categoryRows,
+            'categories' => [...$incomeRows, ...$billRows, ...$expenseRows],
             'uncategorized_expense' => [
                 'spend' => $uncategorizedExpense,
-                'leftover_income' => $leftoverIncome,
-                'vs_leftover_difference' => round($leftoverIncome - $uncategorizedExpense, 2),
             ],
         ];
     }
@@ -180,13 +188,12 @@ class BudgetProgressService
      *     budget_years: list<array{id: int, label: string, color: string, starts_on: string, ends_on: string, is_current: bool}>,
      *     total_monthly: float,
      *     total_annual: float,
-     *     categories: list<array{
-     *         id: int,
-     *         name: string,
-     *         color: ?string,
-     *         monthly_budget: ?float,
-     *         annual_budget: ?float
-     *     }>
+     *     sections: array{
+     *         income: list<array{id: int, name: string, kind: string, color: ?string, monthly_budget: ?float, annual_budget: ?float}>,
+     *         bills: list<array{id: int, name: string, kind: string, color: ?string, monthly_budget: ?float, annual_budget: ?float}>,
+     *         expenses: list<array{id: int, name: string, kind: string, color: ?string, monthly_budget: ?float, annual_budget: ?float}>
+     *     },
+     *     categories: list<array{id: int, name: string, kind: string, color: ?string, monthly_budget: ?float, annual_budget: ?float}>
      * }
      */
     public function planForUser(int $userId, ?int $budgetYearId = null): array
@@ -203,28 +210,33 @@ class BudgetProgressService
                 ->get()
                 ->keyBy('category_id');
 
+        $mapCategory = function (Category $category) use ($limits): array {
+            $limit = $limits->get($category->id);
+            $monthly = $limit !== null ? round((float) $limit->amount, 2) : null;
+
+            return [
+                'id' => $category->id,
+                'name' => $category->name,
+                'kind' => $category->kind,
+                'color' => $category->color,
+                'monthly_budget' => $monthly,
+                'annual_budget' => $monthly !== null ? round($monthly * 12, 2) : null,
+            ];
+        };
+
         $categories = Category::query()
             ->where('user_id', $userId)
-            ->where('kind', Category::KIND_EXPENSE)
+            ->orderBy('kind')
             ->orderBy('name')
-            ->get()
-            ->map(function (Category $category) use ($limits) {
-                $limit = $limits->get($category->id);
-                $monthly = $limit !== null ? round((float) $limit->amount, 2) : null;
+            ->get();
 
-                return [
-                    'id' => $category->id,
-                    'name' => $category->name,
-                    'color' => $category->color,
-                    'monthly_budget' => $monthly,
-                    'annual_budget' => $monthly !== null ? round($monthly * 12, 2) : null,
-                ];
-            })
-            ->values()
-            ->all();
+        $income = $categories->where('kind', Category::KIND_INCOME)->map($mapCategory)->values()->all();
+        $bills = $categories->where('kind', Category::KIND_BILL)->map($mapCategory)->values()->all();
+        $expenses = $categories->where('kind', Category::KIND_EXPENSE)->map($mapCategory)->values()->all();
+        $all = [...$income, ...$bills, ...$expenses];
 
         $totalMonthly = round(
-            (float) collect($categories)->sum(fn (array $category) => (float) ($category['monthly_budget'] ?? 0)),
+            (float) collect($all)->sum(fn (array $category) => (float) ($category['monthly_budget'] ?? 0)),
             2,
         );
 
@@ -233,7 +245,12 @@ class BudgetProgressService
             'budget_years' => $years->map(fn (BudgetYear $year) => $year->toPayload())->values()->all(),
             'total_monthly' => $totalMonthly,
             'total_annual' => round($totalMonthly * 12, 2),
-            'categories' => $categories,
+            'sections' => [
+                'income' => $income,
+                'bills' => $bills,
+                'expenses' => $expenses,
+            ],
+            'categories' => $all,
         ];
     }
 
@@ -244,14 +261,13 @@ class BudgetProgressService
     {
         $year = $this->ownedYear($userId, $budgetYearId);
 
-        $expenseCategoryIds = Category::query()
+        $categoryIds = Category::query()
             ->where('user_id', $userId)
-            ->where('kind', Category::KIND_EXPENSE)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
 
-        $allowed = array_flip($expenseCategoryIds);
+        $allowed = array_flip($categoryIds);
         $keepIds = [];
 
         foreach ($limits as $categoryId => $amount) {
@@ -291,6 +307,73 @@ class BudgetProgressService
                 fn ($query) => $query,
             )
             ->delete();
+    }
+
+    /**
+     * @param  Collection<int, Category>  $categories
+     * @param  array<int, float>  $amounts
+     * @param  Collection<int, BudgetCategoryLimit>  $limits
+     * @return list<array{
+     *     id: int,
+     *     name: string,
+     *     kind: string,
+     *     color: ?string,
+     *     monthly_budget: ?float,
+     *     budget_allowed: ?float,
+     *     spend: float,
+     *     vs_budget_difference: ?float
+     * }>
+     */
+    protected function budgetCategoryRows(
+        $categories,
+        array $amounts,
+        Collection $limits,
+        ?BudgetYear $limitsYear,
+        int $budgetMultiplier,
+        bool $surplusStyle,
+    ): array {
+        $rows = [];
+
+        foreach ($categories as $category) {
+            $spend = round((float) ($amounts[$category->id] ?? 0), 2);
+            $limit = $limits->get($category->id);
+            $monthlyBudget = $limit !== null ? round((float) $limit->amount, 2) : null;
+            $budgetAllowed = ($monthlyBudget !== null && $limitsYear !== null && $budgetMultiplier > 0)
+                ? round($monthlyBudget * $budgetMultiplier, 2)
+                : null;
+
+            $vsBudget = null;
+
+            if ($budgetAllowed !== null) {
+                $vsBudget = $surplusStyle
+                    ? round($spend - $budgetAllowed, 2)
+                    : round($budgetAllowed - $spend, 2);
+            }
+
+            $rows[] = [
+                'id' => $category->id,
+                'name' => $category->name,
+                'kind' => $category->kind,
+                'color' => $category->color,
+                'monthly_budget' => $monthlyBudget,
+                'budget_allowed' => $budgetAllowed,
+                'spend' => $spend,
+                'vs_budget_difference' => $vsBudget,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<array{budget_allowed: ?float}>  $rows
+     */
+    protected function sumBudgetAllowed(array $rows): float
+    {
+        return round(
+            (float) collect($rows)->sum(fn (array $row) => (float) ($row['budget_allowed'] ?? 0)),
+            2,
+        );
     }
 
     public function createYear(

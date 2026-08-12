@@ -26,6 +26,10 @@
             type: Array,
             required: true,
         },
+        sections: {
+            type: Object,
+            required: true,
+        },
     });
 
     let page = usePage();
@@ -154,6 +158,55 @@
 
         return map;
     });
+
+    let limitIndexByCategoryId = computed(() => {
+        let map = {};
+
+        form.limits.forEach((limit, index) => {
+            map[limit.category_id] = index;
+        });
+
+        return map;
+    });
+
+    let sectionMonthlyTotal = (sectionCategories) => {
+        return sectionCategories.reduce((sum, category) => {
+            let index = limitIndexByCategoryId.value[category.id];
+            let amount = form.limits[index]?.amount;
+
+            if (amount === '' || amount === null || amount === undefined) {
+                return sum;
+            }
+
+            let value = Number(amount);
+
+            return Number.isNaN(value) ? sum : sum + value;
+        }, 0);
+    };
+
+    let budgetSections = computed(() => [
+        {
+            key: 'income',
+            title: 'Income',
+            empty: 'No income categories yet.',
+            createHref: '/categories/create?kind=income',
+            categories: props.sections.income ?? [],
+        },
+        {
+            key: 'bills',
+            title: 'Bills',
+            empty: 'No bill categories yet.',
+            createHref: '/categories/create?kind=bill',
+            categories: props.sections.bills ?? [],
+        },
+        {
+            key: 'expenses',
+            title: 'Expenses',
+            empty: 'No expense categories yet.',
+            createHref: '/categories/create?kind=expense',
+            categories: props.sections.expenses ?? [],
+        },
+    ]);
 
     let selectYear = (budgetYearId) => {
         router.get(
@@ -444,62 +497,80 @@
 
         <form
             v-if="budget_year"
-            class="space-y-4"
+            class="space-y-8"
             @submit.prevent="save"
         >
-            <div class="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 class="text-lg font-semibold">Expenses</h2>
-                <p class="text-sm font-medium tabular-nums text-neutral-700">
-                    {{ formatMoney(draftMonthlyTotal) }} / mo
-                </p>
-            </div>
-
-            <div
-                v-if="categories.length === 0"
-                class="text-sm text-neutral-600"
+            <section
+                v-for="section in budgetSections"
+                :key="section.key"
+                class="space-y-4"
             >
-                No expense categories yet.
-                <Link href="/categories/create?kind=expense" class="underline">
-                    Create one
-                </Link>
-            </div>
-
-            <div
-                v-else
-                class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-            >
-                <div
-                    v-for="(limit, index) in form.limits"
-                    :key="limit.category_id"
-                    class="rounded border border-l-4 px-4 py-3"
-                    :class="
-                        categoryById[limit.category_id]?.color
-                            ? ''
-                            : 'border-l-neutral-300 border-dashed bg-neutral-50'
-                    "
-                    :style="cardStyle(categoryById[limit.category_id]?.color)"
-                >
-                    <p class="font-medium">
-                        {{ categoryById[limit.category_id]?.name }}
-                    </p>
-
-                    <label class="mt-3 block text-sm">
-                        <span class="text-neutral-600">Monthly budget</span>
-                        <input
-                            v-model="form.limits[index].amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="mt-1 block w-full rounded border px-2 py-1.5"
-                            placeholder="None"
-                        />
-                    </label>
-
-                    <p class="mt-2 text-sm text-neutral-600 tabular-nums">
-                        {{ formatMoney(annualFromInput(limit.amount)) }} / year
+                <div class="flex flex-wrap items-baseline justify-between gap-2">
+                    <h2 class="text-lg font-semibold">{{ section.title }}</h2>
+                    <p class="text-sm font-medium tabular-nums text-neutral-700">
+                        {{ formatMoney(sectionMonthlyTotal(section.categories)) }}
+                        / mo
                     </p>
                 </div>
-            </div>
+
+                <div
+                    v-if="section.categories.length === 0"
+                    class="text-sm text-neutral-600"
+                >
+                    {{ section.empty }}
+                    <Link :href="section.createHref" class="underline">
+                        Create one
+                    </Link>
+                </div>
+
+                <div
+                    v-else
+                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                >
+                    <div
+                        v-for="category in section.categories"
+                        :key="category.id"
+                        class="rounded border border-l-4 px-4 py-3"
+                        :class="
+                            category.color
+                                ? ''
+                                : 'border-l-neutral-300 border-dashed bg-neutral-50'
+                        "
+                        :style="cardStyle(category.color)"
+                    >
+                        <p class="font-medium">{{ category.name }}</p>
+
+                        <label class="mt-3 block text-sm">
+                            <span class="text-neutral-600">Monthly budget</span>
+                            <input
+                                v-model="
+                                    form.limits[
+                                        limitIndexByCategoryId[category.id]
+                                    ].amount
+                                "
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                class="mt-1 block w-full rounded border px-2 py-1.5"
+                                placeholder="None"
+                            />
+                        </label>
+
+                        <p class="mt-2 text-sm text-neutral-600 tabular-nums">
+                            {{
+                                formatMoney(
+                                    annualFromInput(
+                                        form.limits[
+                                            limitIndexByCategoryId[category.id]
+                                        ]?.amount,
+                                    ),
+                                )
+                            }}
+                            / year
+                        </p>
+                    </div>
+                </div>
+            </section>
         </form>
     </div>
 </template>

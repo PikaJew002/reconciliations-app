@@ -127,8 +127,10 @@ class DashboardTest extends TestCase
                 ->where('summary.expenses', 90)
                 ->where('summary.budget_allowed', 200)
                 ->where('summary.vs_budget_difference', 110)
+                ->where('summary.vs_leftover_difference', 4110)
                 ->where('sections.spending.expenses.categories.0.amount', 90)
-                ->where('sections.spending.expenses.categories.0.budget_allowed', 200));
+                ->where('sections.spending.expenses.categories.0.budget_allowed', 200)
+                ->missing('sections.spending.expenses.categories.0.vs_leftover_difference'));
     }
 
     public function test_dashboard_completed_plan_ytm_is_full_twelve_months(): void
