@@ -8,6 +8,8 @@ use App\Models\OrderComponent;
 use App\Models\ReimbursementGroup;
 use App\Models\ReimbursementGroupTransaction;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Category spend contract for reports.
@@ -21,14 +23,20 @@ use Carbon\Carbon;
  * - Ungrouped categorized income credits count toward their category_id.
  * - Ungrouped income with no category_id, plus closed over-reimbursed |net|, counts as uncategorized income.
  * - Open positive nets are exposed separately as awaiting reimbursement (not category spend).
+ *
+ * Optional $from / $to use a half-open window [from, to) on bank posted_at, order ordered_at,
+ * and reimbursement group closed_at. Null bounds mean unbounded on that side (all-time when both null).
  */
 class CategorySpendQuery
 {
     /**
      * @return array<int, float> category_id => spend amount (positive)
      */
-    public function categoryTotalsForUser(int $userId): array
-    {
+    public function categoryTotalsForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): array {
         $groupedTransactionIds = $this->groupedTransactionIds($userId);
 
         $totals = [];
@@ -44,6 +52,7 @@ class CategorySpendQuery
                 $groupedTransactionIds !== [],
                 fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
             )
+            ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
             ->get(['category_id', 'amount']);
 
         foreach ($spend as $transaction) {
@@ -55,6 +64,7 @@ class CategorySpendQuery
         $closedGroups = ReimbursementGroup::query()
             ->where('user_id', $userId)
             ->where('status', ReimbursementGroup::STATUS_CLOSED)
+            ->tap(fn (Builder $query) => $this->applyClosedAtRange($query, $from, $to))
             ->with('legs')
             ->get();
 
@@ -74,26 +84,60 @@ class CategorySpendQuery
 
     /**
      * Ungrouped bill/expense spend with no category_id.
+     *
+     * @param  list<string>|null  $classifications
      */
-    public function uncategorizedSpendForUser(int $userId): float
-    {
+    public function uncategorizedSpendForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+        ?array $classifications = null,
+    ): float {
         $groupedTransactionIds = $this->groupedTransactionIds($userId);
+        $classifications ??= [
+            BankTransaction::CLASSIFICATION_BILL,
+            BankTransaction::CLASSIFICATION_EXPENSE,
+        ];
 
         $total = (float) BankTransaction::query()
             ->where('user_id', $userId)
-            ->whereIn('classification', [
-                BankTransaction::CLASSIFICATION_BILL,
-                BankTransaction::CLASSIFICATION_EXPENSE,
-            ])
+            ->whereIn('classification', $classifications)
             ->whereNull('category_id')
             ->when(
                 $groupedTransactionIds !== [],
                 fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
             )
+            ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
             ->get(['amount'])
             ->sum(fn (BankTransaction $transaction): float => abs((float) $transaction->amount));
 
         return round($total, 2);
+    }
+
+    public function uncategorizedBillSpendForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): float {
+        return $this->uncategorizedSpendForUser(
+            $userId,
+            $from,
+            $to,
+            [BankTransaction::CLASSIFICATION_BILL],
+        );
+    }
+
+    public function uncategorizedExpenseSpendForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): float {
+        return $this->uncategorizedSpendForUser(
+            $userId,
+            $from,
+            $to,
+            [BankTransaction::CLASSIFICATION_EXPENSE],
+        );
     }
 
     /**
@@ -101,9 +145,12 @@ class CategorySpendQuery
      *
      * @return array<int, float> category_id => spend amount (signed; discounts may be negative)
      */
-    public function orderComponentCategoryTotalsForUser(int $userId): array
-    {
-        $orderIds = $this->orderIdsForUser($userId);
+    public function orderComponentCategoryTotalsForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): array {
+        $orderIds = $this->orderIdsForUser($userId, $from, $to);
 
         if ($orderIds === []) {
             return [];
@@ -128,9 +175,12 @@ class CategorySpendQuery
     /**
      * Order-component spend with no category_id (signed; discounts may be negative).
      */
-    public function orderComponentUncategorizedSpendForUser(int $userId): float
-    {
-        $orderIds = $this->orderIdsForUser($userId);
+    public function orderComponentUncategorizedSpendForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): float {
+        $orderIds = $this->orderIdsForUser($userId, $from, $to);
 
         if ($orderIds === []) {
             return 0.0;
@@ -207,10 +257,14 @@ class CategorySpendQuery
     /**
      * @return list<int>
      */
-    protected function orderIdsForUser(int $userId): array
-    {
+    protected function orderIdsForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): array {
         return Order::query()
             ->where('user_id', $userId)
+            ->tap(fn (Builder $query) => $this->applyOrderedAtRange($query, $from, $to))
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
@@ -243,8 +297,11 @@ class CategorySpendQuery
      *
      * @return array<int, float> category_id => income amount (positive)
      */
-    public function incomeCategoryTotalsForUser(int $userId): array
-    {
+    public function incomeCategoryTotalsForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): array {
         $groupedTransactionIds = $this->groupedTransactionIds($userId);
 
         $totals = [];
@@ -258,6 +315,7 @@ class CategorySpendQuery
                 $groupedTransactionIds !== [],
                 fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
             )
+            ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
             ->get(['category_id', 'amount']);
 
         foreach ($income as $transaction) {
@@ -273,8 +331,11 @@ class CategorySpendQuery
      * Ungrouped income with no category_id, plus closed over-reimbursement
      * surplus booked as uncategorized income.
      */
-    public function uncategorizedIncomeForUser(int $userId): float
-    {
+    public function uncategorizedIncomeForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): float {
         $groupedTransactionIds = $this->groupedTransactionIds($userId);
 
         $total = (float) BankTransaction::query()
@@ -286,12 +347,14 @@ class CategorySpendQuery
                 $groupedTransactionIds !== [],
                 fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
             )
+            ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
             ->sum('amount');
 
         $closedGroups = ReimbursementGroup::query()
             ->where('user_id', $userId)
             ->where('status', ReimbursementGroup::STATUS_CLOSED)
             ->where('remainder_classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->tap(fn (Builder $query) => $this->applyClosedAtRange($query, $from, $to))
             ->with('legs')
             ->get();
 
@@ -312,11 +375,66 @@ class CategorySpendQuery
      * Credits classified as income that are not in a reimbursement group,
      * plus closed over-reimbursement surplus booked as uncategorized income.
      */
-    public function incomeTotalForUser(int $userId): float
-    {
-        $categorized = array_sum($this->incomeCategoryTotalsForUser($userId));
+    public function incomeTotalForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): float {
+        $categorized = array_sum($this->incomeCategoryTotalsForUser($userId, $from, $to));
 
-        return round($categorized + $this->uncategorizedIncomeForUser($userId), 2);
+        return round($categorized + $this->uncategorizedIncomeForUser($userId, $from, $to), 2);
+    }
+
+    protected function applyPostedAtRange(
+        Builder $query,
+        ?CarbonInterface $from,
+        ?CarbonInterface $to,
+    ): void {
+        if ($from !== null) {
+            $query->where('posted_at', '>=', $from);
+        }
+
+        if ($to !== null) {
+            $query->where('posted_at', '<', $to);
+        }
+    }
+
+    protected function applyOrderedAtRange(
+        Builder $query,
+        ?CarbonInterface $from,
+        ?CarbonInterface $to,
+    ): void {
+        if ($from !== null) {
+            $query->where('ordered_at', '>=', $from);
+        }
+
+        if ($to !== null) {
+            $query->where('ordered_at', '<', $to);
+        }
+    }
+
+    /**
+     * Closed reimbursement remainder/surplus is attributed by closed_at.
+     * When a date window is applied, groups with null closed_at are excluded.
+     */
+    protected function applyClosedAtRange(
+        Builder $query,
+        ?CarbonInterface $from,
+        ?CarbonInterface $to,
+    ): void {
+        if ($from === null && $to === null) {
+            return;
+        }
+
+        $query->whereNotNull('closed_at');
+
+        if ($from !== null) {
+            $query->where('closed_at', '>=', $from);
+        }
+
+        if ($to !== null) {
+            $query->where('closed_at', '<', $to);
+        }
     }
 
     /**

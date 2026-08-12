@@ -11,6 +11,7 @@
         { label: 'Imports', href: '/imports' },
         { label: 'Accounts', href: '/accounts' },
         { label: 'Categories', href: '/categories' },
+        { label: 'Budgets', href: '/budgets' },
         { label: 'Rules', href: '/rules' },
         { label: 'Orders', href: '/orders' },
         { label: 'Reconciliation', href: '/reconciliation' },

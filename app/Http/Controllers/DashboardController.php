@@ -3,64 +3,104 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Services\Budgets\BudgetProgressService;
 use App\Services\Reporting\CategorySpendQuery;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request, CategorySpendQuery $categorySpendQuery): Response
-    {
+    public function index(
+        Request $request,
+        CategorySpendQuery $categorySpendQuery,
+        BudgetProgressService $budgetProgress,
+    ): Response {
         $userId = $request->user()->id;
 
-        $spendTotals = $categorySpendQuery->categoryTotalsForUser($userId);
+        $view = $request->string('view')->toString();
 
-        foreach ($categorySpendQuery->orderComponentCategoryTotalsForUser($userId) as $categoryId => $amount) {
+        if (! in_array($view, ['month', 'ytm'], true)) {
+            $view = 'month';
+        }
+
+        $month = $request->string('month')->toString();
+        $month = $month !== '' ? $month : null;
+
+        $resolved = $budgetProgress->resolvePeriod($view, $month);
+        $from = $resolved['from'];
+        $to = $resolved['to'];
+        $progress = $budgetProgress->build($userId, $view, $month);
+        $monthsElapsed = $progress['period']['months_elapsed'];
+
+        $spendTotals = $categorySpendQuery->categoryTotalsForUser($userId, $from, $to);
+
+        foreach ($categorySpendQuery->orderComponentCategoryTotalsForUser($userId, $from, $to) as $categoryId => $amount) {
             $spendTotals[$categoryId] = round(($spendTotals[$categoryId] ?? 0) + $amount, 2);
         }
 
-        $incomeTotals = $categorySpendQuery->incomeCategoryTotalsForUser($userId);
+        $incomeTotals = $categorySpendQuery->incomeCategoryTotalsForUser($userId, $from, $to);
 
-        $uncategorizedSpend = round(
-            $categorySpendQuery->uncategorizedSpendForUser($userId)
-            + $categorySpendQuery->orderComponentUncategorizedSpendForUser($userId),
+        $uncategorizedBill = $categorySpendQuery->uncategorizedBillSpendForUser($userId, $from, $to);
+        $uncategorizedExpense = round(
+            $categorySpendQuery->uncategorizedExpenseSpendForUser($userId, $from, $to)
+            + $categorySpendQuery->orderComponentUncategorizedSpendForUser($userId, $from, $to),
             2,
         );
-        $uncategorizedIncome = $categorySpendQuery->uncategorizedIncomeForUser($userId);
+        $uncategorizedIncome = $categorySpendQuery->uncategorizedIncomeForUser($userId, $from, $to);
 
         $categories = Category::query()
             ->where('user_id', $userId)
             ->orderBy('name')
             ->get();
 
+        $budgetByCategoryId = collect($progress['categories'])->keyBy('id');
+
         $billCategories = $this->categoryCards(
             $categories->where('kind', Category::KIND_BILL),
             $spendTotals,
         );
-        $expenseCategories = $this->categoryCards(
-            $categories->where('kind', Category::KIND_EXPENSE),
-            $spendTotals,
+        $expenseCategories = $this->withBudgetProgress(
+            $this->categoryCards(
+                $categories->where('kind', Category::KIND_EXPENSE),
+                $spendTotals,
+            ),
+            $budgetByCategoryId,
+            $progress['summary']['leftover_income'],
         );
         $incomeCategories = $this->categoryCards(
             $categories->where('kind', Category::KIND_INCOME),
             $incomeTotals,
         );
 
-        $billsAmount = round((float) collect($billCategories)->sum('amount'), 2);
-        $expensesAmount = round((float) collect($expenseCategories)->sum('amount'), 2);
+        $billsAmount = round(
+            (float) collect($billCategories)->sum('amount') + $uncategorizedBill,
+            2,
+        );
+        $expensesAmount = round(
+            (float) collect($expenseCategories)->sum('amount') + $uncategorizedExpense,
+            2,
+        );
         $categorizedIncomeAmount = round((float) collect($incomeCategories)->sum('amount'), 2);
 
         $billCategories = $this->withKindPercents($billCategories, $billsAmount);
         $expenseCategories = $this->withKindPercents($expenseCategories, $expensesAmount);
-        $incomeCategories = $this->withKindPercents($incomeCategories, $categorizedIncomeAmount + $uncategorizedIncome);
+        $incomeCategories = $this->withKindPercents(
+            $incomeCategories,
+            $categorizedIncomeAmount + $uncategorizedIncome,
+        );
 
         $totalIncome = round($categorizedIncomeAmount + $uncategorizedIncome, 2);
-        $totalSpend = round($billsAmount + $expensesAmount + $uncategorizedSpend, 2);
+        $totalSpend = round($billsAmount + $expensesAmount, 2);
 
         return Inertia::render('Dashboard/Index', [
+            'view' => $progress['view'],
+            'month' => $progress['month'],
+            'period' => $progress['period'],
             'total_income' => $totalIncome,
             'total_spend' => $totalSpend,
+            'summary' => $progress['summary'],
             'sections' => [
                 'income' => [
                     'amount' => $totalIncome,
@@ -72,20 +112,28 @@ class DashboardController extends Controller
                     'bills' => [
                         'amount' => $billsAmount,
                         'categories' => $billCategories,
+                        'uncategorized' => $this->uncategorizedPayload($uncategorizedBill, $billsAmount),
                     ],
                     'expenses' => [
                         'amount' => $expensesAmount,
+                        'budget_allowed' => $progress['summary']['budget_allowed'],
+                        'vs_budget_difference' => $progress['summary']['vs_budget_difference'],
+                        'vs_leftover_difference' => $progress['summary']['vs_leftover_difference'],
                         'categories' => $expenseCategories,
+                        'uncategorized' => $this->uncategorizedExpensePayload(
+                            $uncategorizedExpense,
+                            $expensesAmount,
+                            $progress['summary']['leftover_income'],
+                        ),
                     ],
-                    'uncategorized' => $this->uncategorizedPayload($uncategorizedSpend, $totalSpend),
                 ],
             ],
-            'coverage' => $categorySpendQuery->spendCoverageForUser($userId),
+            'months_elapsed' => $monthsElapsed,
         ]);
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, Category>  $categories
+     * @param  Collection<int, Category>  $categories
      * @param  array<int, float>  $totals
      * @return list<array{id: int, name: string, kind: string, color: ?string, amount: float}>
      */
@@ -106,6 +154,26 @@ class DashboardController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  list<array{id: int, name: string, kind: string, color: ?string, amount: float}>  $categories
+     * @param  Collection<int, array<string, mixed>>  $budgetByCategoryId
+     * @return list<array<string, mixed>>
+     */
+    protected function withBudgetProgress($categories, $budgetByCategoryId, float $leftoverIncome): array
+    {
+        return array_map(function (array $category) use ($budgetByCategoryId, $leftoverIncome): array {
+            $budget = $budgetByCategoryId->get($category['id']);
+
+            $category['monthly_budget'] = $budget['monthly_budget'] ?? null;
+            $category['budget_allowed'] = $budget['budget_allowed'] ?? null;
+            $category['vs_budget_difference'] = $budget['vs_budget_difference'] ?? null;
+            $category['leftover_income'] = $leftoverIncome;
+            $category['vs_leftover_difference'] = round($leftoverIncome - $category['amount'], 2);
+
+            return $category;
+        }, $categories);
     }
 
     /**
@@ -133,6 +201,26 @@ class DashboardController extends Controller
         return [
             'amount' => $amount,
             'percent' => $this->percentOf($amount, $sectionTotal),
+        ];
+    }
+
+    /**
+     * @return array{amount: float, percent: ?float, leftover_income: float, vs_leftover_difference: float}|null
+     */
+    protected function uncategorizedExpensePayload(
+        float $amount,
+        float $sectionTotal,
+        float $leftoverIncome,
+    ): ?array {
+        if ($amount <= 0) {
+            return null;
+        }
+
+        return [
+            'amount' => $amount,
+            'percent' => $this->percentOf($amount, $sectionTotal),
+            'leftover_income' => $leftoverIncome,
+            'vs_leftover_difference' => round($leftoverIncome - $amount, 2),
         ];
     }
 

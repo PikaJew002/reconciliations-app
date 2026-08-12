@@ -3,11 +3,10 @@
 use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Budgets\BudgetController;
+use App\Http\Controllers\Categories\CategorizationRuleController;
 use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\Categories\CategorizationRuleController;
-use App\Http\Controllers\Rules\IncomeClassificationRuleController;
-use App\Http\Controllers\Rules\RuleController;
 use App\Http\Controllers\Imports\AmazonOrderImportController;
 use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
@@ -25,6 +24,8 @@ use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
+use App\Http\Controllers\Rules\IncomeClassificationRuleController;
+use App\Http\Controllers\Rules\RuleController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -55,6 +56,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/categories/{category}/edit', [CategoryController::class, 'edit'])->name('categories.edit');
     Route::patch('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])->name('categories.destroy');
+
+    Route::get('/budgets', [BudgetController::class, 'index'])->name('budgets.index');
+    Route::put('/budgets', [BudgetController::class, 'update'])->name('budgets.update');
 
     Route::get('/rules', [RuleController::class, 'index'])->name('rules.index');
     Route::delete('/rules/income/description-only', [IncomeClassificationRuleController::class, 'destroyDescriptionOnly'])
