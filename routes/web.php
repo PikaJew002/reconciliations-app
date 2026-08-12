@@ -4,6 +4,7 @@ use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Budgets\BudgetController;
+use App\Http\Controllers\Budgets\BudgetYearController;
 use App\Http\Controllers\Categories\CategorizationRuleController;
 use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\DashboardController;
@@ -59,6 +60,10 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/budgets', [BudgetController::class, 'index'])->name('budgets.index');
     Route::put('/budgets', [BudgetController::class, 'update'])->name('budgets.update');
+    Route::post('/budgets/years', [BudgetYearController::class, 'store'])->name('budgets.years.store');
+    Route::patch('/budgets/years/{budgetYear}', [BudgetYearController::class, 'update'])->name('budgets.years.update');
+    Route::post('/budgets/years/{budgetYear}/current', [BudgetYearController::class, 'makeCurrent'])
+        ->name('budgets.years.current');
 
     Route::get('/rules', [RuleController::class, 'index'])->name('rules.index');
     Route::delete('/rules/income/description-only', [IncomeClassificationRuleController::class, 'destroyDescriptionOnly'])

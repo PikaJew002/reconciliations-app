@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Budgets;
 
+use App\Models\BudgetYear;
 use App\Models\Category;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -19,6 +20,7 @@ class UpdateBudgetRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'budget_year_id' => ['required', 'integer'],
             'limits' => ['nullable', 'array'],
             'limits.*.category_id' => ['required', 'integer'],
             'limits.*.amount' => ['nullable', 'numeric', 'min:0'],
@@ -28,6 +30,19 @@ class UpdateBudgetRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            $budgetYearId = (int) $this->input('budget_year_id');
+
+            if ($budgetYearId > 0) {
+                $ownsYear = BudgetYear::query()
+                    ->where('user_id', $this->user()->id)
+                    ->whereKey($budgetYearId)
+                    ->exists();
+
+                if (! $ownsYear) {
+                    $validator->errors()->add('budget_year_id', 'Budget year not found.');
+                }
+            }
+
             $limits = $this->input('limits', []);
 
             if (! is_array($limits) || $limits === []) {
@@ -74,7 +89,7 @@ class UpdateBudgetRequest extends FormRequest
     }
 
     /**
-     * @return array<int, float|null> category_id => amount
+     * @return array<int, float|null>
      */
     public function limitsByCategoryId(): array
     {

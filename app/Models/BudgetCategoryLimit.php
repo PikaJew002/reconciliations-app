@@ -12,6 +12,7 @@ class BudgetCategoryLimit extends Model
 
     protected $fillable = [
         'user_id',
+        'budget_year_id',
         'category_id',
         'amount',
     ];
@@ -23,6 +24,11 @@ class BudgetCategoryLimit extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function budgetYear(): BelongsTo
+    {
+        return $this->belongsTo(BudgetYear::class);
     }
 
     public function category(): BelongsTo

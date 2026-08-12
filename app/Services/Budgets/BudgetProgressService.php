@@ -3,12 +3,15 @@
 namespace App\Services\Budgets;
 
 use App\Models\BudgetCategoryLimit;
+use App\Models\BudgetYear;
 use App\Models\Category;
 use App\Services\Reporting\CategorySpendQuery;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class BudgetProgressService
 {
@@ -20,6 +23,8 @@ class BudgetProgressService
      * @return array{
      *     view: string,
      *     month: string,
+     *     budget_year: ?array{id: int, label: string, color: string, starts_on: string, ends_on: string, is_current: bool},
+     *     budget_years: list<array{id: int, label: string, color: string, starts_on: string, ends_on: string, is_current: bool}>,
      *     period: array{from: string, to: string, label: string, months_elapsed: int},
      *     summary: array{
      *         income: float,
@@ -44,16 +49,26 @@ class BudgetProgressService
      *     uncategorized_expense: array{spend: float, leftover_income: float, vs_leftover_difference: float}
      * }
      */
-    public function build(int $userId, string $view, ?string $month = null): array
-    {
+    public function build(
+        int $userId,
+        string $view,
+        ?string $month = null,
+        ?int $budgetYearId = null,
+    ): array {
         if (! in_array($view, ['month', 'ytm'], true)) {
             throw new InvalidArgumentException('View must be month or ytm.');
         }
 
-        $resolved = $this->resolvePeriod($view, $month);
+        $years = $this->yearsForUser($userId);
+        $selectedYear = $this->resolveYear($userId, $budgetYearId);
+        $resolved = $this->resolvePeriod($userId, $view, $month, $selectedYear);
         $from = $resolved['from'];
         $to = $resolved['to'];
         $monthsElapsed = $resolved['months_elapsed'];
+
+        $limitsYear = $view === 'ytm'
+            ? $selectedYear
+            : $this->yearContainingMonth($userId, $resolved['month_start']);
 
         $spendTotals = $this->categorySpendQuery->categoryTotalsForUser($userId, $from, $to);
 
@@ -85,10 +100,15 @@ class BudgetProgressService
         $leftoverIncome = round($income - $billsAmount, 2);
 
         /** @var Collection<int, BudgetCategoryLimit> $limits */
-        $limits = BudgetCategoryLimit::query()
-            ->where('user_id', $userId)
-            ->get()
-            ->keyBy('category_id');
+        $limits = $limitsYear === null
+            ? collect()
+            : BudgetCategoryLimit::query()
+                ->where('user_id', $userId)
+                ->where('budget_year_id', $limitsYear->id)
+                ->get()
+                ->keyBy('category_id');
+
+        $budgetMultiplier = $view === 'ytm' ? $monthsElapsed : 1;
 
         $categoryRows = [];
         $totalBudgetAllowed = 0.0;
@@ -100,8 +120,8 @@ class BudgetProgressService
 
             $limit = $limits->get($category->id);
             $monthlyBudget = $limit !== null ? round((float) $limit->amount, 2) : null;
-            $budgetAllowed = $monthlyBudget !== null
-                ? round($monthlyBudget * $monthsElapsed, 2)
+            $budgetAllowed = ($monthlyBudget !== null && $limitsYear !== null && $budgetMultiplier > 0)
+                ? round($monthlyBudget * $budgetMultiplier, 2)
                 : null;
 
             if ($budgetAllowed !== null) {
@@ -128,6 +148,8 @@ class BudgetProgressService
         return [
             'view' => $view,
             'month' => $resolved['month'],
+            'budget_year' => $selectedYear?->toPayload(),
+            'budget_years' => $years->map(fn (BudgetYear $year) => $year->toPayload())->values()->all(),
             'period' => [
                 'from' => $from->toDateString(),
                 'to' => $to->copy()->subDay()->toDateString(),
@@ -153,10 +175,9 @@ class BudgetProgressService
     }
 
     /**
-     * Year-plan setup payload: all expense categories with monthly budgets.
-     *
      * @return array{
-     *     year: int,
+     *     budget_year: ?array{id: int, label: string, color: string, starts_on: string, ends_on: string, is_current: bool},
+     *     budget_years: list<array{id: int, label: string, color: string, starts_on: string, ends_on: string, is_current: bool}>,
      *     total_monthly: float,
      *     total_annual: float,
      *     categories: list<array{
@@ -168,13 +189,19 @@ class BudgetProgressService
      *     }>
      * }
      */
-    public function planForUser(int $userId): array
+    public function planForUser(int $userId, ?int $budgetYearId = null): array
     {
+        $years = $this->yearsForUser($userId);
+        $selectedYear = $this->resolveYear($userId, $budgetYearId);
+
         /** @var Collection<int, BudgetCategoryLimit> $limits */
-        $limits = BudgetCategoryLimit::query()
-            ->where('user_id', $userId)
-            ->get()
-            ->keyBy('category_id');
+        $limits = $selectedYear === null
+            ? collect()
+            : BudgetCategoryLimit::query()
+                ->where('user_id', $userId)
+                ->where('budget_year_id', $selectedYear->id)
+                ->get()
+                ->keyBy('category_id');
 
         $categories = Category::query()
             ->where('user_id', $userId)
@@ -202,7 +229,8 @@ class BudgetProgressService
         );
 
         return [
-            'year' => (int) Carbon::now()->year,
+            'budget_year' => $selectedYear?->toPayload(),
+            'budget_years' => $years->map(fn (BudgetYear $year) => $year->toPayload())->values()->all(),
             'total_monthly' => $totalMonthly,
             'total_annual' => round($totalMonthly * 12, 2),
             'categories' => $categories,
@@ -210,12 +238,12 @@ class BudgetProgressService
     }
 
     /**
-     * Replace the user's expense category monthly budgets.
-     *
-     * @param  array<int, float|string|null>  $limits  category_id => amount (null/blank removes)
+     * @param  array<int, float|string|null>  $limits
      */
-    public function syncLimits(int $userId, array $limits): void
+    public function syncLimits(int $userId, int $budgetYearId, array $limits): void
     {
+        $year = $this->ownedYear($userId, $budgetYearId);
+
         $expenseCategoryIds = Category::query()
             ->where('user_id', $userId)
             ->where('kind', Category::KIND_EXPENSE)
@@ -224,7 +252,6 @@ class BudgetProgressService
             ->all();
 
         $allowed = array_flip($expenseCategoryIds);
-        $upserts = [];
         $keepIds = [];
 
         foreach ($limits as $categoryId => $amount) {
@@ -244,34 +271,152 @@ class BudgetProgressService
                 continue;
             }
 
-            $upserts[] = [
-                'user_id' => $userId,
-                'category_id' => $categoryId,
-                'amount' => $normalized,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
+            BudgetCategoryLimit::query()->updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'budget_year_id' => $year->id,
+                    'category_id' => $categoryId,
+                ],
+                ['amount' => $normalized],
+            );
             $keepIds[] = $categoryId;
         }
 
         BudgetCategoryLimit::query()
             ->where('user_id', $userId)
+            ->where('budget_year_id', $year->id)
             ->when(
                 $keepIds !== [],
                 fn ($query) => $query->whereNotIn('category_id', $keepIds),
                 fn ($query) => $query,
             )
             ->delete();
+    }
 
-        foreach ($upserts as $row) {
-            BudgetCategoryLimit::query()->updateOrCreate(
-                [
-                    'user_id' => $row['user_id'],
-                    'category_id' => $row['category_id'],
-                ],
-                ['amount' => $row['amount']],
-            );
+    public function createYear(
+        int $userId,
+        string $startMonth,
+        string $color,
+        ?string $label = null,
+        bool $makeCurrent = false,
+    ): BudgetYear {
+        $startsOn = $this->parseMonth($startMonth);
+
+        if ($startsOn === null) {
+            throw ValidationException::withMessages([
+                'starts_on' => 'Start month must be a valid YYYY-MM value.',
+            ]);
         }
+
+        $this->assertNoOverlap($userId, $startsOn);
+
+        $hasCurrent = BudgetYear::query()
+            ->where('user_id', $userId)
+            ->where('is_current', true)
+            ->exists();
+
+        $shouldBeCurrent = $makeCurrent || ! $hasCurrent;
+
+        if ($shouldBeCurrent) {
+            BudgetYear::query()
+                ->where('user_id', $userId)
+                ->where('is_current', true)
+                ->update(['is_current' => false]);
+        }
+
+        return BudgetYear::query()->create([
+            'user_id' => $userId,
+            'starts_on' => $startsOn->toDateString(),
+            'label' => $label !== null && trim($label) !== ''
+                ? trim($label)
+                : BudgetYear::labelForStart($startsOn),
+            'color' => $color,
+            'is_current' => $shouldBeCurrent,
+        ]);
+    }
+
+    /**
+     * @param  array{label?: string, color?: string, starts_on?: string}  $attributes
+     */
+    public function updateYear(int $userId, int $budgetYearId, array $attributes): BudgetYear
+    {
+        $year = $this->ownedYear($userId, $budgetYearId);
+
+        if (isset($attributes['starts_on'])) {
+            $startsOn = $this->parseMonth($attributes['starts_on']);
+
+            if ($startsOn === null) {
+                throw ValidationException::withMessages([
+                    'starts_on' => 'Start month must be a valid YYYY-MM value.',
+                ]);
+            }
+
+            $this->assertNoOverlap($userId, $startsOn, $year->id);
+            $year->starts_on = $startsOn->toDateString();
+
+            if (! isset($attributes['label'])) {
+                $year->label = BudgetYear::labelForStart($startsOn);
+            }
+        }
+
+        if (array_key_exists('label', $attributes) && $attributes['label'] !== null) {
+            $trimmed = trim((string) $attributes['label']);
+
+            if ($trimmed !== '') {
+                $year->label = $trimmed;
+            }
+        }
+
+        if (isset($attributes['color'])) {
+            $year->color = $attributes['color'];
+        }
+
+        $year->save();
+
+        return $year->refresh();
+    }
+
+    public function setCurrentYear(int $userId, int $budgetYearId): BudgetYear
+    {
+        $year = $this->ownedYear($userId, $budgetYearId);
+
+        BudgetYear::query()
+            ->where('user_id', $userId)
+            ->where('is_current', true)
+            ->where('id', '!=', $year->id)
+            ->update(['is_current' => false]);
+
+        $year->is_current = true;
+        $year->save();
+
+        return $year->refresh();
+    }
+
+    public function resolveYear(int $userId, ?int $budgetYearId = null): ?BudgetYear
+    {
+        if ($budgetYearId !== null) {
+            return $this->ownedYear($userId, $budgetYearId);
+        }
+
+        return BudgetYear::query()
+            ->where('user_id', $userId)
+            ->where('is_current', true)
+            ->first()
+            ?? BudgetYear::query()
+                ->where('user_id', $userId)
+                ->orderByDesc('starts_on')
+                ->first();
+    }
+
+    /**
+     * @return Collection<int, BudgetYear>
+     */
+    public function yearsForUser(int $userId): Collection
+    {
+        return BudgetYear::query()
+            ->where('user_id', $userId)
+            ->orderByDesc('starts_on')
+            ->get();
     }
 
     /**
@@ -279,24 +424,74 @@ class BudgetProgressService
      *     from: CarbonInterface,
      *     to: CarbonInterface,
      *     month: string,
+     *     month_start: CarbonInterface,
      *     label: string,
      *     months_elapsed: int
      * }
      */
-    public function resolvePeriod(string $view, ?string $month = null): array
-    {
+    public function resolvePeriod(
+        int $userId,
+        string $view,
+        ?string $month = null,
+        ?BudgetYear $selectedYear = null,
+    ): array {
         $now = Carbon::now()->startOfDay();
+        $selectedYear ??= $this->resolveYear($userId);
 
         if ($view === 'ytm') {
-            $from = $now->copy()->startOfYear();
-            $to = $now->copy()->startOfMonth()->addMonth();
-            $monthsElapsed = (int) $now->month;
+            if ($selectedYear === null) {
+                $from = $now->copy()->startOfMonth();
+                $to = $from->copy()->addMonth();
+
+                return [
+                    'from' => $from,
+                    'to' => $to,
+                    'month' => $now->format('Y-m'),
+                    'month_start' => $now->copy()->startOfMonth(),
+                    'label' => 'No budget year',
+                    'months_elapsed' => 0,
+                ];
+            }
+
+            $planStart = $selectedYear->startsOn();
+            $planEndExclusive = $selectedYear->endsOnExclusive();
+            $currentMonthStart = $now->copy()->startOfMonth();
+            $currentMonthEndExclusive = $currentMonthStart->copy()->addMonth();
+
+            if ($currentMonthStart->lt($planStart)) {
+                return [
+                    'from' => $planStart->copy(),
+                    'to' => $planStart->copy(),
+                    'month' => $now->format('Y-m'),
+                    'month_start' => $currentMonthStart,
+                    'label' => $selectedYear->label,
+                    'months_elapsed' => 0,
+                ];
+            }
+
+            if ($currentMonthStart->gte($planEndExclusive)) {
+                return [
+                    'from' => $planStart->copy(),
+                    'to' => $planEndExclusive->copy(),
+                    'month' => $planEndExclusive->copy()->subMonth()->format('Y-m'),
+                    'month_start' => $planEndExclusive->copy()->subMonth(),
+                    'label' => $selectedYear->label,
+                    'months_elapsed' => 12,
+                ];
+            }
+
+            $to = $currentMonthEndExclusive->lt($planEndExclusive)
+                ? $currentMonthEndExclusive
+                : $planEndExclusive->copy();
+
+            $monthsElapsed = $this->monthsBetween($planStart, $to->copy()->subMonth());
 
             return [
-                'from' => $from,
+                'from' => $planStart->copy(),
                 'to' => $to,
-                'month' => $now->format('Y-m'),
-                'label' => $from->format('M Y').' – '.$now->copy()->endOfMonth()->format('M Y'),
+                'month' => $currentMonthStart->format('Y-m'),
+                'month_start' => $currentMonthStart,
+                'label' => $planStart->format('M Y').' – '.$to->copy()->subDay()->format('M Y'),
                 'months_elapsed' => $monthsElapsed,
             ];
         }
@@ -309,9 +504,77 @@ class BudgetProgressService
             'from' => $from,
             'to' => $to,
             'month' => $from->format('Y-m'),
+            'month_start' => $from,
             'label' => $from->format('F Y'),
             'months_elapsed' => 1,
         ];
+    }
+
+    public function yearContainingMonth(int $userId, CarbonInterface $month): ?BudgetYear
+    {
+        $monthStart = $month->copy()->startOfMonth()->startOfDay();
+
+        $candidates = BudgetYear::query()
+            ->where('user_id', $userId)
+            ->where('starts_on', '<=', $monthStart->toDateString())
+            ->orderByDesc('is_current')
+            ->orderByDesc('starts_on')
+            ->get();
+
+        return $candidates->first(
+            fn (BudgetYear $year) => $year->containsMonth($monthStart),
+        );
+    }
+
+    protected function ownedYear(int $userId, int $budgetYearId): BudgetYear
+    {
+        $year = BudgetYear::query()
+            ->where('user_id', $userId)
+            ->whereKey($budgetYearId)
+            ->first();
+
+        if ($year === null) {
+            throw new NotFoundHttpException;
+        }
+
+        return $year;
+    }
+
+    protected function assertNoOverlap(
+        int $userId,
+        CarbonInterface $startsOn,
+        ?int $ignoreId = null,
+    ): void {
+        $newStart = $startsOn->copy()->startOfMonth();
+        $newEnd = $newStart->copy()->addYear();
+
+        $others = BudgetYear::query()
+            ->where('user_id', $userId)
+            ->when($ignoreId !== null, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->get();
+
+        foreach ($others as $other) {
+            $otherStart = $other->startsOn();
+            $otherEnd = $other->endsOnExclusive();
+
+            if ($newStart->lt($otherEnd) && $newEnd->gt($otherStart)) {
+                throw ValidationException::withMessages([
+                    'starts_on' => 'Budget years cannot overlap.',
+                ]);
+            }
+        }
+    }
+
+    protected function monthsBetween(CarbonInterface $startMonth, CarbonInterface $endMonth): int
+    {
+        $start = $startMonth->copy()->startOfMonth();
+        $end = $endMonth->copy()->startOfMonth();
+
+        if ($end->lt($start)) {
+            return 0;
+        }
+
+        return ((int) $start->diffInMonths($end)) + 1;
     }
 
     protected function parseMonth(?string $month): ?Carbon

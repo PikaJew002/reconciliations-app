@@ -28,10 +28,15 @@ class DashboardController extends Controller
         $month = $request->string('month')->toString();
         $month = $month !== '' ? $month : null;
 
-        $resolved = $budgetProgress->resolvePeriod($view, $month);
+        $budgetYearId = $request->filled('budget_year_id')
+            ? $request->integer('budget_year_id')
+            : null;
+
+        $selectedYear = $budgetProgress->resolveYear($userId, $budgetYearId);
+        $resolved = $budgetProgress->resolvePeriod($userId, $view, $month, $selectedYear);
         $from = $resolved['from'];
         $to = $resolved['to'];
-        $progress = $budgetProgress->build($userId, $view, $month);
+        $progress = $budgetProgress->build($userId, $view, $month, $selectedYear?->id);
         $monthsElapsed = $progress['period']['months_elapsed'];
 
         $spendTotals = $categorySpendQuery->categoryTotalsForUser($userId, $from, $to);
@@ -97,6 +102,8 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard/Index', [
             'view' => $progress['view'],
             'month' => $progress['month'],
+            'budget_year' => $progress['budget_year'],
+            'budget_years' => $progress['budget_years'],
             'period' => $progress['period'],
             'total_income' => $totalIncome,
             'total_spend' => $totalSpend,

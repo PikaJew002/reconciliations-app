@@ -14,9 +14,13 @@ class BudgetController extends Controller
 {
     public function index(Request $request, BudgetProgressService $budgetProgress): Response
     {
+        $budgetYearId = $request->filled('budget_year_id')
+            ? $request->integer('budget_year_id')
+            : null;
+
         return Inertia::render(
             'Budgets/Index',
-            $budgetProgress->planForUser($request->user()->id),
+            $budgetProgress->planForUser($request->user()->id, $budgetYearId),
         );
     }
 
@@ -24,13 +28,16 @@ class BudgetController extends Controller
         UpdateBudgetRequest $request,
         BudgetProgressService $budgetProgress,
     ): RedirectResponse {
+        $budgetYearId = (int) $request->validated('budget_year_id');
+
         $budgetProgress->syncLimits(
             $request->user()->id,
+            $budgetYearId,
             $request->limitsByCategoryId(),
         );
 
         return redirect()
-            ->route('budgets.index')
+            ->route('budgets.index', ['budget_year_id' => $budgetYearId])
             ->with('success', 'Budgets saved.');
     }
 }

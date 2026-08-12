@@ -14,6 +14,14 @@
             type: String,
             required: true,
         },
+        budget_year: {
+            type: Object,
+            default: null,
+        },
+        budget_years: {
+            type: Array,
+            default: () => [],
+        },
         period: {
             type: Object,
             required: true,
@@ -39,6 +47,27 @@
             required: true,
         },
     });
+
+    let queryBase = () => {
+        let query = {};
+
+        if (props.budget_year?.id) {
+            query.budget_year_id = props.budget_year.id;
+        }
+
+        return query;
+    };
+
+    let chipStyle = (color) => {
+        if (!color) {
+            return undefined;
+        }
+
+        return {
+            borderColor: color,
+            backgroundColor: `${color}22`,
+        };
+    };
 
     let kindLabel = (kind) => {
         return (
@@ -102,8 +131,8 @@
         router.get(
             '/',
             view === 'month'
-                ? { view: 'month', month: props.month }
-                : { view: 'ytm' },
+                ? { ...queryBase(), view: 'month', month: props.month }
+                : { ...queryBase(), view: 'ytm' },
             { preserveState: true, replace: true },
         );
     };
@@ -115,7 +144,22 @@
 
         router.get(
             '/',
-            { view: 'month', month: next },
+            { ...queryBase(), view: 'month', month: next },
+            { preserveState: true, replace: true },
+        );
+    };
+
+    let selectBudgetYear = (budgetYearId) => {
+        router.get(
+            '/',
+            props.view === 'month'
+                ? {
+                      ...queryBase(),
+                      budget_year_id: budgetYearId,
+                      view: 'month',
+                      month: props.month,
+                  }
+                : { budget_year_id: budgetYearId, view: 'ytm' },
             { preserveState: true, replace: true },
         );
     };
@@ -181,6 +225,33 @@
             </div>
         </div>
 
+        <div
+            v-if="budget_years.length > 0"
+            class="flex flex-wrap items-center gap-2"
+        >
+            <button
+                v-for="year in budget_years"
+                :key="year.id"
+                type="button"
+                class="rounded border px-3 py-1.5 text-sm"
+                :class="
+                    budget_year?.id === year.id
+                        ? 'font-semibold'
+                        : 'hover:bg-neutral-50'
+                "
+                :style="chipStyle(year.color)"
+                @click="selectBudgetYear(year.id)"
+            >
+                {{ year.label }}
+                <span
+                    v-if="year.is_current"
+                    class="ml-1 text-xs text-neutral-600"
+                >
+                    (current)
+                </span>
+            </button>
+        </div>
+
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <p class="text-lg font-medium">{{ period.label }}</p>
@@ -190,6 +261,13 @@
                         · {{ months_elapsed }}
                         {{ months_elapsed === 1 ? 'month' : 'months' }}
                     </span>
+                </p>
+                <p
+                    v-if="budget_year"
+                    class="mt-1 inline-flex rounded border px-2 py-0.5 text-xs font-medium"
+                    :style="chipStyle(budget_year.color)"
+                >
+                    {{ budget_year.label }}
                 </p>
             </div>
 
