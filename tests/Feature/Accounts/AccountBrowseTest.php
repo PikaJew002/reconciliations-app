@@ -27,19 +27,21 @@ class AccountBrowseTest extends TestCase
             ->assertRedirect('/login');
     }
 
-    public function test_index_shows_all_accounts_including_empty_with_coverage(): void
+    public function test_index_shows_only_owned_accounts_including_empty_with_coverage(): void
     {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
 
         $userAccount = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Capital One Card',
             'institution_name' => 'Capital One',
             'last_four' => '5394',
             'is_active' => true,
         ]);
 
-        $otherAccount = Account::factory()->create([
+        Account::factory()->create([
+            'user_id' => $otherUser->id,
             'name' => 'Other Checking',
             'institution_name' => 'Other Bank',
             'last_four' => '1111',
@@ -47,6 +49,7 @@ class AccountBrowseTest extends TestCase
         ]);
 
         $unusedAccount = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Unused Cash',
             'is_active' => true,
         ]);
@@ -67,7 +70,7 @@ class AccountBrowseTest extends TestCase
 
         BankTransaction::factory()->create([
             'user_id' => $otherUser->id,
-            'account_id' => $otherAccount->id,
+            'account_id' => Account::factory()->create(['user_id' => $otherUser->id])->id,
             'posted_at' => '2026-07-15',
             'amount' => -9.99,
         ]);
@@ -79,17 +82,15 @@ class AccountBrowseTest extends TestCase
                 ->component('Accounts/Index')
                 ->where('bankCoverage.min', '2026-06-01')
                 ->where('bankCoverage.max', '2026-08-06')
-                ->has('accounts', 3)
+                ->has('accounts', 2)
                 ->where('accounts.0.id', $userAccount->id)
                 ->where('accounts.0.name', 'Capital One Card')
                 ->where('accounts.0.transaction_count', 2)
                 ->where('accounts.0.min_posted_at', '2026-06-01')
                 ->where('accounts.0.max_posted_at', '2026-08-06')
                 ->where('accounts.0.coverage_span_days', 66)
-                ->where('accounts.1.id', $otherAccount->id)
+                ->where('accounts.1.id', $unusedAccount->id)
                 ->where('accounts.1.transaction_count', 0)
-                ->where('accounts.2.id', $unusedAccount->id)
-                ->where('accounts.2.transaction_count', 0)
                 ->where('filters.q', ''));
     }
 
@@ -98,13 +99,15 @@ class AccountBrowseTest extends TestCase
         $user = User::factory()->create();
 
         $capitalOne = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Capital One Card',
             'institution_name' => 'Capital One',
             'last_four' => '5394',
             'is_active' => true,
         ]);
 
-        $checking = Account::factory()->create([
+        Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'CVNB Checking',
             'institution_name' => 'CVNB',
             'last_four' => '6218',
@@ -115,12 +118,6 @@ class AccountBrowseTest extends TestCase
             'user_id' => $user->id,
             'account_id' => $capitalOne->id,
             'posted_at' => '2026-07-01',
-        ]);
-
-        BankTransaction::factory()->create([
-            'user_id' => $user->id,
-            'account_id' => $checking->id,
-            'posted_at' => '2026-07-02',
         ]);
 
         $this->actingAs($user)
@@ -137,6 +134,7 @@ class AccountBrowseTest extends TestCase
     {
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Empty Account',
             'is_active' => true,
         ]);
@@ -151,12 +149,27 @@ class AccountBrowseTest extends TestCase
                 ->has('transactions', 0));
     }
 
+    public function test_show_forbids_other_users_accounts(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $otherUser->id,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', $account))
+            ->assertForbidden();
+    }
+
     public function test_show_lists_user_transactions_and_coverage(): void
     {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
 
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Capital One Card',
             'institution_name' => 'Capital One',
             'last_four' => '5394',
@@ -185,7 +198,7 @@ class AccountBrowseTest extends TestCase
 
         BankTransaction::factory()->create([
             'user_id' => $otherUser->id,
-            'account_id' => $account->id,
+            'account_id' => Account::factory()->create(['user_id' => $otherUser->id])->id,
             'posted_at' => '2026-08-05',
             'description' => 'OTHER USER TX',
             'amount' => -1.00,
@@ -210,7 +223,10 @@ class AccountBrowseTest extends TestCase
     public function test_show_search_filters_transactions(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create(['is_active' => true]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
 
         BankTransaction::factory()->create([
             'user_id' => $user->id,

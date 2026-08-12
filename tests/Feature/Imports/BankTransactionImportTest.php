@@ -38,7 +38,10 @@ class BankTransactionImportTest extends TestCase
     public function test_authenticated_user_can_view_account_imports_page(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create(['name' => 'Checking']);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Checking',
+        ]);
 
         $this->actingAs($user)
             ->get(route('accounts.imports.index', $account))
@@ -51,13 +54,36 @@ class BankTransactionImportTest extends TestCase
                 ->missing('accounts'));
     }
 
+    public function test_authenticated_user_cannot_import_into_other_users_accounts(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $account = Account::factory()->create(['user_id' => $otherUser->id]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.index', $account))
+            ->assertForbidden();
+
+        $this->actingAs($user)->post(route('accounts.imports.store', $account), [
+            'file' => UploadedFile::fake()->createWithContent(
+                'chase.csv',
+                "Date,Description,Amount\n01/01/2026,WALMART,-12.34\n",
+            ),
+        ])->assertForbidden();
+
+        $this->assertDatabaseCount('import_batches', 0);
+    }
+
     public function test_authenticated_user_can_queue_a_bank_import(): void
     {
         Storage::fake('local');
         Queue::fake();
 
         $user = User::factory()->create();
-        $account = Account::factory()->create();
+        $account = Account::factory()->create(['user_id' => $user->id]);
 
         $file = UploadedFile::fake()->createWithContent(
             'chase.csv',
@@ -88,7 +114,10 @@ class BankTransactionImportTest extends TestCase
     public function test_authenticated_user_can_view_account_import_batch(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create(['name' => 'Checking']);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Checking',
+        ]);
         $batch = ImportBatch::factory()->create([
             'user_id' => $user->id,
             'source' => 'bank',
@@ -117,8 +146,8 @@ class BankTransactionImportTest extends TestCase
     public function test_account_import_batch_show_rejects_batches_for_other_accounts(): void
     {
         $user = User::factory()->create();
-        $accountA = Account::factory()->create();
-        $accountB = Account::factory()->create();
+        $accountA = Account::factory()->create(['user_id' => $user->id]);
+        $accountB = Account::factory()->create(['user_id' => $user->id]);
         $batch = ImportBatch::factory()->create([
             'user_id' => $user->id,
             'source' => 'bank',
@@ -134,8 +163,14 @@ class BankTransactionImportTest extends TestCase
     public function test_account_imports_lists_only_batches_for_that_account(): void
     {
         $user = User::factory()->create();
-        $accountA = Account::factory()->create(['name' => 'Account A']);
-        $accountB = Account::factory()->create(['name' => 'Account B']);
+        $accountA = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Account A',
+        ]);
+        $accountB = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Account B',
+        ]);
 
         $batchA = ImportBatch::factory()->create([
             'user_id' => $user->id,
@@ -170,6 +205,7 @@ class BankTransactionImportTest extends TestCase
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CHECKING,
         ]);
@@ -208,12 +244,14 @@ CSV);
 
         $user = User::factory()->create();
         $accountA = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Joint Account 2',
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CHECKING,
             'last_four' => '6218',
         ]);
         $accountB = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Joint Account 1',
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CHECKING,

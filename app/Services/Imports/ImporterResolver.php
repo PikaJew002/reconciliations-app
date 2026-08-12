@@ -40,6 +40,12 @@ class ImporterResolver
             throw new InvalidArgumentException("Account [{$accountId}] not found.");
         }
 
+        if ($account->user_id !== $batch->user_id) {
+            throw new InvalidArgumentException(
+                "Account [{$accountId}] does not belong to the import batch owner.",
+            );
+        }
+
         $profile = $this->institutions->find($account->institution_name);
 
         if ($profile === null) {

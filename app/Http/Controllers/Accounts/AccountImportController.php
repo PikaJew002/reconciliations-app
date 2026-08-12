@@ -18,6 +18,7 @@ class AccountImportController extends Controller
 {
     public function index(Request $request, Account $account): Response
     {
+        $this->authorize('view', $account);
         $this->authorize('create', ImportBatch::class);
 
         $accountId = (string) $account->id;
@@ -54,6 +55,7 @@ class AccountImportController extends Controller
 
     public function store(StoreBankTransactionImportRequest $request, Account $account): RedirectResponse
     {
+        $this->authorize('view', $account);
         $this->authorize('create', ImportBatch::class);
 
         $file = $request->file('file');

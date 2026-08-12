@@ -19,12 +19,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        User::factory()->create([
+        $user = User::factory()->create([
             'name' => 'Test User',
             'email' => 'test@example.com',
         ]);
 
         Account::create([
+            'user_id' => $user->id,
             'name' => 'Joint Account 2',
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
             'account_name' => 'Joint Account 2',
@@ -33,6 +34,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         Account::create([
+            'user_id' => $user->id,
             'name' => 'Capital One Credit Card',
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_name' => 'Capital One Credit Card',
@@ -41,6 +43,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         Account::create([
+            'user_id' => $user->id,
             'name' => 'CVNB Credit Card',
             'institution_name' => CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_name' => 'CVNB Credit Card',

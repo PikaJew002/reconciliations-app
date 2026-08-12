@@ -179,6 +179,7 @@ class SyntheticBankSpendReconcilerTest extends TestCase
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
         ]);
         $path = 'imports/chain-check.csv';

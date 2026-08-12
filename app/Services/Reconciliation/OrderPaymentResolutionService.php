@@ -442,7 +442,9 @@ class OrderPaymentResolutionService
         $accountId = $order->importBatch?->metadata['account_id'] ?? null;
 
         if ($accountId) {
-            $account = Account::query()->find($accountId);
+            $account = Account::query()
+                ->where('user_id', $order->user_id)
+                ->find($accountId);
 
             if ($account) {
                 return $account;
@@ -456,14 +458,20 @@ class OrderPaymentResolutionService
             ->first();
 
         if ($fromTransaction?->account_id) {
-            $account = Account::query()->find($fromTransaction->account_id);
+            $account = Account::query()
+                ->where('user_id', $order->user_id)
+                ->find($fromTransaction->account_id);
 
             if ($account) {
                 return $account;
             }
         }
 
-        $account = Account::query()->where('is_active', true)->orderBy('id')->first();
+        $account = Account::query()
+            ->where('user_id', $order->user_id)
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->first();
 
         if (! $account) {
             throw new RuntimeException('No account available for non-bank tender transaction.');

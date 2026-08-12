@@ -53,7 +53,10 @@ class OrderPaymentResolutionTest extends TestCase
     public function test_resolves_multi_payment_order_with_card_and_gift_card(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create(['is_active' => true]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
         $merchant = Merchant::factory()->create([
             'user_id' => $user->id,
             'normalized_name' => 'walmart',
@@ -214,7 +217,10 @@ class OrderPaymentResolutionTest extends TestCase
     public function test_auto_resolves_gift_only_amazon_order(): void
     {
         $user = User::factory()->create();
-        Account::factory()->create(['is_active' => true]);
+        Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
         $merchant = Merchant::factory()->create([
             'user_id' => $user->id,
             'name' => 'Amazon',
@@ -319,7 +325,10 @@ class OrderPaymentResolutionTest extends TestCase
     public function test_can_mark_branded_card_as_gift_card_when_resolving(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create(['is_active' => true]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
         $merchant = Merchant::factory()->create([
             'user_id' => $user->id,
             'normalized_name' => 'amazon',

@@ -14,6 +14,7 @@ class ImportBatchController extends Controller
 {
     public function showForAccount(Account $account, ImportBatch $importBatch): Response
     {
+        $this->authorize('view', $account);
         $this->authorize('view', $importBatch);
         $this->ensureAccountBatch($account, $importBatch);
 

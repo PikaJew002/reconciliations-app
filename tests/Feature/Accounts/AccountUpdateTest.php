@@ -45,6 +45,7 @@ class AccountUpdateTest extends TestCase
     {
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Joint Account 1',
             'default_classification' => BankTransaction::CLASSIFICATION_BILL,
         ]);
@@ -62,10 +63,35 @@ class AccountUpdateTest extends TestCase
                 ->has('defaultClassifications', 2));
     }
 
+    public function test_authenticated_user_cannot_edit_other_users_accounts(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $otherUser->id,
+            'name' => 'Other Account',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.edit', $account))
+            ->assertForbidden();
+
+        $this->actingAs($user)->put(route('accounts.update', $account), [
+            'name' => 'Hijacked',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CHECKING,
+            'default_classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'currency' => 'USD',
+        ])->assertForbidden();
+
+        $this->assertSame('Other Account', $account->fresh()->name);
+    }
+
     public function test_authenticated_user_can_update_an_account(): void
     {
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'name' => 'Joint Account 1',
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CHECKING,
@@ -100,6 +126,7 @@ class AccountUpdateTest extends TestCase
     {
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'default_classification' => BankTransaction::CLASSIFICATION_BILL,
         ]);
 

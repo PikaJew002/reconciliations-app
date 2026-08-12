@@ -10,7 +10,11 @@ class UpdateAccountRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $account = $this->route('account');
+
+        return $this->user() !== null
+            && $account instanceof Account
+            && $account->user_id === $this->user()->id;
     }
 
     protected function prepareForValidation(): void

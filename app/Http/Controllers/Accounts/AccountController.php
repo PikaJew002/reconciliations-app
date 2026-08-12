@@ -45,8 +45,11 @@ class AccountController extends Controller
 
     public function store(StoreAccountRequest $request): RedirectResponse
     {
+        $this->authorize('create', Account::class);
+
         $account = Account::create([
             ...$request->validated(),
+            'user_id' => $request->user()->id,
             'is_active' => true,
         ]);
 
@@ -57,6 +60,8 @@ class AccountController extends Controller
 
     public function show(Request $request, Account $account, AccountBrowseService $browse): Response
     {
+        $this->authorize('view', $account);
+
         $data = $browse->show(
             $request->user()->id,
             $account,
@@ -68,6 +73,8 @@ class AccountController extends Controller
 
     public function edit(Account $account, InstitutionRegistry $institutions): Response
     {
+        $this->authorize('update', $account);
+
         return Inertia::render('Accounts/Edit', [
             'account' => [
                 'id' => $account->id,
@@ -95,6 +102,8 @@ class AccountController extends Controller
 
     public function update(UpdateAccountRequest $request, Account $account): RedirectResponse
     {
+        $this->authorize('update', $account);
+
         $account->update($request->validated());
 
         return redirect()

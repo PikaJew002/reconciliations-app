@@ -64,6 +64,7 @@ class AccountCreateTest extends TestCase
         $account = Account::query()->first();
 
         $this->assertNotNull($account);
+        $this->assertSame($user->id, $account->user_id);
         $this->assertSame('Capital One Card', $account->name);
         $this->assertSame(CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME, $account->institution_name);
         $this->assertSame('Rewards Card', $account->account_name);

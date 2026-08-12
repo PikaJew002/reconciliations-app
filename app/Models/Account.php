@@ -20,6 +20,7 @@ class Account extends Model
     public const CASH = 'cash';
 
     protected $fillable = [
+        'user_id',
         'name', // user friendly name for the account
         'institution_name',
         'account_name',
@@ -34,6 +35,11 @@ class Account extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function bankTransactions()
     {

@@ -35,6 +35,7 @@ class AccountBrowseService
             ->keyBy('account_id');
 
         $accountsQuery = Account::query()
+            ->where('user_id', $userId)
             ->orderBy('name')
             ->orderBy('id');
 

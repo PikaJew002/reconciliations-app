@@ -27,6 +27,7 @@ class ProcessImportBatchTest extends TestCase
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
         ]);
         $path = 'imports/test.csv';
@@ -78,6 +79,7 @@ CSV);
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
         ]);
         $path = 'imports/iso-dates.csv';
@@ -121,6 +123,7 @@ CSV);
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CREDIT_CARD,
         ]);
@@ -181,6 +184,7 @@ CSV);
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CumberlandValleyCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CREDIT_CARD,
         ]);
@@ -243,6 +247,7 @@ CSV);
 
         $user = User::factory()->create();
         $account = Account::factory()->create([
+            'user_id' => $user->id,
             'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
         ]);
         $csv = <<<'CSV'
