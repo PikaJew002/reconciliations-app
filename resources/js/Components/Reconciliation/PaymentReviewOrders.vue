@@ -244,14 +244,7 @@
             </p>
         </div>
 
-        <p
-            v-if="paymentReviewOrders.length === 0"
-            class="text-sm text-neutral-600"
-        >
-            No multi-payment orders need review.
-        </p>
-
-        <ul v-else class="space-y-4">
+        <ul class="space-y-4">
             <li
                 v-for="order in paymentReviewOrders"
                 :key="`payment-${order.id}`"

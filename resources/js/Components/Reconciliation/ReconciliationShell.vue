@@ -49,20 +49,31 @@
     let announcedCategorizeRunIds = new Set();
     let categorizeProgressToastId = null;
 
-    let tabs = computed(() => [
-        {
-            id: 'unmatched-transactions',
-            href: '/reconciliation/unmatched-transactions',
-            label: 'Unmatched transactions',
-            count: props.summary.unmatched_transactions,
-        },
-        {
-            id: 'needs-review',
-            href: '/reconciliation/needs-review',
-            label: 'Needs review',
-            count: props.summary.needs_review ?? 0,
-        },
-    ]);
+    let tabs = computed(() => {
+        let items = [
+            {
+                id: 'unmatched-transactions',
+                href: '/reconciliation/unmatched-transactions',
+                label: 'Unmatched transactions',
+                count: props.summary.unmatched_transactions,
+            },
+        ];
+
+        let needsReviewCount = props.summary.needs_review ?? 0;
+
+        if (needsReviewCount > 0) {
+            items.push({
+                id: 'needs-review',
+                href: '/reconciliation/needs-review',
+                label: 'Needs review',
+                count: needsReviewCount,
+            });
+        }
+
+        return items;
+    });
+
+    let showTabs = computed(() => tabs.value.length > 1);
 
     function runReloadKeys() {
         return [
@@ -426,7 +437,7 @@
         </dl>
 
         <div class="space-y-4">
-            <div class="flex flex-wrap gap-2 border-b pb-2">
+            <div v-if="showTabs" class="flex flex-wrap gap-2 border-b pb-2">
                 <Link
                     v-for="tab in tabs"
                     :key="tab.id"

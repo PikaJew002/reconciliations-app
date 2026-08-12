@@ -27,6 +27,15 @@ class ReconciliationReviewTest extends TestCase
             ->assertRedirect('/login');
     }
 
+    public function test_needs_review_redirects_when_nothing_needs_review(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.needs-review'))
+            ->assertRedirect(route('reconciliation.unmatched-transactions'));
+    }
+
     public function test_authenticated_user_sees_summary_and_unmatched_transactions(): void
     {
         $user = User::factory()->create();

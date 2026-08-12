@@ -5,10 +5,12 @@
     import SuggestedTransfers from '../../Components/Reconciliation/SuggestedTransfers.vue';
     import UnbalancedOrders from '../../Components/Reconciliation/UnbalancedOrders.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import { router } from '@inertiajs/vue3';
+    import { watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
-    defineProps({
+    let props = defineProps({
         summary: {
             type: Object,
             required: true,
@@ -60,6 +62,18 @@
         'reimbursementEligibleTransactions',
         'categories',
     ];
+
+    watch(
+        () => props.summary.needs_review ?? 0,
+        (count) => {
+            if (count === 0) {
+                router.visit('/reconciliation/unmatched-transactions', {
+                    replace: true,
+                });
+            }
+        },
+        { immediate: true },
+    );
 </script>
 
 <template>
@@ -71,8 +85,15 @@
         :reload-only="needsReviewReloadOnly"
     >
         <section class="space-y-8">
-            <SuggestedTransfers :suggested-transfers="suggestedTransfers" />
+            <SuggestedTransfers
+                v-if="suggestedTransfers.length > 0"
+                :suggested-transfers="suggestedTransfers"
+            />
             <ReimbursementGroups
+                v-if="
+                    openReimbursementGroups.length > 0 ||
+                    closedReimbursementGroups.length > 0
+                "
                 :open-reimbursement-groups="openReimbursementGroups"
                 :closed-reimbursement-groups="closedReimbursementGroups"
                 :reimbursement-eligible-transactions="
@@ -81,9 +102,11 @@
                 :categories="categories"
             />
             <PaymentReviewOrders
+                v-if="paymentReviewOrders.length > 0"
                 :payment-review-orders="paymentReviewOrders"
             />
             <UnbalancedOrders
+                v-if="unbalancedOrders.length > 0"
                 :unbalanced-orders="unbalancedOrders"
                 :categories="categories"
             />

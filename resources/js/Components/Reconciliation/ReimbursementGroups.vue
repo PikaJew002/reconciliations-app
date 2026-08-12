@@ -188,7 +188,7 @@
 
 <template>
     <div class="space-y-8">
-        <div class="space-y-4">
+        <div v-if="openReimbursementGroups.length > 0" class="space-y-4">
             <div>
                 <h2 class="text-base font-semibold">Open reimbursements</h2>
                 <p class="text-sm text-neutral-600">
@@ -199,15 +199,7 @@
                 </p>
             </div>
 
-            <p
-                v-if="openReimbursementGroups.length === 0"
-                class="text-sm text-neutral-600"
-            >
-                No open reimbursement groups. Select unmatched transactions to
-                create one.
-            </p>
-
-            <ul v-else class="space-y-4">
+            <ul class="space-y-4">
                 <li
                     v-for="group in openReimbursementGroups"
                     :key="`open-reimb-${group.id}`"

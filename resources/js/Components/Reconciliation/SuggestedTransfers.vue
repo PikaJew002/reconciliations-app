@@ -46,14 +46,7 @@
             </p>
         </div>
 
-        <p
-            v-if="suggestedTransfers.length === 0"
-            class="text-sm text-neutral-600"
-        >
-            No suggested transfers.
-        </p>
-
-        <ul v-else class="space-y-3">
+        <ul class="space-y-3">
             <li
                 v-for="link in suggestedTransfers"
                 :key="`transfer-${link.id}`"

@@ -29,13 +29,18 @@ class ReconciliationController extends Controller
         ]);
     }
 
-    public function needsReview(Request $request, ReconciliationReviewService $review): Response
+    public function needsReview(Request $request, ReconciliationReviewService $review): Response|RedirectResponse
     {
         $userId = $request->user()->id;
         $needsReview = $review->needsReviewForUser($userId);
+        $summary = $review->summaryForUser($userId, $needsReview);
+
+        if (($summary['needs_review'] ?? 0) === 0) {
+            return redirect()->route('reconciliation.unmatched-transactions');
+        }
 
         return Inertia::render('Reconciliation/NeedsReview', [
-            'summary' => $review->summaryForUser($userId, $needsReview),
+            'summary' => $summary,
             ...$needsReview,
             'categories' => $this->categoriesPayload($userId),
             ...$this->sharedRunProps($userId),
