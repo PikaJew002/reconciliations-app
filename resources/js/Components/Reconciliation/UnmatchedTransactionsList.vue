@@ -4,7 +4,7 @@
         formatMoney,
     } from '../../Composables/useReconciliationFormatting.js';
     import { router } from '@inertiajs/vue3';
-    import { computed, reactive, ref } from 'vue';
+    import { computed, reactive, ref, watch } from 'vue';
 
     let props = defineProps({
         unmatchedTransactions: {
@@ -160,7 +160,21 @@
                 count: counts['untagged-other'],
             },
             { id: 'credits', label: 'Credits', count: counts.credits },
-        ];
+        ].filter((filter) => filter.id === 'all' || filter.count > 0);
+    });
+
+    watch(unmatchedTransactionAccountFilter, () => {
+        unmatchedTransactionFilter.value = 'all';
+    });
+
+    watch(unmatchedTransactionFilters, (filters) => {
+        if (
+            !filters.some(
+                (filter) => filter.id === unmatchedTransactionFilter.value,
+            )
+        ) {
+            unmatchedTransactionFilter.value = 'all';
+        }
     });
 
     let unmatchedTransactionAccountFilters = computed(() => {
