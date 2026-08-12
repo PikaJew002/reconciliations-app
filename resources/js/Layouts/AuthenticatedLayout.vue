@@ -13,11 +13,16 @@
         { label: 'Budgets', href: '/budgets' },
         { label: 'Rules', href: '/rules' },
         { label: 'Orders', href: '/orders' },
-        { label: 'Reconciliation', href: '/reconciliation/unmatched-transactions' },
+        {
+            label: 'Reconciliation',
+            href: '/reconciliation/unmatched-transactions',
+            match: '/reconciliation',
+        },
     ];
 
-    let isActive = (href) => {
+    let isActive = (item) => {
         let url = currentUrl.value;
+        let href = item.match ?? item.href;
 
         if (href === '/') {
             return url === '/';
@@ -40,7 +45,7 @@
                         :href="item.href"
                         class="rounded px-1 py-0.5"
                         :class="
-                            isActive(item.href)
+                            isActive(item)
                                 ? 'font-semibold text-neutral-900'
                                 : 'text-neutral-600 hover:text-neutral-900'
                         "
