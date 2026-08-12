@@ -50,6 +50,8 @@ Route::middleware('auth')->group(function () {
         ->name('accounts.imports.index');
     Route::post('/accounts/{account}/imports', [AccountImportController::class, 'store'])
         ->name('accounts.imports.store');
+    Route::get('/accounts/{account}/imports/{importBatch}', [ImportBatchController::class, 'showForAccount'])
+        ->name('accounts.imports.show');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
 
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
@@ -101,6 +103,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/orders/{merchant}/imports', [RetailerImportController::class, 'store'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.imports.store');
+    Route::get('/orders/{merchant}/imports/{importBatch}', [ImportBatchController::class, 'showForMerchant'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->name('orders.imports.show');
     Route::get('/orders/{merchant}', [OrderController::class, 'show'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.show');
@@ -151,5 +156,4 @@ Route::middleware('auth')->group(function () {
     Route::delete('/reconciliation/reimbursement-groups/{reimbursementGroup}', [ReimbursementGroupController::class, 'destroy'])
         ->name('reconciliation.reimbursement-groups.destroy');
 
-    Route::get('/imports/{importBatch}', [ImportBatchController::class, 'show'])->name('imports.show');
 });

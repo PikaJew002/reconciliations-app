@@ -76,7 +76,45 @@ class AmazonOrderImportTest extends TestCase
             return $job->importBatch->is($batch);
         });
 
-        $response->assertRedirect(route('imports.show', $batch));
+        $response->assertRedirect(route('orders.imports.show', ['amazon', $batch]));
+    }
+
+    public function test_authenticated_user_can_view_amazon_import_batch(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'original_filename' => 'amazon.csv',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.show', ['amazon', $batch]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Imports/Show')
+                ->where('batch.id', $batch->id)
+                ->where('breadcrumbs.0.label', 'Orders')
+                ->where('breadcrumbs.1.label', 'Amazon')
+                ->where('breadcrumbs.1.href', route('orders.show', 'amazon'))
+                ->where('breadcrumbs.2.label', 'Imports')
+                ->where('breadcrumbs.2.href', route('orders.imports.index', 'amazon'))
+                ->where('breadcrumbs.3.label', 'Import batch'));
+    }
+
+    public function test_amazon_import_batch_show_rejects_walmart_batches(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'walmart',
+            'type' => 'orders',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.show', ['amazon', $batch]))
+            ->assertNotFound();
     }
 
     public function test_both_csv_files_are_required(): void

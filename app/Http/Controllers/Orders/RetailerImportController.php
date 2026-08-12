@@ -87,7 +87,7 @@ class RetailerImportController extends Controller
         ProcessImportBatch::dispatch($batch);
 
         return redirect()
-            ->route('imports.show', $batch)
+            ->route('orders.imports.show', [$vendor['normalized_name'], $batch])
             ->with('success', 'Walmart order import queued.');
     }
 
@@ -128,7 +128,7 @@ class RetailerImportController extends Controller
         ProcessImportBatch::dispatch($batch);
 
         return redirect()
-            ->route('imports.show', $batch)
+            ->route('orders.imports.show', [$vendor['normalized_name'], $batch])
             ->with('success', 'Amazon order import queued.');
     }
 

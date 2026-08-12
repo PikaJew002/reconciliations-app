@@ -82,7 +82,53 @@ class BankTransactionImportTest extends TestCase
             return $job->importBatch->is($batch);
         });
 
-        $response->assertRedirect(route('imports.show', $batch));
+        $response->assertRedirect(route('accounts.imports.show', [$account, $batch]));
+    }
+
+    public function test_authenticated_user_can_view_account_import_batch(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create(['name' => 'Checking']);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'original_filename' => 'chase.csv',
+            'metadata' => ['account_id' => (string) $account->id],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.show', [$account, $batch]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Imports/Show')
+                ->where('batch.id', $batch->id)
+                ->where('batch.original_filename', 'chase.csv')
+                ->where('breadcrumbs.0.label', 'Accounts')
+                ->where('breadcrumbs.0.href', route('accounts.index'))
+                ->where('breadcrumbs.1.label', 'Checking')
+                ->where('breadcrumbs.1.href', route('accounts.show', $account))
+                ->where('breadcrumbs.2.label', 'Imports')
+                ->where('breadcrumbs.2.href', route('accounts.imports.index', $account))
+                ->where('breadcrumbs.3.label', 'Import batch')
+                ->missing('breadcrumbs.3.href'));
+    }
+
+    public function test_account_import_batch_show_rejects_batches_for_other_accounts(): void
+    {
+        $user = User::factory()->create();
+        $accountA = Account::factory()->create();
+        $accountB = Account::factory()->create();
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'metadata' => ['account_id' => (string) $accountB->id],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.show', [$accountA, $batch]))
+            ->assertNotFound();
     }
 
     public function test_account_imports_lists_only_batches_for_that_account(): void

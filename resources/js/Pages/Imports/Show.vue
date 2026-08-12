@@ -10,12 +10,8 @@
             type: Object,
             required: true,
         },
-        backHref: {
-            type: String,
-            required: true,
-        },
-        backLabel: {
-            type: String,
+        breadcrumbs: {
+            type: Array,
             required: true,
         },
     });
@@ -59,9 +55,19 @@
     <div class="space-y-6">
         <div>
             <p class="text-sm text-neutral-600">
-                <Link :href="backHref" class="underline">{{ backLabel }}</Link>
-                /
-                Import batch
+                <template
+                    v-for="(crumb, index) in breadcrumbs"
+                    :key="`${crumb.label}-${index}`"
+                >
+                    <span v-if="index > 0"> / </span>
+                    <Link
+                        v-if="crumb.href"
+                        :href="crumb.href"
+                        class="underline"
+                        >{{ crumb.label }}</Link
+                    >
+                    <template v-else>{{ crumb.label }}</template>
+                </template>
             </p>
             <h1 class="mt-2 text-2xl font-semibold">Import batch</h1>
             <p class="text-sm text-neutral-600">

@@ -76,7 +76,7 @@ class AccountImportController extends Controller
         ProcessImportBatch::dispatch($batch);
 
         return redirect()
-            ->route('imports.show', $batch)
+            ->route('accounts.imports.show', [$account, $batch])
             ->with('success', 'Bank transaction import queued.');
     }
 }

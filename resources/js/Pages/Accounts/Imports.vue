@@ -92,7 +92,10 @@
 
             <ul v-else class="divide-y rounded border">
                 <li v-for="batch in batches" :key="batch.id" class="px-4 py-3">
-                    <Link :href="`/imports/${batch.id}`" class="block">
+                    <Link
+                        :href="`/accounts/${account.id}/imports/${batch.id}`"
+                        class="block"
+                    >
                         <div class="flex items-center justify-between gap-4">
                             <div>
                                 <p class="font-medium">
