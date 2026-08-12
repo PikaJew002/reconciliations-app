@@ -16,15 +16,17 @@ use Inertia\Response;
 
 class ReconciliationController extends Controller
 {
-    public function index(Request $request, ReconciliationReviewService $review): RedirectResponse
+    public function unmatchedTransactions(Request $request, ReconciliationReviewService $review): Response
     {
-        $summary = $review->summaryForUser($request->user()->id);
+        $userId = $request->user()->id;
 
-        if (($summary['needs_review'] ?? 0) > 0) {
-            return redirect()->route('reconciliation.needs-review');
-        }
-
-        return redirect()->route('reconciliation.matched');
+        return Inertia::render('Reconciliation/UnmatchedTransactions', [
+            'summary' => $review->summaryForUser($userId),
+            ...$review->unmatchedTransactionsForUser($userId),
+            'categories' => $this->categoriesPayload($userId),
+            'matchModes' => TransactionCategorizationRule::allMatchModes(),
+            ...$this->sharedRunProps($userId),
+        ]);
     }
 
     public function needsReview(Request $request, ReconciliationReviewService $review): Response
@@ -36,41 +38,6 @@ class ReconciliationController extends Controller
             'summary' => $review->summaryForUser($userId, $needsReview),
             ...$needsReview,
             'categories' => $this->categoriesPayload($userId),
-            ...$this->sharedRunProps($userId),
-        ]);
-    }
-
-    public function matched(Request $request, ReconciliationReviewService $review): Response
-    {
-        $userId = $request->user()->id;
-
-        return Inertia::render('Reconciliation/Matched', [
-            'summary' => $review->summaryForUser($userId),
-            ...$review->matchedForUser($userId),
-            ...$this->sharedRunProps($userId),
-        ]);
-    }
-
-    public function unmatchedOrders(Request $request, ReconciliationReviewService $review): Response
-    {
-        $userId = $request->user()->id;
-
-        return Inertia::render('Reconciliation/UnmatchedOrders', [
-            'summary' => $review->summaryForUser($userId),
-            ...$review->unmatchedOrdersForUser($userId),
-            ...$this->sharedRunProps($userId),
-        ]);
-    }
-
-    public function unmatchedTransactions(Request $request, ReconciliationReviewService $review): Response
-    {
-        $userId = $request->user()->id;
-
-        return Inertia::render('Reconciliation/UnmatchedTransactions', [
-            'summary' => $review->summaryForUser($userId),
-            ...$review->unmatchedTransactionsForUser($userId),
-            'categories' => $this->categoriesPayload($userId),
-            'matchModes' => TransactionCategorizationRule::allMatchModes(),
             ...$this->sharedRunProps($userId),
         ]);
     }
@@ -87,7 +54,7 @@ class ReconciliationController extends Controller
 
         if ($existing) {
             return redirect()
-                ->back(fallback: route('reconciliation.needs-review'))
+                ->back(fallback: route('reconciliation.unmatched-transactions'))
                 ->with('success', 'A reconciliation run is already in progress.');
         }
 
@@ -100,7 +67,7 @@ class ReconciliationController extends Controller
         RunUserReconciliationPipeline::dispatch($run->id);
 
         return redirect()
-            ->back(fallback: route('reconciliation.needs-review'))
+            ->back(fallback: route('reconciliation.unmatched-transactions'))
             ->with('success', 'Reconciliation queued for your imported data.');
     }
 

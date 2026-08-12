@@ -23,43 +23,11 @@ class ReconciliationReviewTest extends TestCase
 
     public function test_guests_are_redirected_from_reconciliation_review(): void
     {
-        $this->get(route('reconciliation.index'))
+        $this->get(route('reconciliation.unmatched-transactions'))
             ->assertRedirect('/login');
     }
 
-    public function test_index_redirects_to_needs_review_when_items_need_review(): void
-    {
-        $user = User::factory()->create();
-        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
-
-        $unbalancedOrder = Order::factory()->create([
-            'user_id' => $user->id,
-            'merchant_id' => $merchant->id,
-            'total' => 199.33,
-            'status' => 'imported',
-        ]);
-
-        OrderComponent::factory()->create([
-            'order_id' => $unbalancedOrder->id,
-            'amount' => 194.33,
-            'order_item_id' => null,
-        ]);
-
-        $this->actingAs($user)
-            ->get(route('reconciliation.index'))
-            ->assertRedirect(route('reconciliation.needs-review'));
-    }
-
-    public function test_index_redirects_to_matched_when_nothing_needs_review(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user)
-            ->get(route('reconciliation.index'))
-            ->assertRedirect(route('reconciliation.matched'));
-    }
-
-    public function test_authenticated_user_sees_summary_unmatched_orders_and_matched_pairs(): void
+    public function test_authenticated_user_sees_summary_and_unmatched_transactions(): void
     {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
@@ -186,14 +154,6 @@ class ReconciliationReviewTest extends TestCase
             );
 
         $this->actingAs($user)
-            ->get(route('reconciliation.unmatched-orders'))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Reconciliation/UnmatchedOrders')
-                ->has('unmatchedOrders', 2)
-            );
-
-        $this->actingAs($user)
             ->get(route('reconciliation.unmatched-transactions'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
@@ -204,17 +164,6 @@ class ReconciliationReviewTest extends TestCase
                 ->where('unmatchedTransactions.0.account_id', $unmatchedTransaction->account_id)
                 ->where('unmatchedTransactions.0.account', $unmatchedTransaction->account->name)
                 ->where('unmatchedTransactions.0.account_default_classification', 'expense')
-            );
-
-        $this->actingAs($user)
-            ->get(route('reconciliation.matched'))
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Reconciliation/Matched')
-                ->has('matchedPairs', 1)
-                ->where('matchedPairs.0.transaction.id', $matchedTransaction->id)
-                ->where('matchedPairs.0.order.id', $reconciledOrder->id)
-                ->where('matchedPairs.0.allocated_amount', 71.98)
             );
     }
 
@@ -231,9 +180,9 @@ class ReconciliationReviewTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->from(route('reconciliation.matched'))
+            ->from(route('reconciliation.unmatched-transactions'))
             ->post(route('reconciliation.run'))
-            ->assertRedirect(route('reconciliation.matched'))
+            ->assertRedirect(route('reconciliation.unmatched-transactions'))
             ->assertSessionHas('success');
 
         $run = ReconciliationRun::query()->where('user_id', $user->id)->sole();
@@ -256,10 +205,10 @@ class ReconciliationReviewTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('reconciliation.matched'))
+            ->get(route('reconciliation.unmatched-transactions'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->component('Reconciliation/Matched')
+                ->component('Reconciliation/UnmatchedTransactions')
                 ->where('activeRun.id', $run->id)
                 ->where('activeRun.status', 'processing')
             );

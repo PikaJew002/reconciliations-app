@@ -51,28 +51,16 @@
 
     let tabs = computed(() => [
         {
-            id: 'needs-review',
-            href: '/reconciliation/needs-review',
-            label: 'Needs review',
-            count: props.summary.needs_review ?? 0,
-        },
-        {
-            id: 'matched',
-            href: '/reconciliation/matched',
-            label: 'Matched pairs',
-            count: props.summary.matched_pairs,
-        },
-        {
-            id: 'unmatched-orders',
-            href: '/reconciliation/unmatched-orders',
-            label: 'Unmatched orders',
-            count: props.summary.unmatched_orders,
-        },
-        {
             id: 'unmatched-transactions',
             href: '/reconciliation/unmatched-transactions',
             label: 'Unmatched transactions',
             count: props.summary.unmatched_transactions,
+        },
+        {
+            id: 'needs-review',
+            href: '/reconciliation/needs-review',
+            label: 'Needs review',
+            count: props.summary.needs_review ?? 0,
         },
     ]);
 
