@@ -17,7 +17,6 @@ class StoreBankTransactionImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'account_id' => ['required', 'uuid', 'exists:accounts,id'],
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:10240'],
         ];
     }

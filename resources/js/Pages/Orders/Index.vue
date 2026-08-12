@@ -100,10 +100,11 @@
                 <li
                     v-for="retailer in retailers"
                     :key="retailer.normalized_name"
+                    class="flex items-stretch"
                 >
                     <Link
                         :href="`/orders/${retailer.normalized_name}`"
-                        class="block px-4 py-3 hover:bg-neutral-50"
+                        class="min-w-0 flex-1 px-4 py-3 hover:bg-neutral-50"
                     >
                         <div class="flex items-start justify-between gap-4">
                             <div>
@@ -126,6 +127,12 @@
                                 </p>
                             </div>
                         </div>
+                    </Link>
+                    <Link
+                        :href="`/orders/${retailer.normalized_name}/imports`"
+                        class="shrink-0 self-center px-4 py-3 text-sm text-neutral-700 underline hover:text-neutral-900"
+                    >
+                        Imports
                     </Link>
                 </li>
             </ul>

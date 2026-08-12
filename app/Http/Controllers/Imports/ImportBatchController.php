@@ -4,36 +4,11 @@ namespace App\Http\Controllers\Imports;
 
 use App\Http\Controllers\Controller;
 use App\Models\ImportBatch;
-use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ImportBatchController extends Controller
 {
-    public function index(Request $request): Response
-    {
-        $this->authorize('viewAny', ImportBatch::class);
-
-        $batches = ImportBatch::query()
-            ->where('user_id', $request->user()->id)
-            ->latest()
-            ->get([
-                'id',
-                'source',
-                'type',
-                'original_filename',
-                'record_count',
-                'status',
-                'error_message',
-                'created_at',
-                'completed_at',
-            ]);
-
-        return Inertia::render('Imports/Index', [
-            'batches' => $batches,
-        ]);
-    }
-
     public function show(ImportBatch $importBatch): Response
     {
         $this->authorize('view', $importBatch);
@@ -52,6 +27,41 @@ class ImportBatchController extends Controller
                 'created_at',
                 'metadata',
             ]),
+            ...$this->backNavigation($importBatch),
         ]);
+    }
+
+    /**
+     * @return array{backHref: string, backLabel: string}
+     */
+    protected function backNavigation(ImportBatch $importBatch): array
+    {
+        if ($importBatch->source === 'bank' && $importBatch->type === 'transactions') {
+            $accountId = $importBatch->metadata['account_id'] ?? null;
+
+            if ($accountId !== null && $accountId !== '') {
+                return [
+                    'backHref' => route('accounts.imports.index', $accountId),
+                    'backLabel' => 'Account imports',
+                ];
+            }
+
+            return [
+                'backHref' => route('accounts.index'),
+                'backLabel' => 'Accounts',
+            ];
+        }
+
+        if (in_array($importBatch->source, ['walmart', 'amazon'], true) && $importBatch->type === 'orders') {
+            return [
+                'backHref' => route('orders.imports.index', $importBatch->source),
+                'backLabel' => ucfirst($importBatch->source).' imports',
+            ];
+        }
+
+        return [
+            'backHref' => route('dashboard'),
+            'backLabel' => 'Home',
+        ];
     }
 }

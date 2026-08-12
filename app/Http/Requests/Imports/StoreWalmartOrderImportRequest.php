@@ -17,7 +17,6 @@ class StoreWalmartOrderImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
             'file' => ['required', 'file', 'extensions:json', 'max:10240'],
         ];
     }

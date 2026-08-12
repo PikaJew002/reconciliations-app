@@ -9,16 +9,31 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class AmazonOrderImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_guests_are_redirected_from_amazon_import_create(): void
+    public function test_guests_are_redirected_from_amazon_imports(): void
     {
-        $this->get(route('imports.amazon-orders.create'))
+        $this->get(route('orders.imports.index', 'amazon'))
             ->assertRedirect('/login');
+    }
+
+    public function test_authenticated_user_can_view_amazon_imports_page(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.index', 'amazon'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Imports')
+                ->where('merchant.normalized_name', 'amazon')
+                ->where('merchant.name', 'Amazon')
+                ->has('batches', 0));
     }
 
     public function test_authenticated_user_can_queue_an_amazon_import(): void
@@ -40,7 +55,7 @@ class AmazonOrderImportTest extends TestCase
             "114-0885735-8288246,1,Carabiner,\$6.97 ,B0B6R34RD4\n",
         );
 
-        $response = $this->actingAs($user)->post(route('imports.amazon-orders.store'), [
+        $response = $this->actingAs($user)->post(route('orders.imports.store', 'amazon'), [
             'summary_file' => $summary,
             'items_file' => $items,
         ]);
@@ -76,7 +91,7 @@ class AmazonOrderImportTest extends TestCase
             "order id,date,total,gift,tax,payments\n",
         );
 
-        $this->actingAs($user)->post(route('imports.amazon-orders.store'), [
+        $this->actingAs($user)->post(route('orders.imports.store', 'amazon'), [
             'summary_file' => $summary,
         ])->assertSessionHasErrors('items_file');
 

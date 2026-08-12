@@ -58,8 +58,7 @@
             <div>
                 <h1 class="text-2xl font-semibold">Accounts</h1>
                 <p class="text-sm text-neutral-600">
-                    Accounts with imported bank activity and their posted-date
-                    coverage.
+                    Bank accounts and their posted-date coverage.
                 </p>
             </div>
             <Link
@@ -109,10 +108,14 @@
         </div>
 
         <ul v-else class="divide-y rounded border">
-            <li v-for="account in accounts" :key="account.id">
+            <li
+                v-for="account in accounts"
+                :key="account.id"
+                class="flex items-stretch"
+            >
                 <Link
                     :href="`/accounts/${account.id}`"
-                    class="block px-4 py-3 hover:bg-neutral-50"
+                    class="min-w-0 flex-1 px-4 py-3 hover:bg-neutral-50"
                 >
                     <div class="flex items-start justify-between gap-4">
                         <div>
@@ -139,6 +142,12 @@
                             </p>
                         </div>
                     </div>
+                </Link>
+                <Link
+                    :href="`/accounts/${account.id}/imports`"
+                    class="shrink-0 self-center px-4 py-3 text-sm text-neutral-700 underline hover:text-neutral-900"
+                >
+                    Imports
                 </Link>
             </li>
         </ul>

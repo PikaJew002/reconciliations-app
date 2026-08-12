@@ -8,7 +8,6 @@
 
     let navItems = [
         { label: 'Home', href: '/' },
-        { label: 'Imports', href: '/imports' },
         { label: 'Accounts', href: '/accounts' },
         { label: 'Categories', href: '/categories' },
         { label: 'Budgets', href: '/budgets' },
@@ -22,10 +21,6 @@
 
         if (href === '/') {
             return url === '/';
-        }
-
-        if (href === '/imports') {
-            return url === '/imports' || url.startsWith('/imports/');
         }
 
         return url === href || url.startsWith(`${href}/`);

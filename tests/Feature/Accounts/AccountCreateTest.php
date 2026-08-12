@@ -74,7 +74,7 @@ class AccountCreateTest extends TestCase
         $this->assertTrue($account->is_active);
 
         $response
-            ->assertRedirect(route('imports.bank-transactions.create'))
+            ->assertRedirect(route('accounts.imports.index', $account))
             ->assertSessionHas('success');
     }
 
@@ -82,35 +82,37 @@ class AccountCreateTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)->post(route('accounts.store'), [
+        $response = $this->actingAs($user)->post(route('accounts.store'), [
             'name' => 'Joint Account 1',
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CHECKING,
             'currency' => 'USD',
-        ])->assertRedirect(route('imports.bank-transactions.create'));
+        ]);
 
         $account = Account::query()->first();
 
         $this->assertNotNull($account);
         $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $account->default_classification);
+        $response->assertRedirect(route('accounts.imports.index', $account));
     }
 
     public function test_authenticated_user_can_create_an_account_with_bill_default(): void
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)->post(route('accounts.store'), [
+        $response = $this->actingAs($user)->post(route('accounts.store'), [
             'name' => 'Joint Account 1',
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_type' => Account::CHECKING,
             'default_classification' => BankTransaction::CLASSIFICATION_BILL,
             'currency' => 'USD',
-        ])->assertRedirect(route('imports.bank-transactions.create'));
+        ]);
 
         $account = Account::query()->first();
 
         $this->assertNotNull($account);
         $this->assertSame(BankTransaction::CLASSIFICATION_BILL, $account->default_classification);
+        $response->assertRedirect(route('accounts.imports.index', $account));
     }
 
     public function test_store_validates_required_fields(): void
@@ -130,19 +132,20 @@ class AccountCreateTest extends TestCase
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)->post(route('accounts.store'), [
+        $response = $this->actingAs($user)->post(route('accounts.store'), [
             'name' => 'Cash Wallet',
             'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
             'account_name' => '',
             'account_type' => Account::CASH,
             'currency' => 'USD',
             'last_four' => '',
-        ])->assertRedirect(route('imports.bank-transactions.create'));
+        ]);
 
         $account = Account::query()->first();
 
         $this->assertNotNull($account);
         $this->assertNull($account->account_name);
         $this->assertNull($account->last_four);
+        $response->assertRedirect(route('accounts.imports.index', $account));
     }
 }

@@ -20,16 +20,35 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class BankTransactionImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_guests_are_redirected_from_bank_import_create(): void
+    public function test_guests_are_redirected_from_account_imports(): void
     {
-        $this->get(route('imports.bank-transactions.create'))
+        $account = Account::factory()->create();
+
+        $this->get(route('accounts.imports.index', $account))
             ->assertRedirect('/login');
+    }
+
+    public function test_authenticated_user_can_view_account_imports_page(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create(['name' => 'Checking']);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.index', $account))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Accounts/Imports')
+                ->where('account.id', $account->id)
+                ->where('account.name', 'Checking')
+                ->has('batches', 0)
+                ->missing('accounts'));
     }
 
     public function test_authenticated_user_can_queue_a_bank_import(): void
@@ -45,8 +64,7 @@ class BankTransactionImportTest extends TestCase
             "Date,Description,Amount\n01/01/2026,WALMART,-12.34\n",
         );
 
-        $response = $this->actingAs($user)->post(route('imports.bank-transactions.store'), [
-            'account_id' => $account->id,
+        $response = $this->actingAs($user)->post(route('accounts.imports.store', $account), [
             'file' => $file,
         ]);
 
@@ -57,7 +75,7 @@ class BankTransactionImportTest extends TestCase
         $this->assertSame('bank', $batch->source);
         $this->assertSame('transactions', $batch->type);
         $this->assertSame('pending', $batch->status);
-        $this->assertSame($account->id, $batch->metadata['account_id']);
+        $this->assertSame((string) $account->id, $batch->metadata['account_id']);
         Storage::disk('local')->assertExists($batch->storage_path);
 
         Queue::assertPushed(ProcessImportBatch::class, function (ProcessImportBatch $job) use ($batch) {
@@ -65,6 +83,38 @@ class BankTransactionImportTest extends TestCase
         });
 
         $response->assertRedirect(route('imports.show', $batch));
+    }
+
+    public function test_account_imports_lists_only_batches_for_that_account(): void
+    {
+        $user = User::factory()->create();
+        $accountA = Account::factory()->create(['name' => 'Account A']);
+        $accountB = Account::factory()->create(['name' => 'Account B']);
+
+        $batchA = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'original_filename' => 'a.csv',
+            'metadata' => ['account_id' => (string) $accountA->id],
+        ]);
+
+        ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'original_filename' => 'b.csv',
+            'metadata' => ['account_id' => (string) $accountB->id],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.index', $accountA))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Accounts/Imports')
+                ->has('batches', 1)
+                ->where('batches.0.id', $batchA->id)
+                ->where('batches.0.original_filename', 'a.csv'));
     }
 
     public function test_bank_import_chains_transfer_pairing_and_income_classification(): void

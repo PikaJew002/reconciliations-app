@@ -194,9 +194,11 @@
     <div class="space-y-6">
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
-                <Link href="/accounts" class="text-sm underline"
-                    >Back to accounts</Link
-                >
+                <p class="text-sm text-neutral-600">
+                    <Link href="/accounts" class="underline">Accounts</Link>
+                    /
+                    {{ account.name }}
+                </p>
                 <h1 class="mt-2 text-2xl font-semibold">{{ account.name }}</h1>
                 <p class="text-sm text-neutral-600">
                     {{ account.institution_name }}
@@ -206,12 +208,20 @@
                     >
                 </p>
             </div>
-            <Link
-                :href="`/accounts/${account.id}/edit`"
-                class="rounded border px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
-            >
-                Edit account
-            </Link>
+            <div class="flex flex-wrap gap-2">
+                <Link
+                    :href="`/accounts/${account.id}/imports`"
+                    class="rounded border px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                >
+                    Imports
+                </Link>
+                <Link
+                    :href="`/accounts/${account.id}/edit`"
+                    class="rounded border px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                >
+                    Edit account
+                </Link>
+            </div>
         </div>
 
         <div class="rounded border px-4 py-3 text-sm">
@@ -230,14 +240,6 @@
                 Coverage ends near today. Import newer bank history if recent
                 multi-transaction matches are being skipped.
             </p>
-            <p class="mt-2">
-                <Link
-                    href="/imports/bank-transactions/create"
-                    class="underline"
-                >
-                    Import more bank transactions
-                </Link>
-            </p>
         </div>
 
         <form class="flex flex-wrap gap-2" @submit.prevent="submitSearch">
@@ -253,7 +255,10 @@
         </form>
 
         <div v-if="transactions.length === 0" class="text-sm text-neutral-600">
-            No transactions match this search.
+            <template v-if="filters.q">
+                No transactions match this search.
+            </template>
+            <template v-else> No transactions imported yet. </template>
         </div>
 
         <ul v-else class="divide-y rounded border text-sm">

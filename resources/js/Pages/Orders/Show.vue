@@ -71,16 +71,28 @@
 <template>
     <div class="space-y-6">
         <div>
-            <p class="text-sm text-neutral-600">
-                <Link href="/orders" class="underline">Orders</Link>
-                /
-                {{ merchant.name }}
-            </p>
-            <h1 class="text-2xl font-semibold">{{ merchant.name }} orders</h1>
-            <p class="text-sm text-neutral-600">
-                {{ merchant.name }} orders and how their dates sit against bank
-                import coverage.
-            </p>
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <p class="text-sm text-neutral-600">
+                        <Link href="/orders" class="underline">Orders</Link>
+                        /
+                        {{ merchant.name }}
+                    </p>
+                    <h1 class="text-2xl font-semibold">
+                        {{ merchant.name }} orders
+                    </h1>
+                    <p class="text-sm text-neutral-600">
+                        {{ merchant.name }} orders and how their dates sit
+                        against bank import coverage.
+                    </p>
+                </div>
+                <Link
+                    :href="`/orders/${merchant.normalized_name}/imports`"
+                    class="rounded border px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                >
+                    Imports
+                </Link>
+            </div>
         </div>
 
         <div class="grid gap-3 sm:grid-cols-2">
@@ -110,7 +122,7 @@
         >
             Some orders in this range sit within 3 days of the bank import edge,
             so multi-transaction matching may skip them.
-            <Link href="/imports/bank-transactions/create" class="underline">
+            <Link href="/accounts" class="underline">
                 Import more bank history
             </Link>
         </p>

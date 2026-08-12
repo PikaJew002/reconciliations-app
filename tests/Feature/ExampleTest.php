@@ -11,7 +11,7 @@ class ExampleTest extends TestCase
         $this->get('/')
             ->assertRedirect('/login');
 
-        $this->get('/imports')
+        $this->get('/accounts')
             ->assertRedirect('/login');
     }
 }

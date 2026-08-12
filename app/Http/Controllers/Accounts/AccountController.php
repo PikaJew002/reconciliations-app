@@ -13,7 +13,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class AccountController extends Controller
 {
@@ -52,7 +51,7 @@ class AccountController extends Controller
         ]);
 
         return redirect()
-            ->route('imports.bank-transactions.create')
+            ->route('accounts.imports.index', $account)
             ->with('success', "Account \"{$account->name}\" created. Import transactions to start using it.");
     }
 
@@ -63,10 +62,6 @@ class AccountController extends Controller
             $account,
             $request->string('q')->toString() ?: null,
         );
-
-        if ($data === null) {
-            throw new NotFoundHttpException();
-        }
 
         return Inertia::render('Accounts/Show', $data);
     }

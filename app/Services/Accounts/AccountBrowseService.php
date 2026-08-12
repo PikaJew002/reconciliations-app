@@ -34,20 +34,7 @@ class AccountBrowseService
             ->get()
             ->keyBy('account_id');
 
-        $accountIds = $coverageByAccount->keys()->all();
-
-        if ($accountIds === []) {
-            return [
-                'accounts' => [],
-                'bankCoverage' => $this->bankCoverage($userId),
-                'filters' => [
-                    'q' => $query,
-                ],
-            ];
-        }
-
         $accountsQuery = Account::query()
-            ->whereIn('id', $accountIds)
             ->orderBy('name')
             ->orderBy('id');
 
@@ -97,19 +84,10 @@ class AccountBrowseService
      *     transactions: list<array<string, mixed>>,
      *     transactionsTruncated: bool,
      *     filters: array{q: string}
-     * }|null
+     * }
      */
-    public function show(int $userId, Account $account, ?string $q = null): ?array
+    public function show(int $userId, Account $account, ?string $q = null): array
     {
-        $hasActivity = BankTransaction::query()
-            ->where('user_id', $userId)
-            ->where('account_id', $account->id)
-            ->exists();
-
-        if (! $hasActivity) {
-            return null;
-        }
-
         $q = trim((string) $q);
 
         $coverage = BankTransaction::query()

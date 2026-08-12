@@ -1,6 +1,6 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { router } from '@inertiajs/vue3';
+    import { Link, router } from '@inertiajs/vue3';
     import { computed, onMounted, onUnmounted } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -8,6 +8,14 @@
     let props = defineProps({
         batch: {
             type: Object,
+            required: true,
+        },
+        backHref: {
+            type: String,
+            required: true,
+        },
+        backLabel: {
+            type: String,
             required: true,
         },
     });
@@ -50,7 +58,12 @@
 <template>
     <div class="space-y-6">
         <div>
-            <h1 class="text-2xl font-semibold">Import batch</h1>
+            <p class="text-sm text-neutral-600">
+                <Link :href="backHref" class="underline">{{ backLabel }}</Link>
+                /
+                Import batch
+            </p>
+            <h1 class="mt-2 text-2xl font-semibold">Import batch</h1>
             <p class="text-sm text-neutral-600">
                 {{ batch.original_filename }}
             </p>

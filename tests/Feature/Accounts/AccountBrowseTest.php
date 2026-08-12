@@ -27,7 +27,7 @@ class AccountBrowseTest extends TestCase
             ->assertRedirect('/login');
     }
 
-    public function test_index_shows_only_accounts_with_user_transactions_and_coverage(): void
+    public function test_index_shows_all_accounts_including_empty_with_coverage(): void
     {
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
@@ -79,16 +79,18 @@ class AccountBrowseTest extends TestCase
                 ->component('Accounts/Index')
                 ->where('bankCoverage.min', '2026-06-01')
                 ->where('bankCoverage.max', '2026-08-06')
-                ->has('accounts', 1)
+                ->has('accounts', 3)
                 ->where('accounts.0.id', $userAccount->id)
                 ->where('accounts.0.name', 'Capital One Card')
                 ->where('accounts.0.transaction_count', 2)
                 ->where('accounts.0.min_posted_at', '2026-06-01')
                 ->where('accounts.0.max_posted_at', '2026-08-06')
                 ->where('accounts.0.coverage_span_days', 66)
+                ->where('accounts.1.id', $otherAccount->id)
+                ->where('accounts.1.transaction_count', 0)
+                ->where('accounts.2.id', $unusedAccount->id)
+                ->where('accounts.2.transaction_count', 0)
                 ->where('filters.q', ''));
-
-        $this->assertDatabaseHas('accounts', ['id' => $unusedAccount->id]);
     }
 
     public function test_index_search_filters_accounts(): void
@@ -131,14 +133,22 @@ class AccountBrowseTest extends TestCase
                 ->where('filters.q', 'Capital'));
     }
 
-    public function test_show_returns_404_when_user_has_no_activity_on_account(): void
+    public function test_show_allows_accounts_with_no_transactions(): void
     {
         $user = User::factory()->create();
-        $account = Account::factory()->create(['is_active' => true]);
+        $account = Account::factory()->create([
+            'name' => 'Empty Account',
+            'is_active' => true,
+        ]);
 
         $this->actingAs($user)
             ->get(route('accounts.show', $account))
-            ->assertNotFound();
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Accounts/Show')
+                ->where('account.id', $account->id)
+                ->where('account.transaction_count', 0)
+                ->has('transactions', 0));
     }
 
     public function test_show_lists_user_transactions_and_coverage(): void

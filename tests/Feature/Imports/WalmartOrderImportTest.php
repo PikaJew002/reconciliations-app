@@ -9,16 +9,31 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class WalmartOrderImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_guests_are_redirected_from_walmart_import_create(): void
+    public function test_guests_are_redirected_from_walmart_imports(): void
     {
-        $this->get(route('imports.walmart-orders.create'))
+        $this->get(route('orders.imports.index', 'walmart'))
             ->assertRedirect('/login');
+    }
+
+    public function test_authenticated_user_can_view_walmart_imports_page(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.index', 'walmart'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Imports')
+                ->where('merchant.normalized_name', 'walmart')
+                ->where('merchant.name', 'Walmart')
+                ->has('batches', 0));
     }
 
     public function test_authenticated_user_can_queue_a_walmart_import(): void
@@ -45,7 +60,7 @@ class WalmartOrderImportTest extends TestCase
             ]),
         );
 
-        $response = $this->actingAs($user)->post(route('imports.walmart-orders.store'), [
+        $response = $this->actingAs($user)->post(route('orders.imports.store', 'walmart'), [
             'file' => $file,
         ]);
 
@@ -64,5 +79,33 @@ class WalmartOrderImportTest extends TestCase
         });
 
         $response->assertRedirect(route('imports.show', $batch));
+    }
+
+    public function test_walmart_imports_lists_only_walmart_batches(): void
+    {
+        $user = User::factory()->create();
+
+        $walmartBatch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'walmart',
+            'type' => 'orders',
+            'original_filename' => 'walmart.json',
+        ]);
+
+        ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'original_filename' => 'amazon.csv',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.index', 'walmart'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Imports')
+                ->has('batches', 1)
+                ->where('batches.0.id', $walmartBatch->id)
+                ->where('batches.0.original_filename', 'walmart.json'));
     }
 }

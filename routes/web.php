@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Accounts\AccountController;
+use App\Http\Controllers\Accounts\AccountImportController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Budgets\BudgetController;
@@ -8,14 +9,12 @@ use App\Http\Controllers\Budgets\BudgetYearController;
 use App\Http\Controllers\Categories\CategorizationRuleController;
 use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\Imports\AmazonOrderImportController;
-use App\Http\Controllers\Imports\BankTransactionImportController;
 use App\Http\Controllers\Imports\ImportBatchController;
-use App\Http\Controllers\Imports\WalmartOrderImportController;
 use App\Http\Controllers\Merchants\MerchantController;
 use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
+use App\Http\Controllers\Orders\RetailerImportController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
@@ -42,13 +41,15 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-    Route::get('/imports', [ImportBatchController::class, 'index'])->name('imports.index');
-
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
     Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');
     Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
     Route::get('/accounts/{account}/edit', [AccountController::class, 'edit'])->name('accounts.edit');
     Route::put('/accounts/{account}', [AccountController::class, 'update'])->name('accounts.update');
+    Route::get('/accounts/{account}/imports', [AccountImportController::class, 'index'])
+        ->name('accounts.imports.index');
+    Route::post('/accounts/{account}/imports', [AccountImportController::class, 'store'])
+        ->name('accounts.imports.store');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
 
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
@@ -94,6 +95,12 @@ Route::middleware('auth')->group(function () {
         ->name('orders.items.categorize-as-product');
     Route::delete('/orders/items/{item}', [OrderItemCategorizationController::class, 'destroy'])
         ->name('orders.items.destroy');
+    Route::get('/orders/{merchant}/imports', [RetailerImportController::class, 'index'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->name('orders.imports.index');
+    Route::post('/orders/{merchant}/imports', [RetailerImportController::class, 'store'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->name('orders.imports.store');
     Route::get('/orders/{merchant}', [OrderController::class, 'show'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.show');
@@ -143,21 +150,6 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.reimbursement-groups.reopen');
     Route::delete('/reconciliation/reimbursement-groups/{reimbursementGroup}', [ReimbursementGroupController::class, 'destroy'])
         ->name('reconciliation.reimbursement-groups.destroy');
-
-    Route::get('/imports/bank-transactions/create', [BankTransactionImportController::class, 'create'])
-        ->name('imports.bank-transactions.create');
-    Route::post('/imports/bank-transactions', [BankTransactionImportController::class, 'store'])
-        ->name('imports.bank-transactions.store');
-
-    Route::get('/imports/walmart-orders/create', [WalmartOrderImportController::class, 'create'])
-        ->name('imports.walmart-orders.create');
-    Route::post('/imports/walmart-orders', [WalmartOrderImportController::class, 'store'])
-        ->name('imports.walmart-orders.store');
-
-    Route::get('/imports/amazon-orders/create', [AmazonOrderImportController::class, 'create'])
-        ->name('imports.amazon-orders.create');
-    Route::post('/imports/amazon-orders', [AmazonOrderImportController::class, 'store'])
-        ->name('imports.amazon-orders.store');
 
     Route::get('/imports/{importBatch}', [ImportBatchController::class, 'show'])->name('imports.show');
 });
