@@ -184,27 +184,57 @@
         }, 0);
     };
 
+    let sortCategoriesByAmount = (categories) => {
+        return [...categories].sort((a, b) => {
+            let aHasAmount =
+                a.monthly_budget !== null && a.monthly_budget !== undefined;
+            let bHasAmount =
+                b.monthly_budget !== null && b.monthly_budget !== undefined;
+
+            if (aHasAmount && bHasAmount) {
+                let amountDiff =
+                    Number(b.monthly_budget) - Number(a.monthly_budget);
+
+                if (amountDiff !== 0) {
+                    return amountDiff;
+                }
+
+                return a.name.localeCompare(b.name);
+            }
+
+            if (aHasAmount) {
+                return -1;
+            }
+
+            if (bHasAmount) {
+                return 1;
+            }
+
+            return a.name.localeCompare(b.name);
+        });
+    };
+
     let budgetSections = computed(() => [
         {
             key: 'income',
             title: 'Income',
             empty: 'No income categories yet.',
             createHref: '/categories/create?kind=income',
-            categories: props.sections.income ?? [],
+            categories: sortCategoriesByAmount(props.sections.income ?? []),
         },
         {
             key: 'bills',
             title: 'Bills',
             empty: 'No bill categories yet.',
             createHref: '/categories/create?kind=bill',
-            categories: props.sections.bills ?? [],
+            categories: sortCategoriesByAmount(props.sections.bills ?? []),
         },
         {
             key: 'expenses',
             title: 'Expenses',
             empty: 'No expense categories yet.',
             createHref: '/categories/create?kind=expense',
-            categories: props.sections.expenses ?? [],
+            categories: sortCategoriesByAmount(props.sections.expenses ?? []),
         },
     ]);
 

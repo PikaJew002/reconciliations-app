@@ -115,6 +115,11 @@ class BankTransaction extends Model
         ], true) && $this->status === 'ignored';
     }
 
+    public function plannedOccurrence()
+    {
+        return $this->hasOne(PlannedOccurrence::class);
+    }
+
     public function reimbursementGroupLeg()
     {
         return $this->hasOne(ReimbursementGroupTransaction::class);

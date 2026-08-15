@@ -11,6 +11,7 @@
         { label: 'Accounts', href: '/accounts' },
         { label: 'Categories', href: '/categories' },
         { label: 'Budgets', href: '/budgets' },
+        { label: 'Plans', href: '/plans' },
         { label: 'Rules', href: '/rules' },
         { label: 'Orders', href: '/orders' },
         {

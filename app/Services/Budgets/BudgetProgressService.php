@@ -28,6 +28,8 @@ class BudgetProgressService
      *     period: array{from: string, to: string, label: string, months_elapsed: int},
      *     summary: array{
      *         income: float,
+     *         income_received: float,
+     *         income_planned: float,
      *         bills: float,
      *         leftover_income: float,
      *         expenses: float,
@@ -102,7 +104,8 @@ class BudgetProgressService
             2,
         );
 
-        $income = $this->categorySpendQuery->incomeTotalForUser($userId, $from, $to);
+        $incomeBreakdown = $this->categorySpendQuery->incomeBreakdownForUser($userId, $from, $to);
+        $income = $incomeBreakdown['total'];
         $leftoverIncome = round($income - $billsAmount, 2);
 
         /** @var Collection<int, BudgetCategoryLimit> $limits */
@@ -164,6 +167,8 @@ class BudgetProgressService
             ],
             'summary' => [
                 'income' => $income,
+                'income_received' => $incomeBreakdown['received'],
+                'income_planned' => $incomeBreakdown['planned'],
                 'bills' => $billsAmount,
                 'leftover_income' => $leftoverIncome,
                 'expenses' => $totalExpenses,

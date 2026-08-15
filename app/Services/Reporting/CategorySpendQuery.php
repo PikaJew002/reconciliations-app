@@ -5,11 +5,13 @@ namespace App\Services\Reporting;
 use App\Models\BankTransaction;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Models\PlannedOccurrence;
 use App\Models\ReimbursementGroup;
 use App\Models\ReimbursementGroupTransaction;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 /**
  * Category spend contract for reports.
@@ -21,11 +23,14 @@ use Illuminate\Database\Eloquent\Builder;
  * - Transactions in any reimbursement group are excluded from those raw totals.
  * - Closed under-reimbursed groups contribute their positive net to remainder_category_id.
  * - Ungrouped categorized income credits count toward their category_id.
+ * - Income linked to a planned occurrence is attributed by the occurrence expected_date, not posted_at.
+ * - Still-planned income occurrences count expected_amount toward their category_id.
  * - Ungrouped income with no category_id, plus closed over-reimbursed |net|, counts as uncategorized income.
  * - Open positive nets are exposed separately as awaiting reimbursement (not category spend).
  *
- * Optional $from / $to use a half-open window [from, to) on bank posted_at, order ordered_at,
- * and reimbursement group closed_at. Null bounds mean unbounded on that side (all-time when both null).
+ * Optional $from / $to use a half-open window [from, to) on unmatched bank posted_at, occurrence
+ * expected_date, order ordered_at, and reimbursement group closed_at. Null bounds mean unbounded
+ * on that side (all-time when both null).
  */
 class CategorySpendQuery
 {
@@ -293,7 +298,8 @@ class CategorySpendQuery
     }
 
     /**
-     * Ungrouped income credits with a category_id.
+     * Ungrouped income credits with a category_id, plus planned/resolved
+     * occurrence amounts attributed by expected_date.
      *
      * @return array<int, float> category_id => income amount (positive)
      */
@@ -302,8 +308,7 @@ class CategorySpendQuery
         ?CarbonInterface $from = null,
         ?CarbonInterface $to = null,
     ): array {
-        $groupedTransactionIds = $this->groupedTransactionIds($userId);
-
+        $excludedTransactionIds = $this->incomeExcludedTransactionIds($userId);
         $totals = [];
 
         $income = BankTransaction::query()
@@ -312,16 +317,35 @@ class CategorySpendQuery
             ->where('amount', '>', 0)
             ->whereNotNull('category_id')
             ->when(
-                $groupedTransactionIds !== [],
-                fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
+                $excludedTransactionIds !== [],
+                fn ($query) => $query->whereNotIn('id', $excludedTransactionIds),
             )
             ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
             ->get(['category_id', 'amount']);
 
         foreach ($income as $transaction) {
-            $categoryId = (int) $transaction->category_id;
-            $amount = (float) $transaction->amount;
-            $totals[$categoryId] = round(($totals[$categoryId] ?? 0) + $amount, 2);
+            $this->addIncomeTotal(
+                $totals,
+                (int) $transaction->category_id,
+                (float) $transaction->amount,
+            );
+        }
+
+        foreach ($this->incomeOccurrencesForUser($userId, $from, $to) as $occurrence) {
+            if ($occurrence->isResolved()) {
+                $transaction = $occurrence->bankTransaction;
+                $amount = $transaction !== null ? (float) $transaction->amount : 0.0;
+                $categoryId = $transaction?->category_id ?? $occurrence->category_id;
+            } else {
+                $amount = (float) $occurrence->expected_amount;
+                $categoryId = $occurrence->category_id;
+            }
+
+            if ($categoryId === null || $amount <= 0) {
+                continue;
+            }
+
+            $this->addIncomeTotal($totals, (int) $categoryId, $amount);
         }
 
         return $totals;
@@ -336,7 +360,7 @@ class CategorySpendQuery
         ?CarbonInterface $from = null,
         ?CarbonInterface $to = null,
     ): float {
-        $groupedTransactionIds = $this->groupedTransactionIds($userId);
+        $excludedTransactionIds = $this->incomeExcludedTransactionIds($userId);
 
         $total = (float) BankTransaction::query()
             ->where('user_id', $userId)
@@ -344,11 +368,31 @@ class CategorySpendQuery
             ->where('amount', '>', 0)
             ->whereNull('category_id')
             ->when(
-                $groupedTransactionIds !== [],
-                fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
+                $excludedTransactionIds !== [],
+                fn ($query) => $query->whereNotIn('id', $excludedTransactionIds),
             )
             ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
             ->sum('amount');
+
+        foreach ($this->incomeOccurrencesForUser($userId, $from, $to) as $occurrence) {
+            if ($occurrence->isResolved()) {
+                $transaction = $occurrence->bankTransaction;
+
+                if ($transaction === null || $transaction->category_id !== null) {
+                    continue;
+                }
+
+                $total += (float) $transaction->amount;
+
+                continue;
+            }
+
+            if ($occurrence->category_id !== null) {
+                continue;
+            }
+
+            $total += (float) $occurrence->expected_amount;
+        }
 
         $closedGroups = ReimbursementGroup::query()
             ->where('user_id', $userId)
@@ -373,7 +417,7 @@ class CategorySpendQuery
 
     /**
      * Credits classified as income that are not in a reimbursement group,
-     * plus closed over-reimbursement surplus booked as uncategorized income.
+     * plus still-planned occurrence amounts and closed over-reimbursement surplus.
      */
     public function incomeTotalForUser(
         int $userId,
@@ -383,6 +427,32 @@ class CategorySpendQuery
         $categorized = array_sum($this->incomeCategoryTotalsForUser($userId, $from, $to));
 
         return round($categorized + $this->uncategorizedIncomeForUser($userId, $from, $to), 2);
+    }
+
+    /**
+     * @return array{received: float, planned: float, total: float}
+     */
+    public function incomeBreakdownForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): array {
+        $total = $this->incomeTotalForUser($userId, $from, $to);
+        $planned = 0.0;
+
+        foreach ($this->incomeOccurrencesForUser($userId, $from, $to) as $occurrence) {
+            if ($occurrence->isPlanned()) {
+                $planned = round($planned + (float) $occurrence->expected_amount, 2);
+            }
+        }
+
+        $received = round($total - $planned, 2);
+
+        return [
+            'received' => $received,
+            'planned' => $planned,
+            'total' => $total,
+        ];
     }
 
     protected function applyPostedAtRange(
@@ -434,6 +504,81 @@ class CategorySpendQuery
 
         if ($to !== null) {
             $query->where('closed_at', '<', $to);
+        }
+    }
+
+    /**
+     * @param  array<int, float>  $totals
+     */
+    protected function addIncomeTotal(array &$totals, int $categoryId, float $amount): void
+    {
+        $totals[$categoryId] = round(($totals[$categoryId] ?? 0) + $amount, 2);
+    }
+
+    /**
+     * @return Collection<int, PlannedOccurrence>
+     */
+    protected function incomeOccurrencesForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ) {
+        return PlannedOccurrence::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->where(function ($query) {
+                $query->where('status', PlannedOccurrence::STATUS_RESOLVED)
+                    ->orWhere(function ($plannedQuery) {
+                        $plannedQuery->where('status', PlannedOccurrence::STATUS_PLANNED)
+                            ->where(function ($templateQuery) {
+                                $templateQuery->whereNull('template_id')
+                                    ->orWhereHas(
+                                        'template',
+                                        fn ($active) => $active->where('is_active', true),
+                                    );
+                            });
+                    });
+            })
+            ->tap(fn (Builder $query) => $this->applyExpectedDateRange($query, $from, $to))
+            ->with('bankTransaction')
+            ->get();
+    }
+
+    /**
+     * @return list<int>
+     */
+    protected function incomeExcludedTransactionIds(int $userId): array
+    {
+        return array_values(array_unique([
+            ...$this->groupedTransactionIds($userId),
+            ...$this->plannedOccurrenceTransactionIds($userId),
+        ]));
+    }
+
+    /**
+     * @return list<int>
+     */
+    protected function plannedOccurrenceTransactionIds(int $userId): array
+    {
+        return PlannedOccurrence::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('bank_transaction_id')
+            ->pluck('bank_transaction_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    protected function applyExpectedDateRange(
+        Builder $query,
+        ?CarbonInterface $from,
+        ?CarbonInterface $to,
+    ): void {
+        if ($from !== null) {
+            $query->where('expected_date', '>=', $from);
+        }
+
+        if ($to !== null) {
+            $query->where('expected_date', '<', $to);
         }
     }
 

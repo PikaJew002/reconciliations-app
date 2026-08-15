@@ -15,6 +15,8 @@ use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
+use App\Http\Controllers\Plans\PlannedOccurrenceController;
+use App\Http\Controllers\Plans\PlannedTemplateController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
@@ -67,6 +69,13 @@ Route::middleware('auth')->group(function () {
     Route::patch('/budgets/years/{budgetYear}', [BudgetYearController::class, 'update'])->name('budgets.years.update');
     Route::post('/budgets/years/{budgetYear}/current', [BudgetYearController::class, 'makeCurrent'])
         ->name('budgets.years.current');
+
+    Route::get('/plans', [PlannedTemplateController::class, 'index'])->name('plans.index');
+    Route::post('/plans', [PlannedTemplateController::class, 'store'])->name('plans.store');
+    Route::patch('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'update'])->name('plans.update');
+    Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
+    Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
+        ->name('plans.occurrences.link');
 
     Route::get('/rules', [RuleController::class, 'index'])->name('rules.index');
     Route::delete('/rules/income/description-only', [IncomeClassificationRuleController::class, 'destroyDescriptionOnly'])

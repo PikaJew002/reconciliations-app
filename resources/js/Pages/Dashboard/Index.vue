@@ -296,6 +296,11 @@
                     <p class="text-xl font-semibold tabular-nums">
                         {{ formatMoney(summary.income) }}
                     </p>
+                    <p class="mt-1 text-xs text-neutral-600">
+                        Received {{ formatMoney(summary.income_received) }}
+                        · {{ formatMoney(summary.income_planned) }} still
+                        planned
+                    </p>
                 </div>
                 <div>
                     <p class="text-sm text-neutral-600">Bills</p>
@@ -386,7 +391,9 @@
 
             <p class="text-sm text-neutral-600">
                 Set monthly budgets on
-                <Link href="/budgets" class="underline">Budgets</Link>.
+                <Link href="/budgets" class="underline">Budgets</Link>. Plan
+                paychecks on
+                <Link href="/plans" class="underline">Plans</Link>.
             </p>
         </div>
 
