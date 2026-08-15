@@ -8,8 +8,8 @@ use App\Models\Merchant;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class StorePlannedTemplateRequest extends FormRequest
 {
@@ -65,6 +65,9 @@ class StorePlannedTemplateRequest extends FormRequest
             'lookback_days' => ['required', 'integer', 'min:0', 'max:31'],
             'lookforward_days' => ['required', 'integer', 'min:0', 'max:31'],
             'is_active' => ['sometimes', 'boolean'],
+            'bills' => ['nullable', 'array'],
+            'bills.*.category_id' => ['required', 'integer', 'exists:categories,id'],
+            'bills.*.expected_amount' => ['required', 'numeric', 'min:0'],
         ];
     }
 
@@ -118,6 +121,22 @@ class StorePlannedTemplateRequest extends FormRequest
             if ($needsAmount && ! $this->filled('amount')) {
                 $validator->errors()->add('amount', 'An exact amount is required for this match mode.');
             }
+
+            foreach ($this->input('bills', []) as $index => $bill) {
+                $billCategoryId = (int) ($bill['category_id'] ?? 0);
+                $billCategory = Category::query()->find($billCategoryId);
+
+                if (
+                    $billCategory === null
+                    || $billCategory->user_id !== $userId
+                    || $billCategory->kind !== Category::KIND_BILL
+                ) {
+                    $validator->errors()->add(
+                        "bills.{$index}.category_id",
+                        'Choose a bill category you own.',
+                    );
+                }
+            }
         });
     }
 
@@ -142,5 +161,19 @@ class StorePlannedTemplateRequest extends FormRequest
             'lookforward_days' => $validated['lookforward_days'],
             'is_active' => $validated['is_active'] ?? true,
         ];
+    }
+
+    /**
+     * @return list<array{category_id: int, expected_amount: float}>
+     */
+    public function bills(): array
+    {
+        return collect($this->validated('bills') ?? [])
+            ->map(fn (array $bill): array => [
+                'category_id' => (int) $bill['category_id'],
+                'expected_amount' => $bill['expected_amount'],
+            ])
+            ->values()
+            ->all();
     }
 }

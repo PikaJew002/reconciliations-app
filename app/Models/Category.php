@@ -91,6 +91,16 @@ class Category extends Model
         return $this->hasMany(PlannedTemplate::class);
     }
 
+    public function plannedTemplateBills(): HasMany
+    {
+        return $this->hasMany(PlannedTemplateBill::class);
+    }
+
+    public function plannedOccurrenceBills(): HasMany
+    {
+        return $this->hasMany(PlannedOccurrenceBill::class);
+    }
+
     public function isBill(): bool
     {
         return $this->kind === self::KIND_BILL;
@@ -112,7 +122,9 @@ class Category extends Model
             || $this->orderComponents()->exists()
             || $this->bankTransactions()->exists()
             || $this->categorizationRules()->exists()
-            || $this->plannedTemplates()->exists();
+            || $this->plannedTemplates()->exists()
+            || $this->plannedTemplateBills()->exists()
+            || $this->plannedOccurrenceBills()->exists();
     }
 
     public static function uniqueSlugFor(int $userId, string $kind, string $name, ?int $ignoreId = null): string

@@ -40,7 +40,7 @@ class PlannedTemplateController extends Controller
 
         $templates = PlannedTemplate::query()
             ->where('user_id', $userId)
-            ->with(['category:id,name,kind', 'merchant:id,name'])
+            ->with(['category:id,name,kind', 'merchant:id,name', 'bills.category:id,name'])
             ->orderBy('expected_day')
             ->orderBy('name')
             ->get()
@@ -61,28 +61,12 @@ class PlannedTemplateController extends Controller
                 'template:id,name',
                 'category:id,name',
                 'bankTransaction:id,posted_at,amount,description',
+                'bills.category:id,name',
             ])
             ->orderBy('expected_date')
             ->orderBy('id')
             ->get()
-            ->map(fn (PlannedOccurrence $occurrence) => [
-                'id' => $occurrence->id,
-                'template_id' => $occurrence->template_id,
-                'template_name' => $occurrence->template?->name,
-                'category' => $occurrence->category ? [
-                    'id' => $occurrence->category->id,
-                    'name' => $occurrence->category->name,
-                ] : null,
-                'expected_date' => $occurrence->expected_date?->toDateString(),
-                'expected_amount' => (float) $occurrence->expected_amount,
-                'status' => $occurrence->status,
-                'bank_transaction' => $occurrence->bankTransaction ? [
-                    'id' => $occurrence->bankTransaction->id,
-                    'posted_at' => $occurrence->bankTransaction->posted_at?->toDateString(),
-                    'amount' => (float) $occurrence->bankTransaction->amount,
-                    'description' => $occurrence->bankTransaction->description,
-                ] : null,
-            ]);
+            ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
 
         $linkCandidates = BankTransaction::query()
             ->where('user_id', $userId)
@@ -116,6 +100,16 @@ class PlannedTemplateController extends Controller
                 'name' => $category->name,
             ]);
 
+        $billCategories = Category::query()
+            ->where('user_id', $userId)
+            ->where('kind', Category::KIND_BILL)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Category $category) => [
+                'id' => $category->id,
+                'name' => $category->name,
+            ]);
+
         $merchants = Merchant::query()
             ->where('user_id', $userId)
             ->orderBy('name')
@@ -131,6 +125,8 @@ class PlannedTemplateController extends Controller
             'occurrences' => $occurrences,
             'link_candidates' => $linkCandidates,
             'categories' => $categories,
+            'bill_categories' => $billCategories,
+            'bill_amount_options' => $this->billAmountOptions($userId),
             'merchants' => $merchants,
             'match_modes' => PlannedTemplate::incomeMatchModes(),
         ]);
@@ -145,7 +141,8 @@ class PlannedTemplateController extends Controller
             ...$request->templateAttributes(),
         ]);
 
-        $generator->syncTemplate($template);
+        $generator->syncTemplateBills($template, $request->bills());
+        $generator->syncTemplate($template->fresh());
 
         return redirect()
             ->route('plans.index')
@@ -160,6 +157,11 @@ class PlannedTemplateController extends Controller
         $this->ensureOwned($request, $plannedTemplate);
 
         $plannedTemplate->update($request->templateAttributes());
+
+        if ($request->exists('bills')) {
+            $generator->syncTemplateBills($plannedTemplate, $request->bills());
+        }
+
         $generator->syncTemplate($plannedTemplate->fresh());
 
         return redirect()
@@ -204,7 +206,97 @@ class PlannedTemplateController extends Controller
             'lookback_days' => (int) $template->lookback_days,
             'lookforward_days' => (int) $template->lookforward_days,
             'is_active' => (bool) $template->is_active,
+            'bills' => $template->bills
+                ->map(fn ($bill) => [
+                    'id' => $bill->id,
+                    'category_id' => $bill->category_id,
+                    'category' => $bill->category ? [
+                        'id' => $bill->category->id,
+                        'name' => $bill->category->name,
+                    ] : null,
+                    'expected_amount' => (float) $bill->expected_amount,
+                ])
+                ->values()
+                ->all(),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function occurrencePayload(PlannedOccurrence $occurrence): array
+    {
+        $bills = $occurrence->bills
+            ->map(fn ($bill) => [
+                'id' => $bill->id,
+                'category_id' => $bill->category_id,
+                'category' => $bill->category ? [
+                    'id' => $bill->category->id,
+                    'name' => $bill->category->name,
+                ] : null,
+                'expected_amount' => (float) $bill->expected_amount,
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'id' => $occurrence->id,
+            'template_id' => $occurrence->template_id,
+            'template_name' => $occurrence->template?->name,
+            'category' => $occurrence->category ? [
+                'id' => $occurrence->category->id,
+                'name' => $occurrence->category->name,
+            ] : null,
+            'expected_date' => $occurrence->expected_date?->toDateString(),
+            'expected_amount' => (float) $occurrence->expected_amount,
+            'paycheck_amount' => $occurrence->paycheckAmount(),
+            'bills_total' => $occurrence->assignedBillsTotal(),
+            'leftover' => $occurrence->leftoverForExpenses(),
+            'bills_customized' => (bool) $occurrence->bills_customized,
+            'status' => $occurrence->status,
+            'bills' => $bills,
+            'bank_transaction' => $occurrence->bankTransaction ? [
+                'id' => $occurrence->bankTransaction->id,
+                'posted_at' => $occurrence->bankTransaction->posted_at?->toDateString(),
+                'amount' => (float) $occurrence->bankTransaction->amount,
+                'description' => $occurrence->bankTransaction->description,
+            ] : null,
+        ];
+    }
+
+    /**
+     * @return array<int, list<array{id: int, posted_at: ?string, description: ?string, amount: float}>>
+     */
+    protected function billAmountOptions(int $userId): array
+    {
+        $options = [];
+
+        $transactions = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_BILL)
+            ->whereNotNull('category_id')
+            ->where('amount', '<', 0)
+            ->orderByDesc('posted_at')
+            ->orderByDesc('id')
+            ->limit(300)
+            ->get(['id', 'category_id', 'posted_at', 'amount', 'description']);
+
+        foreach ($transactions as $transaction) {
+            $categoryId = (int) $transaction->category_id;
+
+            if (count($options[$categoryId] ?? []) >= 12) {
+                continue;
+            }
+
+            $options[$categoryId][] = [
+                'id' => $transaction->id,
+                'posted_at' => $transaction->posted_at?->toDateString(),
+                'description' => $transaction->description,
+                'amount' => abs((float) $transaction->amount),
+            ];
+        }
+
+        return $options;
     }
 
     private function ensureOwned(Request $request, PlannedTemplate $plannedTemplate): void

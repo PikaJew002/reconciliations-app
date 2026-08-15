@@ -71,6 +71,11 @@ class PlannedTemplate extends Model
         return $this->hasMany(PlannedOccurrence::class, 'template_id');
     }
 
+    public function bills(): HasMany
+    {
+        return $this->hasMany(PlannedTemplateBill::class);
+    }
+
     /**
      * @return array<string, mixed>
      */
