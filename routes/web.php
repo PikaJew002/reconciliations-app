@@ -76,8 +76,6 @@ Route::middleware('auth')->group(function () {
     Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
     Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
         ->name('plans.occurrences.link');
-    Route::patch('/plans/occurrences/{plannedOccurrence}/bills', [PlannedOccurrenceController::class, 'updateBills'])
-        ->name('plans.occurrences.bills.update');
 
     Route::get('/rules', [RuleController::class, 'index'])->name('rules.index');
     Route::delete('/rules/income/description-only', [IncomeClassificationRuleController::class, 'destroyDescriptionOnly'])

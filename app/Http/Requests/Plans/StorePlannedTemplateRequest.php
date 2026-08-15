@@ -29,6 +29,8 @@ class StorePlannedTemplateRequest extends FormRequest
 
         $matchMode = $this->input('match_mode');
         $merchantId = $this->input('merchant_id');
+        $category = Category::query()->find($this->input('category_id'));
+        $isBill = $category?->kind === Category::KIND_BILL;
 
         if (
             ($matchMode === null || $matchMode === '')
@@ -37,11 +39,21 @@ class StorePlannedTemplateRequest extends FormRequest
             $matchMode = TransactionCategorizationRule::MATCH_MERCHANT;
         }
 
+        if (($matchMode === null || $matchMode === '') && $isBill) {
+            $matchMode = TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT;
+        }
+
+        $amount = $this->filled('amount') ? $this->input('amount') : null;
+
+        if ($isBill && $this->filled('expected_amount')) {
+            $amount = $this->input('expected_amount');
+        }
+
         $this->merge([
             'normalized_pattern' => $pattern,
             'match_mode' => $matchMode,
             'merchant_id' => $merchantId ?: null,
-            'amount' => $this->filled('amount') ? $this->input('amount') : null,
+            'amount' => $amount,
             'lookback_days' => $this->input('lookback_days', 7),
             'lookforward_days' => $this->input('lookforward_days', 3),
             'is_active' => $this->has('is_active') ? $this->boolean('is_active') : true,
@@ -57,7 +69,10 @@ class StorePlannedTemplateRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'category_id' => ['required', 'integer', 'exists:categories,id'],
             'merchant_id' => ['nullable', 'integer', 'exists:merchants,id'],
-            'match_mode' => ['required', Rule::in(PlannedTemplate::incomeMatchModes())],
+            'match_mode' => ['required', Rule::in([
+                ...PlannedTemplate::incomeMatchModes(),
+                ...PlannedTemplate::billMatchModes(),
+            ])],
             'normalized_pattern' => ['nullable', 'string', 'max:255'],
             'amount' => ['nullable', 'numeric', 'min:0'],
             'expected_day' => ['required', 'integer', 'min:1', 'max:31'],
@@ -65,9 +80,6 @@ class StorePlannedTemplateRequest extends FormRequest
             'lookback_days' => ['required', 'integer', 'min:0', 'max:31'],
             'lookforward_days' => ['required', 'integer', 'min:0', 'max:31'],
             'is_active' => ['sometimes', 'boolean'],
-            'bills' => ['nullable', 'array'],
-            'bills.*.category_id' => ['required', 'integer', 'exists:categories,id'],
-            'bills.*.expected_amount' => ['required', 'numeric', 'min:0'],
         ];
     }
 
@@ -82,8 +94,20 @@ class StorePlannedTemplateRequest extends FormRequest
 
             $category = Category::query()->find($this->input('category_id'));
 
-            if ($category === null || $category->user_id !== $userId || $category->kind !== Category::KIND_INCOME) {
-                $validator->errors()->add('category_id', 'Choose an income category you own.');
+            if (
+                $category === null
+                || $category->user_id !== $userId
+                || ! in_array($category->kind, [Category::KIND_INCOME, Category::KIND_BILL], true)
+            ) {
+                $validator->errors()->add('category_id', 'Choose an income or bill category you own.');
+
+                return;
+            }
+
+            $allowedModes = PlannedTemplate::matchModesForKind($category->kind);
+
+            if (! in_array($this->input('match_mode'), $allowedModes, true)) {
+                $validator->errors()->add('match_mode', 'Choose a match mode that works for this plan type.');
             }
 
             $merchantId = $this->input('merchant_id');
@@ -100,6 +124,7 @@ class StorePlannedTemplateRequest extends FormRequest
             $needsPattern = in_array($matchMode, [
                 TransactionCategorizationRule::MATCH_DESCRIPTION,
                 TransactionCategorizationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
+                TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
             ], true);
             $needsMerchant = in_array($matchMode, [
                 TransactionCategorizationRule::MATCH_MERCHANT,
@@ -108,6 +133,8 @@ class StorePlannedTemplateRequest extends FormRequest
             $needsAmount = in_array($matchMode, [
                 TransactionCategorizationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
                 TransactionCategorizationRule::MATCH_AMOUNT_AND_MERCHANT,
+                TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
+                TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
             ], true);
 
             if ($needsPattern && ! $this->filled('normalized_pattern')) {
@@ -121,22 +148,6 @@ class StorePlannedTemplateRequest extends FormRequest
             if ($needsAmount && ! $this->filled('amount')) {
                 $validator->errors()->add('amount', 'An exact amount is required for this match mode.');
             }
-
-            foreach ($this->input('bills', []) as $index => $bill) {
-                $billCategoryId = (int) ($bill['category_id'] ?? 0);
-                $billCategory = Category::query()->find($billCategoryId);
-
-                if (
-                    $billCategory === null
-                    || $billCategory->user_id !== $userId
-                    || $billCategory->kind !== Category::KIND_BILL
-                ) {
-                    $validator->errors()->add(
-                        "bills.{$index}.category_id",
-                        'Choose a bill category you own.',
-                    );
-                }
-            }
         });
     }
 
@@ -146,15 +157,21 @@ class StorePlannedTemplateRequest extends FormRequest
     public function templateAttributes(): array
     {
         $validated = $this->validated();
+        $category = Category::query()->findOrFail($validated['category_id']);
+        $isBill = $category->kind === Category::KIND_BILL;
 
         return [
             'name' => $validated['name'],
             'category_id' => $validated['category_id'],
             'merchant_id' => $validated['merchant_id'] ?? null,
-            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'classification' => $isBill
+                ? BankTransaction::CLASSIFICATION_BILL
+                : BankTransaction::CLASSIFICATION_INCOME,
             'match_mode' => $validated['match_mode'],
             'normalized_pattern' => $validated['normalized_pattern'] ?? null,
-            'amount' => $validated['amount'] ?? null,
+            'amount' => $isBill
+                ? $validated['expected_amount']
+                : ($validated['amount'] ?? null),
             'expected_day' => $validated['expected_day'],
             'expected_amount' => $validated['expected_amount'],
             'lookback_days' => $validated['lookback_days'],
@@ -163,17 +180,10 @@ class StorePlannedTemplateRequest extends FormRequest
         ];
     }
 
-    /**
-     * @return list<array{category_id: int, expected_amount: float}>
-     */
-    public function bills(): array
+    public function planLabel(): string
     {
-        return collect($this->validated('bills') ?? [])
-            ->map(fn (array $bill): array => [
-                'category_id' => (int) $bill['category_id'],
-                'expected_amount' => $bill['expected_amount'],
-            ])
-            ->values()
-            ->all();
+        $category = Category::query()->find($this->input('category_id'));
+
+        return $category?->kind === Category::KIND_BILL ? 'Bill plan' : 'Paycheck plan';
     }
 }

@@ -6,6 +6,7 @@ use App\Models\BankTransaction;
 use App\Models\PlannedOccurrence;
 use App\Services\Reconciliation\TransactionMatchEvaluator;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 
 class PlannedOccurrenceMatcher
 {
@@ -24,7 +25,10 @@ class PlannedOccurrenceMatcher
         $occurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
             ->where('status', PlannedOccurrence::STATUS_PLANNED)
-            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->whereIn('classification', [
+                BankTransaction::CLASSIFICATION_INCOME,
+                BankTransaction::CLASSIFICATION_BILL,
+            ])
             ->where(function ($query) {
                 $query->whereNull('template_id')
                     ->orWhereHas('template', fn ($templateQuery) => $templateQuery->where('is_active', true));
@@ -46,10 +50,20 @@ class PlannedOccurrenceMatcher
 
         $candidates = BankTransaction::query()
             ->where('user_id', $userId)
-            ->where('amount', '>', 0)
-            ->where(function ($query) {
-                $query->whereNull('classification')
-                    ->orWhere('classification', BankTransaction::CLASSIFICATION_INCOME);
+            ->where(function (Builder $query) {
+                $query->where(function (Builder $credits) {
+                    $credits->where('amount', '>', 0)
+                        ->where(function (Builder $classification) {
+                            $classification->whereNull('classification')
+                                ->orWhere('classification', BankTransaction::CLASSIFICATION_INCOME);
+                        });
+                })->orWhere(function (Builder $debits) {
+                    $debits->where('amount', '<', 0)
+                        ->where(function (Builder $classification) {
+                            $classification->whereNull('classification')
+                                ->orWhere('classification', BankTransaction::CLASSIFICATION_BILL);
+                        });
+                });
             })
             ->when(
                 $claimedTransactionIds !== [],
@@ -115,7 +129,11 @@ class PlannedOccurrenceMatcher
             throw new \InvalidArgumentException('Only planned occurrences can be linked.');
         }
 
-        if ((float) $transaction->amount <= 0) {
+        if ($occurrence->classification === BankTransaction::CLASSIFICATION_BILL) {
+            if ((float) $transaction->amount >= 0) {
+                throw new \InvalidArgumentException('Only debits can be linked to a bill occurrence.');
+            }
+        } elseif ((float) $transaction->amount <= 0) {
             throw new \InvalidArgumentException('Only credits can be linked to an income occurrence.');
         }
 
@@ -135,6 +153,14 @@ class PlannedOccurrenceMatcher
         PlannedOccurrence $occurrence,
         BankTransaction $transaction,
     ): bool {
+        if ($occurrence->classification === BankTransaction::CLASSIFICATION_BILL) {
+            if ((float) $transaction->amount >= 0) {
+                return false;
+            }
+        } elseif ((float) $transaction->amount <= 0) {
+            return false;
+        }
+
         $postedAt = Carbon::parse($transaction->posted_at)->startOfDay();
 
         if ($postedAt->lt($occurrence->windowStart()) || $postedAt->gt($occurrence->windowEnd())) {

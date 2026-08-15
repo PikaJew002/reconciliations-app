@@ -7,7 +7,6 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PlannedOccurrence extends Model
 {
@@ -32,7 +31,6 @@ class PlannedOccurrence extends Model
         'lookback_days',
         'lookforward_days',
         'status',
-        'bills_customized',
     ];
 
     protected $casts = [
@@ -41,7 +39,6 @@ class PlannedOccurrence extends Model
         'expected_date' => 'date',
         'lookback_days' => 'integer',
         'lookforward_days' => 'integer',
-        'bills_customized' => 'boolean',
     ];
 
     public function user(): BelongsTo
@@ -67,33 +64,6 @@ class PlannedOccurrence extends Model
     public function bankTransaction(): BelongsTo
     {
         return $this->belongsTo(BankTransaction::class);
-    }
-
-    public function bills(): HasMany
-    {
-        return $this->hasMany(PlannedOccurrenceBill::class);
-    }
-
-    public function paycheckAmount(): float
-    {
-        if ($this->isResolved() && $this->bankTransaction !== null) {
-            return (float) $this->bankTransaction->amount;
-        }
-
-        return (float) $this->expected_amount;
-    }
-
-    public function assignedBillsTotal(): float
-    {
-        return round(
-            (float) $this->bills->sum(fn (PlannedOccurrenceBill $bill): float => (float) $bill->expected_amount),
-            2,
-        );
-    }
-
-    public function leftoverForExpenses(): float
-    {
-        return round($this->paycheckAmount() - $this->assignedBillsTotal(), 2);
     }
 
     public function isPlanned(): bool

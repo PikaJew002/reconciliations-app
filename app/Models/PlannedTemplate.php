@@ -26,6 +26,31 @@ class PlannedTemplate extends Model
         ];
     }
 
+    /**
+     * @return list<string>
+     */
+    public static function billMatchModes(): array
+    {
+        return [
+            TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+            TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT,
+            TransactionCategorizationRule::MATCH_DESCRIPTION,
+            TransactionCategorizationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT,
+            TransactionCategorizationRule::MATCH_MERCHANT,
+            TransactionCategorizationRule::MATCH_AMOUNT_AND_MERCHANT,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function matchModesForKind(string $kind): array
+    {
+        return $kind === Category::KIND_BILL
+            ? self::billMatchModes()
+            : self::incomeMatchModes();
+    }
+
     protected $fillable = [
         'user_id',
         'category_id',
@@ -69,11 +94,6 @@ class PlannedTemplate extends Model
     public function occurrences(): HasMany
     {
         return $this->hasMany(PlannedOccurrence::class, 'template_id');
-    }
-
-    public function bills(): HasMany
-    {
-        return $this->hasMany(PlannedTemplateBill::class);
     }
 
     /**

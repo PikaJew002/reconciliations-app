@@ -10,15 +10,27 @@
             type: String,
             required: true,
         },
-        templates: {
+        paycheck_templates: {
             type: Array,
             required: true,
         },
-        occurrences: {
+        bill_templates: {
             type: Array,
             required: true,
         },
-        link_candidates: {
+        paycheck_occurrences: {
+            type: Array,
+            required: true,
+        },
+        bill_occurrences: {
+            type: Array,
+            required: true,
+        },
+        paycheck_link_candidates: {
+            type: Array,
+            required: true,
+        },
+        bill_link_candidates: {
             type: Array,
             required: true,
         },
@@ -28,11 +40,7 @@
         },
         bill_categories: {
             type: Array,
-            default: () => [],
-        },
-        bill_amount_options: {
-            type: Object,
-            default: () => ({}),
+            required: true,
         },
         merchants: {
             type: Array,
@@ -42,19 +50,32 @@
             type: Array,
             required: true,
         },
+        bill_match_modes: {
+            type: Array,
+            required: true,
+        },
+        source_transactions: {
+            type: Object,
+            default: () => ({}),
+        },
     });
 
     let page = usePage();
     let flashSuccess = computed(() => page.props.flash?.success);
 
-    let showCreate = ref(props.templates.length === 0);
+    let showCreate = ref(
+        props.paycheck_templates.length === 0 &&
+            props.bill_templates.length === 0
+            ? 'paycheck'
+            : null,
+    );
     let editingId = ref(null);
-    let editingBillsId = ref(null);
-    let occurrenceBills = ref([]);
     let linkForId = ref(null);
     let linkTransactionId = ref('');
+    let paycheckSourceId = ref('');
+    let billSourceId = ref('');
 
-    let createForm = useForm({
+    let emptyPaycheckForm = () => ({
         name: 'Paycheck',
         category_id: props.categories[0]?.id ?? '',
         merchant_id: '',
@@ -66,14 +87,13 @@
         lookback_days: 7,
         lookforward_days: 3,
         is_active: true,
-        bills: [],
     });
 
-    let editForm = useForm({
+    let emptyBillForm = () => ({
         name: '',
-        category_id: '',
+        category_id: props.bill_categories[0]?.id ?? '',
         merchant_id: '',
-        match_mode: 'description',
+        match_mode: 'description_prefix_and_amount',
         normalized_pattern: '',
         amount: '',
         expected_day: 1,
@@ -81,8 +101,11 @@
         lookback_days: 7,
         lookforward_days: 3,
         is_active: true,
-        bills: [],
     });
+
+    let createPaycheckForm = useForm(emptyPaycheckForm());
+    let createBillForm = useForm(emptyBillForm());
+    let editForm = useForm(emptyPaycheckForm());
 
     let matchModeLabel = (mode) => {
         return (
@@ -91,12 +114,16 @@
                 amount_and_merchant: 'Amount + merchant',
                 merchant: 'Merchant',
                 description: 'Description',
+                description_prefix_and_amount: 'Description prefix + amount',
+                check_and_amount: 'Check + amount',
             }[mode] ?? mode
         );
     };
 
     let needsPattern = (mode) =>
-        mode === 'description' || mode === 'exact_description_and_amount';
+        mode === 'description' ||
+        mode === 'exact_description_and_amount' ||
+        mode === 'description_prefix_and_amount';
     let needsMerchant = (mode) =>
         mode === 'merchant' || mode === 'amount_and_merchant';
     let needsAmount = (mode) =>
@@ -110,69 +137,64 @@
         }).format(amount);
     };
 
-    let leftoverClass = (value) => {
-        if (value < 0) {
-            return 'font-medium text-red-700';
-        }
-
-        if (value > 0) {
-            return 'text-emerald-700';
-        }
-
-        return 'text-neutral-700';
-    };
-
-    let billRowsFrom = (bills) => {
-        return (bills ?? []).map((bill) => ({
-            category_id: bill.category_id,
-            expected_amount: bill.expected_amount,
-            source_transaction_id: '',
-        }));
-    };
-
-    let billAmountOptionsFor = (categoryId) => {
+    let sourceTransactionsFor = (categoryId) => {
         if (!categoryId) {
             return [];
         }
 
         return (
-            props.bill_amount_options[categoryId] ??
-            props.bill_amount_options[String(categoryId)] ??
+            props.source_transactions[categoryId] ??
+            props.source_transactions[String(categoryId)] ??
             []
         );
     };
 
-    let latestBillAmount = (categoryId) => {
-        return billAmountOptionsFor(categoryId)[0]?.amount ?? '';
-    };
+    let applySourceTransaction = (form, option) => {
+        if (!option) {
+            return;
+        }
 
-    let applyBillTransaction = (bill, transactionId) => {
-        let transaction = billAmountOptionsFor(bill.category_id).find(
-            (option) => String(option.id) === String(transactionId),
-        );
+        form.expected_day = option.expected_day;
+        form.expected_amount = option.amount;
 
-        if (transaction) {
-            bill.expected_amount = transaction.amount;
+        if (option.match_mode) {
+            form.match_mode = option.match_mode;
+            form.normalized_pattern = option.normalized_pattern ?? '';
+            form.merchant_id = option.merchant_id ?? '';
+            form.amount = option.match_amount ?? option.amount;
+        } else {
+            if (needsPattern(form.match_mode) && option.normalized_pattern) {
+                form.normalized_pattern = option.normalized_pattern;
+            }
+
+            if (needsMerchant(form.match_mode) && option.merchant_id) {
+                form.merchant_id = option.merchant_id;
+            }
+
+            if (needsAmount(form.match_mode)) {
+                form.amount = option.match_amount ?? option.amount;
+            }
+        }
+
+        if (!form.name || form.name === 'Paycheck') {
+            form.name = option.suggested_name || option.description || form.name;
         }
     };
 
-    let onBillCategoryChange = (bill) => {
-        bill.source_transaction_id = '';
-        bill.expected_amount = latestBillAmount(bill.category_id);
+    let onPaycheckSourceChange = () => {
+        let option = sourceTransactionsFor(
+            createPaycheckForm.category_id,
+        ).find((item) => String(item.id) === String(paycheckSourceId.value));
+
+        applySourceTransaction(createPaycheckForm, option);
     };
 
-    let addBillRow = (rows) => {
-        let categoryId = props.bill_categories[0]?.id ?? '';
+    let onBillSourceChange = () => {
+        let option = sourceTransactionsFor(createBillForm.category_id).find(
+            (item) => String(item.id) === String(billSourceId.value),
+        );
 
-        rows.push({
-            category_id: categoryId,
-            expected_amount: latestBillAmount(categoryId),
-            source_transaction_id: '',
-        });
-    };
-
-    let removeBillRow = (rows, index) => {
-        rows.splice(index, 1);
+        applySourceTransaction(createBillForm, option);
     };
 
     let shiftMonth = (delta) => {
@@ -196,51 +218,61 @@
         editForm.lookback_days = template.lookback_days;
         editForm.lookforward_days = template.lookforward_days;
         editForm.is_active = template.is_active;
-        editForm.bills = billRowsFrom(template.bills);
     };
 
-    let payloadFromForm = (form) => ({
+    let payloadFromForm = (form, kind) => ({
         name: form.name,
         category_id: form.category_id,
         merchant_id: form.merchant_id || null,
         match_mode: form.match_mode,
         normalized_pattern: form.normalized_pattern || null,
-        amount: form.amount === '' ? null : form.amount,
+        amount:
+            kind === 'bill'
+                ? form.expected_amount
+                : form.amount === ''
+                  ? null
+                  : form.amount,
         expected_day: form.expected_day,
         expected_amount: form.expected_amount,
         lookback_days: form.lookback_days,
         lookforward_days: form.lookforward_days,
         is_active: form.is_active,
-        bills: (form.bills ?? [])
-            .filter((bill) => bill.category_id && bill.expected_amount !== '')
-            .map((bill) => ({
-                category_id: Number(bill.category_id),
-                expected_amount: bill.expected_amount,
-            })),
     });
 
-    let create = () => {
-        createForm
-            .transform((data) => payloadFromForm(data))
+    let createPaycheck = () => {
+        createPaycheckForm
+            .transform((data) => payloadFromForm(data, 'paycheck'))
             .post('/plans', {
                 preserveScroll: true,
                 onSuccess: () => {
-                    showCreate.value = false;
-                    createForm.reset();
-                    createForm.category_id = props.categories[0]?.id ?? '';
-                    createForm.match_mode = 'description';
-                    createForm.lookback_days = 7;
-                    createForm.lookforward_days = 3;
-                    createForm.is_active = true;
-                    createForm.name = 'Paycheck';
-                    createForm.bills = [];
+                    showCreate.value = null;
+                    createPaycheckForm.reset();
+                    Object.assign(createPaycheckForm, emptyPaycheckForm());
+                    paycheckSourceId.value = '';
+                },
+            });
+    };
+
+    let createBill = () => {
+        createBillForm
+            .transform((data) => payloadFromForm(data, 'bill'))
+            .post('/plans', {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showCreate.value = null;
+                    createBillForm.reset();
+                    Object.assign(createBillForm, emptyBillForm());
+                    billSourceId.value = '';
                 },
             });
     };
 
     let saveEdit = (template) => {
+        let kind =
+            template.classification === 'bill' ? 'bill' : 'paycheck';
+
         editForm
-            .transform((data) => payloadFromForm(data))
+            .transform((data) => payloadFromForm(data, kind))
             .patch(`/plans/${template.id}?month=${props.month}`, {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -250,16 +282,42 @@
     };
 
     watch(
-        () => createForm.match_mode,
+        () => createPaycheckForm.match_mode,
         (mode) => {
             if (mode === 'merchant') {
-                createForm.normalized_pattern = '';
+                createPaycheckForm.normalized_pattern = '';
             }
         },
     );
 
+    watch(
+        () => createPaycheckForm.category_id,
+        () => {
+            paycheckSourceId.value = '';
+        },
+    );
+
+    watch(
+        () => createBillForm.match_mode,
+        (mode) => {
+            if (mode === 'merchant' || mode === 'check_and_amount') {
+                createBillForm.normalized_pattern = '';
+            }
+        },
+    );
+
+    watch(
+        () => createBillForm.category_id,
+        () => {
+            billSourceId.value = '';
+        },
+    );
+
     let deleteTemplate = (template) => {
-        if (!window.confirm(`Delete paycheck plan "${template.name}"?`)) {
+        let kind =
+            template.classification === 'bill' ? 'bill' : 'paycheck';
+
+        if (!window.confirm(`Delete ${kind} plan "${template.name}"?`)) {
             return;
         }
 
@@ -286,35 +344,6 @@
             },
         );
     };
-
-    let startEditBills = (occurrence) => {
-        editingBillsId.value = occurrence.id;
-        occurrenceBills.value = billRowsFrom(occurrence.bills);
-    };
-
-    let saveOccurrenceBills = (occurrence) => {
-        router.patch(
-            `/plans/occurrences/${occurrence.id}/bills`,
-            {
-                month: props.month,
-                bills: occurrenceBills.value
-                    .filter(
-                        (bill) =>
-                            bill.category_id && bill.expected_amount !== '',
-                    )
-                    .map((bill) => ({
-                        category_id: Number(bill.category_id),
-                        expected_amount: bill.expected_amount,
-                    })),
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    editingBillsId.value = null;
-                },
-            },
-        );
-    };
 </script>
 
 <template>
@@ -323,18 +352,35 @@
             <div>
                 <h1 class="text-2xl font-semibold">Plans</h1>
                 <p class="text-sm text-neutral-600">
-                    Recurring paychecks that count toward a budget month, even
-                    when they post early. Imported credits match these
-                    occurrences automatically.
+                    Recurring paychecks and bills that count toward a budget
+                    month, even when they post early or late. Imported
+                    transactions match these occurrences automatically.
                 </p>
             </div>
-            <button
-                type="button"
-                class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
-                @click="showCreate = !showCreate"
-            >
-                {{ showCreate ? 'Cancel' : 'New paycheck plan' }}
-            </button>
+            <div class="flex flex-wrap gap-2">
+                <button
+                    type="button"
+                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    @click="
+                        showCreate = showCreate === 'paycheck' ? null : 'paycheck'
+                    "
+                >
+                    {{
+                        showCreate === 'paycheck'
+                            ? 'Cancel'
+                            : 'New paycheck plan'
+                    }}
+                </button>
+                <button
+                    type="button"
+                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    @click="
+                        showCreate = showCreate === 'bill' ? null : 'bill'
+                    "
+                >
+                    {{ showCreate === 'bill' ? 'Cancel' : 'New bill plan' }}
+                </button>
+            </div>
         </div>
 
         <div
@@ -345,7 +391,7 @@
         </div>
 
         <div
-            v-if="categories.length === 0"
+            v-if="showCreate === 'paycheck' && categories.length === 0"
             class="rounded border px-4 py-3 text-sm text-neutral-600"
         >
             Create an income category on
@@ -355,31 +401,42 @@
             before adding a paycheck plan.
         </div>
 
+        <div
+            v-if="showCreate === 'bill' && bill_categories.length === 0"
+            class="rounded border px-4 py-3 text-sm text-neutral-600"
+        >
+            Create a bill category on
+            <Link href="/categories?kind=bill" class="underline"
+                >Categories</Link
+            >
+            before adding a bill plan.
+        </div>
+
         <form
-            v-if="showCreate && categories.length > 0"
+            v-if="showCreate === 'paycheck' && categories.length > 0"
             class="space-y-3 rounded border px-4 py-3"
-            @submit.prevent="create"
+            @submit.prevent="createPaycheck"
         >
             <p class="text-sm font-medium">New paycheck plan</p>
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <label class="block text-sm">
                     <span class="text-neutral-600">Name</span>
                     <input
-                        v-model="createForm.name"
+                        v-model="createPaycheckForm.name"
                         type="text"
                         class="mt-1 w-full rounded border px-3 py-2"
                         required
                     />
                     <span
-                        v-if="createForm.errors.name"
+                        v-if="createPaycheckForm.errors.name"
                         class="mt-1 block text-red-600"
-                        >{{ createForm.errors.name }}</span
+                        >{{ createPaycheckForm.errors.name }}</span
                     >
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Category</span>
                     <select
-                        v-model="createForm.category_id"
+                        v-model="createPaycheckForm.category_id"
                         class="mt-1 w-full rounded border px-3 py-2"
                         required
                     >
@@ -392,197 +449,28 @@
                         </option>
                     </select>
                     <span
-                        v-if="createForm.errors.category_id"
+                        v-if="createPaycheckForm.errors.category_id"
                         class="mt-1 block text-red-600"
-                        >{{ createForm.errors.category_id }}</span
+                        >{{ createPaycheckForm.errors.category_id }}</span
                     >
                 </label>
-                <label class="block text-sm">
-                    <span class="text-neutral-600">Expected day</span>
-                    <input
-                        v-model.number="createForm.expected_day"
-                        type="number"
-                        min="1"
-                        max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                        required
-                    />
-                    <span
-                        v-if="createForm.errors.expected_day"
-                        class="mt-1 block text-red-600"
-                        >{{ createForm.errors.expected_day }}</span
-                    >
-                </label>
-                <label class="block text-sm">
-                    <span class="text-neutral-600">Expected amount</span>
-                    <input
-                        v-model="createForm.expected_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                        required
-                    />
-                    <span
-                        v-if="createForm.errors.expected_amount"
-                        class="mt-1 block text-red-600"
-                        >{{ createForm.errors.expected_amount }}</span
-                    >
-                </label>
-                <label class="block text-sm">
-                    <span class="text-neutral-600">Match mode</span>
-                    <select
-                        v-model="createForm.match_mode"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                    >
-                        <option
-                            v-for="mode in match_modes"
-                            :key="mode"
-                            :value="mode"
-                        >
-                            {{ matchModeLabel(mode) }}
-                        </option>
-                    </select>
-                </label>
-                <label v-if="needsPattern(createForm.match_mode)" class="block text-sm">
-                    <span class="text-neutral-600">Memo / description</span>
-                    <input
-                        v-model="createForm.normalized_pattern"
-                        type="text"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                    />
-                    <span
-                        v-if="createForm.errors.normalized_pattern"
-                        class="mt-1 block text-red-600"
-                        >{{ createForm.errors.normalized_pattern }}</span
-                    >
-                </label>
-                <label v-if="needsMerchant(createForm.match_mode)" class="block text-sm">
-                    <span class="text-neutral-600">Merchant</span>
-                    <select
-                        v-model="createForm.merchant_id"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                    >
-                        <option value="">Select merchant</option>
-                        <option
-                            v-for="merchant in merchants"
-                            :key="merchant.id"
-                            :value="merchant.id"
-                        >
-                            {{ merchant.name }}
-                        </option>
-                    </select>
-                    <span
-                        v-if="createForm.errors.merchant_id"
-                        class="mt-1 block text-red-600"
-                        >{{ createForm.errors.merchant_id }}</span
-                    >
-                </label>
-                <label v-if="needsAmount(createForm.match_mode)" class="block text-sm">
-                    <span class="text-neutral-600">Exact amount</span>
-                    <input
-                        v-model="createForm.amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                    />
-                    <span
-                        v-if="createForm.errors.amount"
-                        class="mt-1 block text-red-600"
-                        >{{ createForm.errors.amount }}</span
-                    >
-                </label>
-                <label class="block text-sm">
-                    <span class="text-neutral-600">Look back (days)</span>
-                    <input
-                        v-model.number="createForm.lookback_days"
-                        type="number"
-                        min="0"
-                        max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                    />
-                </label>
-                <label class="block text-sm">
-                    <span class="text-neutral-600">Look forward (days)</span>
-                    <input
-                        v-model.number="createForm.lookforward_days"
-                        type="number"
-                        min="0"
-                        max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
-                    />
-                </label>
-            </div>
-            <div class="space-y-2">
-                <div class="flex items-center justify-between">
-                    <p class="text-sm font-medium">Assigned bills</p>
-                    <button
-                        v-if="bill_categories.length > 0"
-                        type="button"
-                        class="text-xs underline"
-                        @click="addBillRow(createForm.bills)"
-                    >
-                        Add bill
-                    </button>
-                </div>
-                <p
-                    v-if="bill_categories.length === 0"
-                    class="text-sm text-neutral-600"
+                <label
+                    v-if="
+                        sourceTransactionsFor(createPaycheckForm.category_id)
+                            .length
+                    "
+                    class="block text-sm sm:col-span-2 lg:col-span-3"
                 >
-                    Create bill categories to assign them to this paycheck.
-                </p>
-                <div
-                    v-for="(bill, index) in createForm.bills"
-                    :key="index"
-                    class="space-y-2"
-                >
-                    <div class="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
-                        <select
-                            v-model="bill.category_id"
-                            class="rounded border px-3 py-2 text-sm"
-                            @change="onBillCategoryChange(bill)"
-                        >
-                            <option value="">Select bill</option>
-                            <option
-                                v-for="category in bill_categories"
-                                :key="category.id"
-                                :value="category.id"
-                            >
-                                {{ category.name }}
-                            </option>
-                        </select>
-                        <input
-                            v-model="bill.expected_amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="rounded border px-3 py-2 text-sm"
-                            placeholder="Amount"
-                        />
-                        <button
-                            type="button"
-                            class="text-sm text-red-700"
-                            @click="removeBillRow(createForm.bills, index)"
-                        >
-                            Remove
-                        </button>
-                    </div>
+                    <span class="text-neutral-600">Base on a transaction</span>
                     <select
-                        v-if="billAmountOptionsFor(bill.category_id).length"
-                        v-model="bill.source_transaction_id"
-                        class="w-full rounded border px-3 py-2 text-sm"
-                        @change="
-                            applyBillTransaction(
-                                bill,
-                                bill.source_transaction_id,
-                            )
-                        "
+                        v-model="paycheckSourceId"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        @change="onPaycheckSourceChange"
                     >
-                        <option value="">Use a past charge</option>
+                        <option value="">Optional — pick a past credit</option>
                         <option
-                            v-for="option in billAmountOptionsFor(
-                                bill.category_id,
+                            v-for="option in sourceTransactionsFor(
+                                createPaycheckForm.category_id,
                             )"
                             :key="option.id"
                             :value="String(option.id)"
@@ -594,20 +482,303 @@
                             </template>
                         </option>
                     </select>
-                </div>
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Expected day</span>
+                    <input
+                        v-model.number="createPaycheckForm.expected_day"
+                        type="number"
+                        min="1"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        required
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Expected amount</span>
+                    <input
+                        v-model="createPaycheckForm.expected_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        required
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Match mode</span>
+                    <select
+                        v-model="createPaycheckForm.match_mode"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    >
+                        <option
+                            v-for="mode in match_modes"
+                            :key="mode"
+                            :value="mode"
+                        >
+                            {{ matchModeLabel(mode) }}
+                        </option>
+                    </select>
+                </label>
+                <label
+                    v-if="needsPattern(createPaycheckForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Memo / description</span>
+                    <input
+                        v-model="createPaycheckForm.normalized_pattern"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                    <span
+                        v-if="createPaycheckForm.errors.normalized_pattern"
+                        class="mt-1 block text-red-600"
+                        >{{ createPaycheckForm.errors.normalized_pattern }}</span
+                    >
+                </label>
+                <label
+                    v-if="needsMerchant(createPaycheckForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Merchant</span>
+                    <select
+                        v-model="createPaycheckForm.merchant_id"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    >
+                        <option value="">Select merchant</option>
+                        <option
+                            v-for="merchant in merchants"
+                            :key="merchant.id"
+                            :value="merchant.id"
+                        >
+                            {{ merchant.name }}
+                        </option>
+                    </select>
+                </label>
+                <label
+                    v-if="needsAmount(createPaycheckForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Exact amount</span>
+                    <input
+                        v-model="createPaycheckForm.amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Look back (days)</span>
+                    <input
+                        v-model.number="createPaycheckForm.lookback_days"
+                        type="number"
+                        min="0"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Look forward (days)</span>
+                    <input
+                        v-model.number="createPaycheckForm.lookforward_days"
+                        type="number"
+                        min="0"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                </label>
             </div>
             <button
                 type="submit"
                 class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-                :disabled="createForm.processing"
+                :disabled="createPaycheckForm.processing"
             >
                 Create plan
             </button>
         </form>
 
-        <section class="space-y-3">
+        <form
+            v-if="showCreate === 'bill' && bill_categories.length > 0"
+            class="space-y-3 rounded border px-4 py-3"
+            @submit.prevent="createBill"
+        >
+            <p class="text-sm font-medium">New bill plan</p>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Name</span>
+                    <input
+                        v-model="createBillForm.name"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        required
+                    />
+                    <span
+                        v-if="createBillForm.errors.name"
+                        class="mt-1 block text-red-600"
+                        >{{ createBillForm.errors.name }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Category</span>
+                    <select
+                        v-model="createBillForm.category_id"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        required
+                    >
+                        <option
+                            v-for="category in bill_categories"
+                            :key="category.id"
+                            :value="category.id"
+                        >
+                            {{ category.name }}
+                        </option>
+                    </select>
+                    <span
+                        v-if="createBillForm.errors.category_id"
+                        class="mt-1 block text-red-600"
+                        >{{ createBillForm.errors.category_id }}</span
+                    >
+                </label>
+                <label
+                    v-if="
+                        sourceTransactionsFor(createBillForm.category_id)
+                            .length
+                    "
+                    class="block text-sm sm:col-span-2 lg:col-span-3"
+                >
+                    <span class="text-neutral-600">Base on a transaction</span>
+                    <select
+                        v-model="billSourceId"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        @change="onBillSourceChange"
+                    >
+                        <option value="">Optional — pick a past charge</option>
+                        <option
+                            v-for="option in sourceTransactionsFor(
+                                createBillForm.category_id,
+                            )"
+                            :key="option.id"
+                            :value="String(option.id)"
+                        >
+                            {{ option.posted_at }} ·
+                            {{ formatMoney(option.amount) }}
+                            <template v-if="option.description">
+                                · {{ option.description }}
+                            </template>
+                        </option>
+                    </select>
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Expected day</span>
+                    <input
+                        v-model.number="createBillForm.expected_day"
+                        type="number"
+                        min="1"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        required
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Expected amount</span>
+                    <input
+                        v-model="createBillForm.expected_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                        required
+                    />
+                    <span
+                        v-if="createBillForm.errors.expected_amount"
+                        class="mt-1 block text-red-600"
+                        >{{ createBillForm.errors.expected_amount }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Match mode</span>
+                    <select
+                        v-model="createBillForm.match_mode"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    >
+                        <option
+                            v-for="mode in bill_match_modes"
+                            :key="mode"
+                            :value="mode"
+                        >
+                            {{ matchModeLabel(mode) }}
+                        </option>
+                    </select>
+                </label>
+                <label
+                    v-if="needsPattern(createBillForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Memo / description</span>
+                    <input
+                        v-model="createBillForm.normalized_pattern"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                    <span
+                        v-if="createBillForm.errors.normalized_pattern"
+                        class="mt-1 block text-red-600"
+                        >{{ createBillForm.errors.normalized_pattern }}</span
+                    >
+                </label>
+                <label
+                    v-if="needsMerchant(createBillForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Merchant</span>
+                    <select
+                        v-model="createBillForm.merchant_id"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    >
+                        <option value="">Select merchant</option>
+                        <option
+                            v-for="merchant in merchants"
+                            :key="merchant.id"
+                            :value="merchant.id"
+                        >
+                            {{ merchant.name }}
+                        </option>
+                    </select>
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Look back (days)</span>
+                    <input
+                        v-model.number="createBillForm.lookback_days"
+                        type="number"
+                        min="0"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Look forward (days)</span>
+                    <input
+                        v-model.number="createBillForm.lookforward_days"
+                        type="number"
+                        min="0"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3 py-2"
+                    />
+                </label>
+            </div>
+            <button
+                type="submit"
+                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                :disabled="createBillForm.processing"
+            >
+                Create plan
+            </button>
+        </form>
+
+        <section class="space-y-6">
             <div class="flex flex-wrap items-center justify-between gap-3">
-                <h2 class="text-lg font-medium">{{ month }} paychecks</h2>
+                <h2 class="text-lg font-medium">{{ month }}</h2>
                 <div class="flex gap-2">
                     <button
                         type="button"
@@ -626,30 +797,36 @@
                 </div>
             </div>
 
-            <p v-if="occurrences.length === 0" class="text-sm text-neutral-600">
-                No paycheck occurrences this month. Add a plan to project them.
-            </p>
-
-            <div v-else class="overflow-x-auto rounded border">
-                <table class="min-w-full text-left text-sm">
-                    <thead class="border-b bg-neutral-50 text-neutral-600">
-                        <tr>
-                            <th class="px-3 py-2 font-medium">Expected</th>
-                            <th class="px-3 py-2 font-medium">Plan</th>
-                            <th class="px-3 py-2 font-medium">Status</th>
-                            <th class="px-3 py-2 font-medium">Amount</th>
-                            <th class="px-3 py-2 font-medium">Bills</th>
-                            <th class="px-3 py-2 font-medium">Left for expenses</th>
-                            <th class="px-3 py-2 font-medium">Posted</th>
-                            <th class="px-3 py-2 font-medium"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <template
-                            v-for="occurrence in occurrences"
-                            :key="occurrence.id"
-                        >
-                            <tr class="border-b last:border-0">
+            <div class="space-y-3">
+                <h3 class="font-medium">Paychecks</h3>
+                <p
+                    v-if="paycheck_occurrences.length === 0"
+                    class="text-sm text-neutral-600"
+                >
+                    No paycheck occurrences this month. Add a plan to project
+                    them.
+                </p>
+                <div
+                    v-else
+                    class="overflow-x-auto rounded border"
+                >
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="border-b bg-neutral-50 text-neutral-600">
+                            <tr>
+                                <th class="px-3 py-2 font-medium">Expected</th>
+                                <th class="px-3 py-2 font-medium">Plan</th>
+                                <th class="px-3 py-2 font-medium">Status</th>
+                                <th class="px-3 py-2 font-medium">Amount</th>
+                                <th class="px-3 py-2 font-medium">Posted</th>
+                                <th class="px-3 py-2 font-medium"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="occurrence in paycheck_occurrences"
+                                :key="occurrence.id"
+                                class="border-b last:border-0"
+                            >
                                 <td class="px-3 py-2 tabular-nums">
                                     {{ occurrence.expected_date }}
                                 </td>
@@ -658,25 +835,9 @@
                                 </td>
                                 <td class="px-3 py-2 capitalize">
                                     {{ occurrence.status }}
-                                    <span
-                                        v-if="occurrence.bills_customized"
-                                        class="ml-1 text-xs text-neutral-500"
-                                        >custom bills</span
-                                    >
                                 </td>
                                 <td class="px-3 py-2 tabular-nums">
-                                    {{
-                                        formatMoney(occurrence.paycheck_amount)
-                                    }}
-                                </td>
-                                <td class="px-3 py-2 tabular-nums">
-                                    {{ formatMoney(occurrence.bills_total) }}
-                                </td>
-                                <td
-                                    class="px-3 py-2 tabular-nums"
-                                    :class="leftoverClass(occurrence.leftover)"
-                                >
-                                    {{ formatMoney(occurrence.leftover) }}
+                                    {{ formatMoney(occurrence.amount) }}
                                 </td>
                                 <td class="px-3 py-2 text-neutral-600">
                                     <template
@@ -695,248 +856,203 @@
                                     <span v-else>—</span>
                                 </td>
                                 <td class="px-3 py-2">
-                                    <div class="flex flex-col gap-1">
-                                        <button
-                                            type="button"
-                                            class="text-xs underline"
-                                            @click="
-                                                editingBillsId ===
-                                                occurrence.id
-                                                    ? (editingBillsId = null)
-                                                    : startEditBills(
-                                                          occurrence,
-                                                      )
-                                            "
-                                        >
-                                            {{
-                                                editingBillsId ===
-                                                occurrence.id
-                                                    ? 'Close bills'
-                                                    : 'Edit bills'
-                                            }}
-                                        </button>
-                                        <template
-                                            v-if="
-                                                occurrence.status ===
-                                                    'planned' &&
-                                                link_candidates.length > 0
-                                            "
-                                        >
-                                            <div
-                                                v-if="
-                                                    linkForId === occurrence.id
-                                                "
-                                                class="flex flex-wrap items-center gap-2"
-                                            >
-                                                <select
-                                                    v-model="linkTransactionId"
-                                                    class="rounded border px-2 py-1"
-                                                >
-                                                    <option value="">
-                                                        Select credit
-                                                    </option>
-                                                    <option
-                                                        v-for="candidate in link_candidates"
-                                                        :key="candidate.id"
-                                                        :value="
-                                                            String(
-                                                                candidate.id,
-                                                            )
-                                                        "
-                                                    >
-                                                        {{
-                                                            candidate.posted_at
-                                                        }}
-                                                        ·
-                                                        {{
-                                                            formatMoney(
-                                                                candidate.amount,
-                                                            )
-                                                        }}
-                                                        ·
-                                                        {{
-                                                            candidate.description
-                                                        }}
-                                                    </option>
-                                                </select>
-                                                <button
-                                                    type="button"
-                                                    class="rounded border px-2 py-1 text-xs"
-                                                    @click="
-                                                        linkOccurrence(
-                                                            occurrence,
-                                                        )
-                                                    "
-                                                >
-                                                    Link
-                                                </button>
-                                            </div>
-                                            <button
-                                                v-else
-                                                type="button"
-                                                class="text-xs underline"
-                                                @click="
-                                                    linkForId = occurrence.id
-                                                "
-                                            >
-                                                Link transaction
-                                            </button>
-                                        </template>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr
-                                v-if="editingBillsId === occurrence.id"
-                                class="border-b bg-neutral-50"
-                            >
-                                <td colspan="8" class="px-3 py-3">
-                                    <div class="space-y-2">
+                                    <template
+                                        v-if="
+                                            occurrence.status === 'planned' &&
+                                            paycheck_link_candidates.length > 0
+                                        "
+                                    >
                                         <div
-                                            class="flex items-center justify-between"
+                                            v-if="linkForId === occurrence.id"
+                                            class="flex flex-wrap items-center gap-2"
                                         >
-                                            <p class="text-sm font-medium">
-                                                Bills for this paycheck
-                                            </p>
-                                            <button
-                                                v-if="
-                                                    bill_categories.length > 0
-                                                "
-                                                type="button"
-                                                class="text-xs underline"
-                                                @click="
-                                                    addBillRow(occurrenceBills)
-                                                "
-                                            >
-                                                Add bill
-                                            </button>
-                                        </div>
-                                        <div
-                                            v-for="(bill, index) in occurrenceBills"
-                                            :key="index"
-                                            class="space-y-2"
-                                        >
-                                            <div
-                                                class="grid gap-2 sm:grid-cols-[1fr_8rem_auto]"
-                                            >
-                                                <select
-                                                    v-model="bill.category_id"
-                                                    class="rounded border px-3 py-2 text-sm"
-                                                    @change="
-                                                        onBillCategoryChange(
-                                                            bill,
-                                                        )
-                                                    "
-                                                >
-                                                    <option value="">
-                                                        Select bill
-                                                    </option>
-                                                    <option
-                                                        v-for="category in bill_categories"
-                                                        :key="category.id"
-                                                        :value="category.id"
-                                                    >
-                                                        {{ category.name }}
-                                                    </option>
-                                                </select>
-                                                <input
-                                                    v-model="
-                                                        bill.expected_amount
-                                                    "
-                                                    type="number"
-                                                    min="0"
-                                                    step="0.01"
-                                                    class="rounded border px-3 py-2 text-sm"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    class="text-sm text-red-700"
-                                                    @click="
-                                                        removeBillRow(
-                                                            occurrenceBills,
-                                                            index,
-                                                        )
-                                                    "
-                                                >
-                                                    Remove
-                                                </button>
-                                            </div>
                                             <select
-                                                v-if="
-                                                    billAmountOptionsFor(
-                                                        bill.category_id,
-                                                    ).length
-                                                "
-                                                v-model="
-                                                    bill.source_transaction_id
-                                                "
-                                                class="w-full rounded border px-3 py-2 text-sm"
-                                                @change="
-                                                    applyBillTransaction(
-                                                        bill,
-                                                        bill.source_transaction_id,
-                                                    )
-                                                "
+                                                v-model="linkTransactionId"
+                                                class="rounded border px-2 py-1"
                                             >
                                                 <option value="">
-                                                    Use a past charge
+                                                    Select credit
                                                 </option>
                                                 <option
-                                                    v-for="option in billAmountOptionsFor(
-                                                        bill.category_id,
-                                                    )"
-                                                    :key="option.id"
-                                                    :value="String(option.id)"
+                                                    v-for="candidate in paycheck_link_candidates"
+                                                    :key="candidate.id"
+                                                    :value="
+                                                        String(candidate.id)
+                                                    "
                                                 >
-                                                    {{ option.posted_at }} ·
+                                                    {{ candidate.posted_at }}
+                                                    ·
                                                     {{
                                                         formatMoney(
-                                                            option.amount,
+                                                            candidate.amount,
                                                         )
                                                     }}
-                                                    <template
-                                                        v-if="
-                                                            option.description
-                                                        "
-                                                    >
-                                                        ·
-                                                        {{
-                                                            option.description
-                                                        }}
-                                                    </template>
+                                                    ·
+                                                    {{ candidate.description }}
                                                 </option>
                                             </select>
+                                            <button
+                                                type="button"
+                                                class="rounded border px-2 py-1 text-xs"
+                                                @click="
+                                                    linkOccurrence(occurrence)
+                                                "
+                                            >
+                                                Link
+                                            </button>
                                         </div>
                                         <button
+                                            v-else
                                             type="button"
-                                            class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white"
-                                            @click="
-                                                saveOccurrenceBills(occurrence)
-                                            "
+                                            class="text-xs underline"
+                                            @click="linkForId = occurrence.id"
                                         >
-                                            Save bills
+                                            Link transaction
                                         </button>
-                                    </div>
+                                    </template>
                                 </td>
                             </tr>
-                        </template>
-                    </tbody>
-                </table>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <h3 class="font-medium">Bills</h3>
+                <p
+                    v-if="bill_occurrences.length === 0"
+                    class="text-sm text-neutral-600"
+                >
+                    No bill occurrences this month. Add a plan to project them.
+                </p>
+                <div
+                    v-else
+                    class="overflow-x-auto rounded border"
+                >
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="border-b bg-neutral-50 text-neutral-600">
+                            <tr>
+                                <th class="px-3 py-2 font-medium">Expected</th>
+                                <th class="px-3 py-2 font-medium">Plan</th>
+                                <th class="px-3 py-2 font-medium">Status</th>
+                                <th class="px-3 py-2 font-medium">Amount</th>
+                                <th class="px-3 py-2 font-medium">Posted</th>
+                                <th class="px-3 py-2 font-medium"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="occurrence in bill_occurrences"
+                                :key="occurrence.id"
+                                class="border-b last:border-0"
+                            >
+                                <td class="px-3 py-2 tabular-nums">
+                                    {{ occurrence.expected_date }}
+                                </td>
+                                <td class="px-3 py-2">
+                                    {{ occurrence.template_name || 'One-off' }}
+                                </td>
+                                <td class="px-3 py-2 capitalize">
+                                    {{ occurrence.status }}
+                                </td>
+                                <td class="px-3 py-2 tabular-nums">
+                                    {{ formatMoney(occurrence.amount) }}
+                                </td>
+                                <td class="px-3 py-2 text-neutral-600">
+                                    <template
+                                        v-if="occurrence.bank_transaction"
+                                    >
+                                        {{
+                                            occurrence.bank_transaction
+                                                .posted_at
+                                        }}
+                                        ·
+                                        {{
+                                            occurrence.bank_transaction
+                                                .description
+                                        }}
+                                    </template>
+                                    <span v-else>—</span>
+                                </td>
+                                <td class="px-3 py-2">
+                                    <template
+                                        v-if="
+                                            occurrence.status === 'planned' &&
+                                            bill_link_candidates.length > 0
+                                        "
+                                    >
+                                        <div
+                                            v-if="linkForId === occurrence.id"
+                                            class="flex flex-wrap items-center gap-2"
+                                        >
+                                            <select
+                                                v-model="linkTransactionId"
+                                                class="rounded border px-2 py-1"
+                                            >
+                                                <option value="">
+                                                    Select debit
+                                                </option>
+                                                <option
+                                                    v-for="candidate in bill_link_candidates"
+                                                    :key="candidate.id"
+                                                    :value="
+                                                        String(candidate.id)
+                                                    "
+                                                >
+                                                    {{ candidate.posted_at }}
+                                                    ·
+                                                    {{
+                                                        formatMoney(
+                                                            Math.abs(
+                                                                candidate.amount,
+                                                            ),
+                                                        )
+                                                    }}
+                                                    ·
+                                                    {{ candidate.description }}
+                                                </option>
+                                            </select>
+                                            <button
+                                                type="button"
+                                                class="rounded border px-2 py-1 text-xs"
+                                                @click="
+                                                    linkOccurrence(occurrence)
+                                                "
+                                            >
+                                                Link
+                                            </button>
+                                        </div>
+                                        <button
+                                            v-else
+                                            type="button"
+                                            class="text-xs underline"
+                                            @click="linkForId = occurrence.id"
+                                        >
+                                            Link transaction
+                                        </button>
+                                    </template>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
 
         <section class="space-y-3">
             <h2 class="text-lg font-medium">Paycheck plans</h2>
-            <p v-if="templates.length === 0" class="text-sm text-neutral-600">
+            <p
+                v-if="paycheck_templates.length === 0"
+                class="text-sm text-neutral-600"
+            >
                 No paycheck plans yet.
             </p>
             <div
-                v-for="template in templates"
+                v-for="template in paycheck_templates"
                 :key="template.id"
                 class="space-y-3 rounded border px-4 py-3"
             >
-                <div
-                    class="flex flex-wrap items-start justify-between gap-3"
-                >
+                <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <p class="font-medium">
                             {{ template.name }}
@@ -955,17 +1071,6 @@
                             </span>
                             <span v-if="template.merchant">
                                 · {{ template.merchant.name }}
-                            </span>
-                            <span v-if="template.bills?.length">
-                                ·
-                                {{
-                                    template.bills
-                                        .map(
-                                            (bill) =>
-                                                `${bill.category?.name ?? 'Bill'} ${formatMoney(bill.expected_amount)}`,
-                                        )
-                                        .join(' · ')
-                                }}
                             </span>
                         </p>
                     </div>
@@ -1122,88 +1227,194 @@
                         <input v-model="editForm.is_active" type="checkbox" />
                         Active
                     </label>
-                    <div class="space-y-2 sm:col-span-2 lg:col-span-3">
-                        <div class="flex items-center justify-between">
-                            <p class="text-sm font-medium">Assigned bills</p>
-                            <button
-                                v-if="bill_categories.length > 0"
-                                type="button"
-                                class="text-xs underline"
-                                @click="addBillRow(editForm.bills)"
-                            >
-                                Add bill
-                            </button>
-                        </div>
-                        <div
-                            v-for="(bill, index) in editForm.bills"
-                            :key="index"
-                            class="space-y-2"
+                    <div class="sm:col-span-2 lg:col-span-3">
+                        <button
+                            type="submit"
+                            class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                            :disabled="editForm.processing"
                         >
-                            <div
-                                class="grid gap-2 sm:grid-cols-[1fr_8rem_auto]"
-                            >
-                                <select
-                                    v-model="bill.category_id"
-                                    class="rounded border px-3 py-2 text-sm"
-                                    @change="onBillCategoryChange(bill)"
-                                >
-                                    <option value="">Select bill</option>
-                                    <option
-                                        v-for="category in bill_categories"
-                                        :key="category.id"
-                                        :value="category.id"
-                                    >
-                                        {{ category.name }}
-                                    </option>
-                                </select>
-                                <input
-                                    v-model="bill.expected_amount"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    class="rounded border px-3 py-2 text-sm"
-                                />
-                                <button
-                                    type="button"
-                                    class="text-sm text-red-700"
-                                    @click="
-                                        removeBillRow(editForm.bills, index)
-                                    "
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                            <select
-                                v-if="
-                                    billAmountOptionsFor(bill.category_id)
-                                        .length
-                                "
-                                v-model="bill.source_transaction_id"
-                                class="w-full rounded border px-3 py-2 text-sm"
-                                @change="
-                                    applyBillTransaction(
-                                        bill,
-                                        bill.source_transaction_id,
-                                    )
-                                "
-                            >
-                                <option value="">Use a past charge</option>
-                                <option
-                                    v-for="option in billAmountOptionsFor(
-                                        bill.category_id,
-                                    )"
-                                    :key="option.id"
-                                    :value="String(option.id)"
-                                >
-                                    {{ option.posted_at }} ·
-                                    {{ formatMoney(option.amount) }}
-                                    <template v-if="option.description">
-                                        · {{ option.description }}
-                                    </template>
-                                </option>
-                            </select>
-                        </div>
+                            Save plan
+                        </button>
                     </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-lg font-medium">Bill plans</h2>
+            <p
+                v-if="bill_templates.length === 0"
+                class="text-sm text-neutral-600"
+            >
+                No bill plans yet.
+            </p>
+            <div
+                v-for="template in bill_templates"
+                :key="template.id"
+                class="space-y-3 rounded border px-4 py-3"
+            >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p class="font-medium">
+                            {{ template.name }}
+                            <span
+                                v-if="!template.is_active"
+                                class="ml-2 text-xs font-normal text-neutral-500"
+                                >Inactive</span
+                            >
+                        </p>
+                        <p class="text-sm text-neutral-600">
+                            Day {{ template.expected_day }} ·
+                            {{ formatMoney(template.expected_amount) }} ·
+                            {{ matchModeLabel(template.match_mode) }}
+                            <span v-if="template.normalized_pattern">
+                                · {{ template.normalized_pattern }}
+                            </span>
+                            <span v-if="template.merchant">
+                                · {{ template.merchant.name }}
+                            </span>
+                        </p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                            @click="
+                                editingId === template.id
+                                    ? (editingId = null)
+                                    : startEdit(template)
+                            "
+                        >
+                            {{ editingId === template.id ? 'Close' : 'Edit' }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded border px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                            @click="deleteTemplate(template)"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+
+                <form
+                    v-if="editingId === template.id"
+                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                    @submit.prevent="saveEdit(template)"
+                >
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Name</span>
+                        <input
+                            v-model="editForm.name"
+                            type="text"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                            required
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Category</span>
+                        <select
+                            v-model="editForm.category_id"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        >
+                            <option
+                                v-for="category in bill_categories"
+                                :key="category.id"
+                                :value="category.id"
+                            >
+                                {{ category.name }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Expected day</span>
+                        <input
+                            v-model.number="editForm.expected_day"
+                            type="number"
+                            min="1"
+                            max="31"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Expected amount</span>
+                        <input
+                            v-model="editForm.expected_amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Match mode</span>
+                        <select
+                            v-model="editForm.match_mode"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        >
+                            <option
+                                v-for="mode in bill_match_modes"
+                                :key="mode"
+                                :value="mode"
+                            >
+                                {{ matchModeLabel(mode) }}
+                            </option>
+                        </select>
+                    </label>
+                    <label
+                        v-if="needsPattern(editForm.match_mode)"
+                        class="block text-sm"
+                    >
+                        <span class="text-neutral-600">Memo / description</span>
+                        <input
+                            v-model="editForm.normalized_pattern"
+                            type="text"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        />
+                    </label>
+                    <label
+                        v-if="needsMerchant(editForm.match_mode)"
+                        class="block text-sm"
+                    >
+                        <span class="text-neutral-600">Merchant</span>
+                        <select
+                            v-model="editForm.merchant_id"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        >
+                            <option value="">Select merchant</option>
+                            <option
+                                v-for="merchant in merchants"
+                                :key="merchant.id"
+                                :value="merchant.id"
+                            >
+                                {{ merchant.name }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Look back (days)</span>
+                        <input
+                            v-model.number="editForm.lookback_days"
+                            type="number"
+                            min="0"
+                            max="31"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Look forward (days)</span>
+                        <input
+                            v-model.number="editForm.lookforward_days"
+                            type="number"
+                            min="0"
+                            max="31"
+                            class="mt-1 w-full rounded border px-3 py-2"
+                        />
+                    </label>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input v-model="editForm.is_active" type="checkbox" />
+                        Active
+                    </label>
                     <div class="sm:col-span-2 lg:col-span-3">
                         <button
                             type="submit"

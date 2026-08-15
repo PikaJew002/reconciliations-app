@@ -34,7 +34,6 @@ class PlannedOccurrenceFactory extends Factory
             'lookback_days' => 7,
             'lookforward_days' => 3,
             'status' => PlannedOccurrence::STATUS_PLANNED,
-            'bills_customized' => false,
         ];
     }
 

@@ -264,32 +264,38 @@ class PaycheckPlanningTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Plans/Index')
-                ->where('templates.0.name', 'Mine')
-                ->has('templates', 1));
+                ->where('paycheck_templates.0.name', 'Mine')
+                ->has('paycheck_templates', 1)
+                ->has('bill_templates', 0));
     }
 
-    public function test_plans_index_includes_recent_bill_transactions_for_amount_suggestions(): void
+    public function test_create_form_includes_category_source_transactions_and_matching_rule(): void
     {
         $user = User::factory()->create();
-        $salary = Category::factory()->for($user)->income()->create();
-        $rent = Category::factory()->for($user)->bill()->create(['name' => 'Rent']);
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        $emptyIncome = Category::factory()->for($user)->income()->create(['name' => 'Bonus']);
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
 
-        PlannedTemplate::factory()->create([
+        TransactionCategorizationRule::factory()->create([
             'user_id' => $user->id,
             'category_id' => $salary->id,
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+            'normalized_pattern' => 'acme payroll',
+            'amount' => null,
         ]);
 
-        BankTransaction::factory()->create([
+        $transaction = BankTransaction::factory()->create([
             'user_id' => $user->id,
             'account_id' => $account->id,
             'import_batch_id' => $batch->id,
-            'amount' => -1250.0,
-            'classification' => BankTransaction::CLASSIFICATION_BILL,
-            'category_id' => $rent->id,
-            'posted_at' => '2026-02-01',
-            'description' => 'LANDLORD',
+            'amount' => 3010.0,
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'category_id' => $salary->id,
+            'posted_at' => '2026-03-01',
+            'description' => 'ACME PAYROLL',
+            'normalized_description' => 'acme payroll',
         ]);
 
         $this->actingAs($user)
@@ -297,195 +303,13 @@ class PaycheckPlanningTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Plans/Index')
-                ->where("bill_amount_options.{$rent->id}.0.amount", 1250)
-                ->where("bill_amount_options.{$rent->id}.0.description", 'LANDLORD'));
-    }
-
-    public function test_template_bills_copy_to_occurrences_and_compute_leftover(): void
-    {
-        $user = User::factory()->create();
-        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
-        $rent = Category::factory()->for($user)->bill()->create(['name' => 'Rent']);
-        $car = Category::factory()->for($user)->bill()->create(['name' => 'Car']);
-
-        $this->actingAs($user)
-            ->post('/plans', [
-                'name' => 'Acme paycheck',
-                'category_id' => $salary->id,
-                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
-                'normalized_pattern' => 'acme payroll',
-                'expected_day' => 1,
-                'expected_amount' => 3000,
-                'lookback_days' => 7,
-                'lookforward_days' => 3,
-                'bills' => [
-                    ['category_id' => $rent->id, 'expected_amount' => 1200],
-                    ['category_id' => $car->id, 'expected_amount' => 350],
-                ],
-            ])
-            ->assertRedirect(route('plans.index'));
-
-        $template = PlannedTemplate::query()->where('user_id', $user->id)->first();
-        $this->assertNotNull($template);
-        $this->assertSame(2, $template->bills()->count());
-
-        $this->actingAs($user)
-            ->get('/plans?month=2026-03')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Plans/Index')
-                ->where('occurrences.0.paycheck_amount', 3000)
-                ->where('occurrences.0.bills_total', 1550)
-                ->where('occurrences.0.leftover', 1450)
-                ->where('occurrences.0.bills_customized', false)
-                ->has('occurrences.0.bills', 2));
-    }
-
-    public function test_paycheck_can_assign_multiple_bills_in_the_same_category(): void
-    {
-        $user = User::factory()->create();
-        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
-        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
-
-        $this->actingAs($user)
-            ->post('/plans', [
-                'name' => 'Acme paycheck',
-                'category_id' => $salary->id,
-                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
-                'normalized_pattern' => 'acme payroll',
-                'expected_day' => 1,
-                'expected_amount' => 3000,
-                'lookback_days' => 7,
-                'lookforward_days' => 3,
-                'bills' => [
-                    ['category_id' => $utilities->id, 'expected_amount' => 80],
-                    ['category_id' => $utilities->id, 'expected_amount' => 140],
-                ],
-            ])
-            ->assertRedirect(route('plans.index'));
-
-        $template = PlannedTemplate::query()->where('user_id', $user->id)->first();
-        $this->assertSame(2, $template->bills()->where('category_id', $utilities->id)->count());
-
-        $this->actingAs($user)
-            ->get('/plans?month=2026-03')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Plans/Index')
-                ->where('occurrences.0.bills_total', 220)
-                ->where('occurrences.0.leftover', 2780)
-                ->has('occurrences.0.bills', 2));
-    }
-
-    public function test_occurrence_bill_override_is_not_wiped_by_template_sync(): void
-    {
-        $user = User::factory()->create();
-        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
-        $rent = Category::factory()->for($user)->bill()->create(['name' => 'Rent']);
-        $car = Category::factory()->for($user)->bill()->create(['name' => 'Car']);
-
-        $this->actingAs($user)->post('/plans', [
-            'name' => 'Acme paycheck',
-            'category_id' => $salary->id,
-            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
-            'normalized_pattern' => 'acme payroll',
-            'expected_day' => 1,
-            'expected_amount' => 3000,
-            'lookback_days' => 7,
-            'lookforward_days' => 3,
-            'bills' => [
-                ['category_id' => $rent->id, 'expected_amount' => 1200],
-            ],
-        ]);
-
-        $template = PlannedTemplate::query()->where('user_id', $user->id)->first();
-        $march = PlannedOccurrence::query()
-            ->where('template_id', $template->id)
-            ->whereDate('expected_date', '2026-03-01')
-            ->first();
-
-        $this->actingAs($user)
-            ->patch(route('plans.occurrences.bills.update', $march), [
-                'month' => '2026-03',
-                'bills' => [
-                    ['category_id' => $rent->id, 'expected_amount' => 1500],
-                ],
-            ])
-            ->assertRedirect();
-
-        $march->refresh();
-        $this->assertTrue($march->bills_customized);
-        $this->assertSame(1500.0, $march->assignedBillsTotal());
-
-        $this->actingAs($user)->patch("/plans/{$template->id}?month=2026-03", [
-            'name' => 'Acme paycheck',
-            'category_id' => $salary->id,
-            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
-            'normalized_pattern' => 'acme payroll',
-            'expected_day' => 1,
-            'expected_amount' => 3000,
-            'lookback_days' => 7,
-            'lookforward_days' => 3,
-            'is_active' => true,
-            'bills' => [
-                ['category_id' => $rent->id, 'expected_amount' => 1200],
-                ['category_id' => $car->id, 'expected_amount' => 350],
-            ],
-        ]);
-
-        $march->refresh()->load('bills');
-        $this->assertTrue($march->bills_customized);
-        $this->assertSame(1, $march->bills->count());
-        $this->assertSame(1500.0, (float) $march->bills->first()->expected_amount);
-        $this->assertSame(1500.0, $march->leftoverForExpenses());
-
-        $april = PlannedOccurrence::query()
-            ->where('template_id', $template->id)
-            ->whereDate('expected_date', '2026-04-01')
-            ->with('bills')
-            ->first();
-
-        $this->assertNotNull($april);
-        $this->assertFalse($april->bills_customized);
-        $this->assertSame(2, $april->bills->count());
-        $this->assertSame(1550.0, $april->assignedBillsTotal());
-        $this->assertSame(1450.0, $april->leftoverForExpenses());
-    }
-
-    public function test_resolved_paycheck_leftover_uses_actual_amount(): void
-    {
-        [$user, $salary, $template] = $this->paycheckSetup();
-        $rent = Category::factory()->for($user)->bill()->create(['name' => 'Rent']);
-
-        app(PlannedOccurrenceGenerator::class)->syncTemplateBills($template, [
-            ['category_id' => $rent->id, 'expected_amount' => 1200],
-        ]);
-        app(PlannedOccurrenceGenerator::class)->syncTemplate($template->fresh());
-
-        $account = Account::factory()->create();
-        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
-        BankTransaction::factory()->create([
-            'user_id' => $user->id,
-            'account_id' => $account->id,
-            'import_batch_id' => $batch->id,
-            'amount' => 2987.0,
-            'classification' => BankTransaction::CLASSIFICATION_INCOME,
-            'category_id' => $salary->id,
-            'posted_at' => '2026-02-28',
-            'description' => 'ACME PAYROLL',
-            'normalized_description' => 'acme payroll',
-        ]);
-
-        app(PlannedOccurrenceMatcher::class)->matchForUser($user->id);
-
-        $this->actingAs($user)
-            ->get('/plans?month=2026-03')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Plans/Index')
-                ->where('occurrences.0.paycheck_amount', 2987)
-                ->where('occurrences.0.bills_total', 1200)
-                ->where('occurrences.0.leftover', 1787));
+                ->has("source_transactions.{$salary->id}", 1)
+                ->where("source_transactions.{$salary->id}.0.id", $transaction->id)
+                ->where("source_transactions.{$salary->id}.0.expected_day", 1)
+                ->where("source_transactions.{$salary->id}.0.amount", 3010)
+                ->where("source_transactions.{$salary->id}.0.match_mode", TransactionCategorizationRule::MATCH_DESCRIPTION)
+                ->where("source_transactions.{$salary->id}.0.normalized_pattern", 'acme payroll')
+                ->missing("source_transactions.{$emptyIncome->id}"));
     }
 
     /**

@@ -22,30 +22,11 @@ class PlannedOccurrenceGenerator
         }
     }
 
-    /**
-     * @param  list<array{category_id: int, expected_amount: float|int|string}>  $bills
-     */
-    public function syncTemplateBills(PlannedTemplate $template, array $bills): void
-    {
-        $template->bills()->delete();
-
-        foreach ($bills as $bill) {
-            $template->bills()->create([
-                'category_id' => $bill['category_id'],
-                'expected_amount' => $bill['expected_amount'],
-            ]);
-        }
-
-        $template->unsetRelation('bills');
-    }
-
     public function syncTemplate(PlannedTemplate $template): void
     {
         if (! $template->is_active) {
             return;
         }
-
-        $template->load('bills');
 
         $months = $this->monthsForUser($template->user_id);
         $keepDates = [];
@@ -73,13 +54,11 @@ class PlannedOccurrenceGenerator
 
             if ($existing !== null) {
                 $existing->update($attributes);
-                $this->copyBillsIfUncustomized($existing->fresh(), $template);
 
                 continue;
             }
 
-            $occurrence = PlannedOccurrence::query()->create($attributes);
-            $this->copyBillsIfUncustomized($occurrence, $template);
+            PlannedOccurrence::query()->create($attributes);
         }
 
         PlannedOccurrence::query()
@@ -121,22 +100,5 @@ class PlannedOccurrenceGenerator
         }
 
         return $months;
-    }
-
-    protected function copyBillsIfUncustomized(PlannedOccurrence $occurrence, PlannedTemplate $template): void
-    {
-        if ($occurrence->bills_customized || $occurrence->isResolved()) {
-            return;
-        }
-
-        $occurrence->bills()->delete();
-
-        foreach ($template->bills as $bill) {
-            $occurrence->bills()->create([
-                'category_id' => $bill->category_id,
-                'expected_amount' => $bill->expected_amount,
-                'source_template_bill_id' => $bill->id,
-            ]);
-        }
     }
 }

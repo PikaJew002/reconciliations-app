@@ -34,4 +34,17 @@ class PlannedTemplateFactory extends Factory
             'is_active' => true,
         ];
     }
+
+    public function bill(): static
+    {
+        return $this->state(fn () => [
+            'category_id' => Category::factory()->bill(),
+            'name' => 'Electric',
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+            'normalized_pattern' => 'duke energy',
+            'amount' => 140.00,
+            'expected_amount' => 140.00,
+        ]);
+    }
 }

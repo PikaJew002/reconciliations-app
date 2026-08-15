@@ -10,10 +10,14 @@ use App\Models\Category;
 use App\Models\Merchant;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\TransactionCategorizationRule;
 use App\Services\Plans\PlannedOccurrenceGenerator;
+use App\Services\Reconciliation\TransactionMatchEvaluator;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -40,7 +44,7 @@ class PlannedTemplateController extends Controller
 
         $templates = PlannedTemplate::query()
             ->where('user_id', $userId)
-            ->with(['category:id,name,kind', 'merchant:id,name', 'bills.category:id,name'])
+            ->with(['category:id,name,kind', 'merchant:id,name'])
             ->orderBy('expected_day')
             ->orderBy('name')
             ->get()
@@ -54,61 +58,44 @@ class PlannedTemplateController extends Controller
 
         $occurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
-            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
             ->where('expected_date', '>=', $monthStart)
             ->where('expected_date', '<', $monthEnd)
             ->with([
                 'template:id,name',
                 'category:id,name',
                 'bankTransaction:id,posted_at,amount,description',
-                'bills.category:id,name',
             ])
             ->orderBy('expected_date')
             ->orderBy('id')
-            ->get()
+            ->get();
+
+        $paycheckOccurrences = $occurrences
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->values()
             ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
 
-        $linkCandidates = BankTransaction::query()
-            ->where('user_id', $userId)
-            ->where('amount', '>', 0)
-            ->where(function ($query) {
-                $query->whereNull('classification')
-                    ->orWhere('classification', BankTransaction::CLASSIFICATION_INCOME);
-            })
-            ->when(
-                $linkedIds !== [],
-                fn ($query) => $query->whereNotIn('id', $linkedIds),
-            )
-            ->where('posted_at', '>=', $monthStart->copy()->subMonth())
-            ->where('posted_at', '<', $monthEnd)
-            ->orderByDesc('posted_at')
-            ->get(['id', 'posted_at', 'amount', 'description'])
-            ->map(fn (BankTransaction $transaction) => [
-                'id' => $transaction->id,
-                'posted_at' => $transaction->posted_at?->toDateString(),
-                'amount' => (float) $transaction->amount,
-                'description' => $transaction->description,
-            ]);
+        $billOccurrences = $occurrences
+            ->where('classification', BankTransaction::CLASSIFICATION_BILL)
+            ->values()
+            ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
 
-        $categories = Category::query()
-            ->where('user_id', $userId)
-            ->where('kind', Category::KIND_INCOME)
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (Category $category) => [
-                'id' => $category->id,
-                'name' => $category->name,
-            ]);
+        $paycheckLinkCandidates = $this->linkCandidates(
+            $userId,
+            $linkedIds,
+            $monthStart,
+            $monthEnd,
+            credits: true,
+        );
+        $billLinkCandidates = $this->linkCandidates(
+            $userId,
+            $linkedIds,
+            $monthStart,
+            $monthEnd,
+            credits: false,
+        );
 
-        $billCategories = Category::query()
-            ->where('user_id', $userId)
-            ->where('kind', Category::KIND_BILL)
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (Category $category) => [
-                'id' => $category->id,
-                'name' => $category->name,
-            ]);
+        $categories = $this->categoriesForKind($userId, Category::KIND_INCOME);
+        $billCategories = $this->categoriesForKind($userId, Category::KIND_BILL);
 
         $merchants = Merchant::query()
             ->where('user_id', $userId)
@@ -121,14 +108,24 @@ class PlannedTemplateController extends Controller
 
         return Inertia::render('Plans/Index', [
             'month' => $monthStart->format('Y-m'),
-            'templates' => $templates,
-            'occurrences' => $occurrences,
-            'link_candidates' => $linkCandidates,
+            'paycheck_templates' => $templates
+                ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+                ->values()
+                ->all(),
+            'bill_templates' => $templates
+                ->where('classification', BankTransaction::CLASSIFICATION_BILL)
+                ->values()
+                ->all(),
+            'paycheck_occurrences' => $paycheckOccurrences,
+            'bill_occurrences' => $billOccurrences,
+            'paycheck_link_candidates' => $paycheckLinkCandidates,
+            'bill_link_candidates' => $billLinkCandidates,
             'categories' => $categories,
             'bill_categories' => $billCategories,
-            'bill_amount_options' => $this->billAmountOptions($userId),
             'merchants' => $merchants,
             'match_modes' => PlannedTemplate::incomeMatchModes(),
+            'bill_match_modes' => PlannedTemplate::billMatchModes(),
+            'source_transactions' => $this->sourceTransactions($userId),
         ]);
     }
 
@@ -141,12 +138,11 @@ class PlannedTemplateController extends Controller
             ...$request->templateAttributes(),
         ]);
 
-        $generator->syncTemplateBills($template, $request->bills());
-        $generator->syncTemplate($template->fresh());
+        $generator->syncTemplate($template);
 
         return redirect()
             ->route('plans.index')
-            ->with('success', 'Paycheck plan created.');
+            ->with('success', $request->planLabel().' created.');
     }
 
     public function update(
@@ -157,27 +153,26 @@ class PlannedTemplateController extends Controller
         $this->ensureOwned($request, $plannedTemplate);
 
         $plannedTemplate->update($request->templateAttributes());
-
-        if ($request->exists('bills')) {
-            $generator->syncTemplateBills($plannedTemplate, $request->bills());
-        }
-
         $generator->syncTemplate($plannedTemplate->fresh());
 
         return redirect()
             ->route('plans.index', array_filter(['month' => $request->string('month')->toString() ?: null]))
-            ->with('success', 'Paycheck plan updated.');
+            ->with('success', $request->planLabel().' updated.');
     }
 
     public function destroy(Request $request, PlannedTemplate $plannedTemplate): RedirectResponse
     {
         $this->ensureOwned($request, $plannedTemplate);
 
+        $label = $plannedTemplate->classification === BankTransaction::CLASSIFICATION_BILL
+            ? 'Bill plan'
+            : 'Paycheck plan';
+
         $plannedTemplate->delete();
 
         return redirect()
             ->route('plans.index')
-            ->with('success', 'Paycheck plan deleted.');
+            ->with('success', $label.' deleted.');
     }
 
     /**
@@ -188,6 +183,7 @@ class PlannedTemplateController extends Controller
         return [
             'id' => $template->id,
             'name' => $template->name,
+            'classification' => $template->classification,
             'category_id' => $template->category_id,
             'category' => $template->category ? [
                 'id' => $template->category->id,
@@ -206,18 +202,6 @@ class PlannedTemplateController extends Controller
             'lookback_days' => (int) $template->lookback_days,
             'lookforward_days' => (int) $template->lookforward_days,
             'is_active' => (bool) $template->is_active,
-            'bills' => $template->bills
-                ->map(fn ($bill) => [
-                    'id' => $bill->id,
-                    'category_id' => $bill->category_id,
-                    'category' => $bill->category ? [
-                        'id' => $bill->category->id,
-                        'name' => $bill->category->name,
-                    ] : null,
-                    'expected_amount' => (float) $bill->expected_amount,
-                ])
-                ->values()
-                ->all(),
         ];
     }
 
@@ -226,35 +210,23 @@ class PlannedTemplateController extends Controller
      */
     protected function occurrencePayload(PlannedOccurrence $occurrence): array
     {
-        $bills = $occurrence->bills
-            ->map(fn ($bill) => [
-                'id' => $bill->id,
-                'category_id' => $bill->category_id,
-                'category' => $bill->category ? [
-                    'id' => $bill->category->id,
-                    'name' => $bill->category->name,
-                ] : null,
-                'expected_amount' => (float) $bill->expected_amount,
-            ])
-            ->values()
-            ->all();
+        $actualAmount = $occurrence->isResolved() && $occurrence->bankTransaction !== null
+            ? abs((float) $occurrence->bankTransaction->amount)
+            : (float) $occurrence->expected_amount;
 
         return [
             'id' => $occurrence->id,
             'template_id' => $occurrence->template_id,
             'template_name' => $occurrence->template?->name,
+            'classification' => $occurrence->classification,
             'category' => $occurrence->category ? [
                 'id' => $occurrence->category->id,
                 'name' => $occurrence->category->name,
             ] : null,
             'expected_date' => $occurrence->expected_date?->toDateString(),
             'expected_amount' => (float) $occurrence->expected_amount,
-            'paycheck_amount' => $occurrence->paycheckAmount(),
-            'bills_total' => $occurrence->assignedBillsTotal(),
-            'leftover' => $occurrence->leftoverForExpenses(),
-            'bills_customized' => (bool) $occurrence->bills_customized,
+            'amount' => $actualAmount,
             'status' => $occurrence->status,
-            'bills' => $bills,
             'bank_transaction' => $occurrence->bankTransaction ? [
                 'id' => $occurrence->bankTransaction->id,
                 'posted_at' => $occurrence->bankTransaction->posted_at?->toDateString(),
@@ -265,21 +237,106 @@ class PlannedTemplateController extends Controller
     }
 
     /**
-     * @return array<int, list<array{id: int, posted_at: ?string, description: ?string, amount: float}>>
+     * @param  list<int|string>  $linkedIds
+     * @return Collection<int, array{id: int, posted_at: ?string, amount: float, description: ?string}>
      */
-    protected function billAmountOptions(int $userId): array
+    protected function linkCandidates(
+        int $userId,
+        array $linkedIds,
+        Carbon $monthStart,
+        Carbon $monthEnd,
+        bool $credits,
+    ): Collection {
+        $classification = $credits
+            ? BankTransaction::CLASSIFICATION_INCOME
+            : BankTransaction::CLASSIFICATION_BILL;
+
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('amount', $credits ? '>' : '<', 0)
+            ->where(function (Builder $query) use ($classification) {
+                $query->whereNull('classification')
+                    ->orWhere('classification', $classification);
+            })
+            ->when(
+                $linkedIds !== [],
+                fn (Builder $query) => $query->whereNotIn('id', $linkedIds),
+            )
+            ->where('posted_at', '>=', $monthStart->copy()->subMonth())
+            ->where('posted_at', '<', $monthEnd)
+            ->orderByDesc('posted_at')
+            ->get(['id', 'posted_at', 'amount', 'description'])
+            ->map(fn (BankTransaction $transaction) => [
+                'id' => $transaction->id,
+                'posted_at' => $transaction->posted_at?->toDateString(),
+                'amount' => (float) $transaction->amount,
+                'description' => $transaction->description,
+            ]);
+    }
+
+    /**
+     * Recent categorized income/bill transactions, grouped by category.
+     * Categories with none are omitted so the create form can hide the picker.
+     *
+     * @return array<int, list<array<string, mixed>>>
+     */
+    protected function sourceTransactions(int $userId): array
     {
-        $options = [];
+        $categories = Category::query()
+            ->where('user_id', $userId)
+            ->whereIn('kind', [Category::KIND_INCOME, Category::KIND_BILL])
+            ->get(['id', 'kind']);
+
+        if ($categories->isEmpty()) {
+            return [];
+        }
+
+        $categoryIds = $categories->pluck('id')->all();
+        $kindByCategoryId = $categories->mapWithKeys(
+            fn (Category $category) => [(int) $category->id => $category->kind],
+        );
 
         $transactions = BankTransaction::query()
             ->where('user_id', $userId)
-            ->where('classification', BankTransaction::CLASSIFICATION_BILL)
-            ->whereNotNull('category_id')
-            ->where('amount', '<', 0)
+            ->whereIn('category_id', $categoryIds)
+            ->where(function (Builder $query) {
+                $query->where(function (Builder $credits) {
+                    $credits->where('amount', '>', 0)
+                        ->where('classification', BankTransaction::CLASSIFICATION_INCOME);
+                })->orWhere(function (Builder $debits) {
+                    $debits->where('amount', '<', 0)
+                        ->where('classification', BankTransaction::CLASSIFICATION_BILL);
+                });
+            })
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
-            ->limit(300)
-            ->get(['id', 'category_id', 'posted_at', 'amount', 'description']);
+            ->limit(400)
+            ->get([
+                'id',
+                'category_id',
+                'merchant_id',
+                'posted_at',
+                'amount',
+                'description',
+                'normalized_description',
+                'classification',
+            ]);
+
+        if ($transactions->isEmpty()) {
+            return [];
+        }
+
+        $rulesByCategory = TransactionCategorizationRule::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->whereIn('category_id', $categoryIds)
+            ->whereIn('match_mode', TransactionCategorizationRule::persistableMatchModes())
+            ->orderBy('id')
+            ->get()
+            ->groupBy(fn (TransactionCategorizationRule $rule) => (int) $rule->category_id);
+
+        $evaluator = app(TransactionMatchEvaluator::class);
+        $options = [];
 
         foreach ($transactions as $transaction) {
             $categoryId = (int) $transaction->category_id;
@@ -288,15 +345,78 @@ class PlannedTemplateController extends Controller
                 continue;
             }
 
+            $kind = $kindByCategoryId->get($categoryId);
+            $allowedModes = $kind === Category::KIND_BILL
+                ? PlannedTemplate::billMatchModes()
+                : PlannedTemplate::incomeMatchModes();
+
+            $matchedRule = null;
+
+            foreach ($rulesByCategory->get($categoryId, collect()) as $rule) {
+                if (! in_array($rule->match_mode, $allowedModes, true)) {
+                    continue;
+                }
+
+                if ($evaluator->matchesRule($transaction, $rule)) {
+                    $matchedRule = $rule;
+                    break;
+                }
+            }
+
+            $postedAt = $transaction->posted_at;
+            $description = $transaction->description;
+            $normalized = $evaluator->normalizedDescription($transaction);
+
             $options[$categoryId][] = [
                 'id' => $transaction->id,
-                'posted_at' => $transaction->posted_at?->toDateString(),
-                'description' => $transaction->description,
+                'posted_at' => $postedAt?->toDateString(),
+                'description' => $description,
+                'suggested_name' => $this->suggestedPlanName($description),
                 'amount' => abs((float) $transaction->amount),
+                'expected_day' => $postedAt !== null ? (int) $postedAt->day : 1,
+                'merchant_id' => $transaction->merchant_id !== null
+                    ? (int) $transaction->merchant_id
+                    : null,
+                'normalized_pattern' => $matchedRule?->normalized_pattern ?: ($normalized !== '' ? $normalized : null),
+                'match_mode' => $matchedRule?->match_mode,
+                'match_amount' => $matchedRule?->amount !== null
+                    ? abs((float) $matchedRule->amount)
+                    : abs((float) $transaction->amount),
             ];
         }
 
         return $options;
+    }
+
+    protected function suggestedPlanName(?string $description): ?string
+    {
+        $name = trim((string) $description);
+
+        if ($name === '') {
+            return null;
+        }
+
+        if (mb_strlen($name) > 40) {
+            $name = rtrim(mb_substr($name, 0, 40)).'…';
+        }
+
+        return $name;
+    }
+
+    /**
+     * @return Collection<int, array{id: int, name: string}>
+     */
+    protected function categoriesForKind(int $userId, string $kind): Collection
+    {
+        return Category::query()
+            ->where('user_id', $userId)
+            ->where('kind', $kind)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Category $category) => [
+                'id' => $category->id,
+                'name' => $category->name,
+            ]);
     }
 
     private function ensureOwned(Request $request, PlannedTemplate $plannedTemplate): void
