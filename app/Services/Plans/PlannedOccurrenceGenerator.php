@@ -2,7 +2,6 @@
 
 namespace App\Services\Plans;
 
-use App\Models\BudgetYear;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use Carbon\Carbon;
@@ -10,6 +9,8 @@ use Carbon\CarbonInterface;
 
 class PlannedOccurrenceGenerator
 {
+    public const MONTHS_AHEAD = 2;
+
     public function ensureForUser(int $userId): void
     {
         $templates = PlannedTemplate::query()
@@ -22,13 +23,31 @@ class PlannedOccurrenceGenerator
         }
     }
 
+    public function ensureAll(?int $userId = null): int
+    {
+        $query = PlannedTemplate::query()->where('is_active', true);
+
+        if ($userId !== null) {
+            $query->where('user_id', $userId);
+        }
+
+        $synced = 0;
+
+        foreach ($query->cursor() as $template) {
+            $this->syncTemplate($template);
+            $synced++;
+        }
+
+        return $synced;
+    }
+
     public function syncTemplate(PlannedTemplate $template): void
     {
         if (! $template->is_active) {
             return;
         }
 
-        $months = $this->monthsForUser($template->user_id);
+        $months = $this->monthsInHorizon();
         $keepDates = [];
 
         foreach ($months as $month) {
@@ -73,23 +92,15 @@ class PlannedOccurrenceGenerator
     }
 
     /**
+     * Last month through two months ahead. Future months stay ungenerated
+     * so the template can change mid-year before those records exist.
+     *
      * @return list<CarbonInterface>
      */
-    protected function monthsForUser(int $userId): array
+    protected function monthsInHorizon(): array
     {
         $start = Carbon::now()->startOfMonth()->subMonth()->startOfDay();
-        $currentYear = BudgetYear::query()
-            ->where('user_id', $userId)
-            ->where('is_current', true)
-            ->first();
-
-        $end = $currentYear !== null
-            ? $currentYear->endsOnExclusive()
-            : Carbon::now()->startOfMonth()->addYear();
-
-        if ($end->lte($start)) {
-            $end = $start->copy()->addYear();
-        }
+        $end = Carbon::now()->startOfMonth()->addMonths(self::MONTHS_AHEAD + 1);
 
         $months = [];
         $cursor = $start->copy();
