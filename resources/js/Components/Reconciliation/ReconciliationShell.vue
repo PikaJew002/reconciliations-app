@@ -379,6 +379,8 @@
             {{ activeRun.metadata?.transactions_categorized ?? 0 }}
             transactions, matched
             {{ activeRun.metadata?.merchants_matched ?? 0 }} merchants,
+            {{ activeRun.metadata?.planned_occurrences_matched ?? 0 }} planned
+            occurrences,
             {{ activeRun.metadata?.transactions_matched ?? 0 }} order
             transactions, and
             {{ activeRun.metadata?.synthetic_matched ?? 0 }} synthetic bank
@@ -395,8 +397,9 @@
         </p>
 
         <p class="text-sm text-neutral-600">
-            Re-runs merchant matching, Walmart order matching, and synthetic
-            bank-spend reconciliation on data you have already imported.
+            Re-runs merchant matching, Walmart order matching, planned
+            paycheck/bill matching, and synthetic bank-spend reconciliation on
+            data you have already imported.
         </p>
 
         <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">

@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ReconciliationRun;
+use App\Services\Plans\PlannedOccurrenceMatcher;
 use App\Services\Reconciliation\CreditCardPaymentPairingService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
@@ -28,6 +29,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
         ProductMatchingService $productMatching,
         OrderComponentGenerator $components,
         MerchantMatcher $matcher,
+        PlannedOccurrenceMatcher $plannedOccurrences,
         OrderPaymentResolutionService $paymentResolution,
         ReconciliationService $reconciliation,
     ): void {
@@ -46,6 +48,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
             $productsMatched = $productMatching->matchForUser($run->user_id);
             $ordersWithComponents = $components->generateForUser($run->user_id);
             $merchantsMatched = $matcher->matchForUser($run->user_id);
+            $plannedMatched = $plannedOccurrences->matchForUser($run->user_id);
             $nonBankResolved = $paymentResolution->autoResolveNonBankOnlyOrders($run->user_id);
             $transactionsMatched = $reconciliation->reconcileForUser($run->user_id);
 
@@ -60,6 +63,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
                 'products_linked' => $productsMatched['linked'],
                 'orders_with_components' => $ordersWithComponents,
                 'merchants_matched' => $merchantsMatched,
+                'planned_occurrences_matched' => $plannedMatched['matched'],
                 'non_bank_resolved' => $nonBankResolved,
                 'transactions_matched' => $transactionsMatched,
             ]);
