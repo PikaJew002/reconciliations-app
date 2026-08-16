@@ -113,6 +113,39 @@ class BankTransactionImportTest extends TestCase
         $response->assertRedirect(route('accounts.imports.show', [$account, $batch]));
     }
 
+    public function test_authenticated_user_can_queue_a_bank_txt_import(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $account = Account::factory()->create(['user_id' => $user->id]);
+
+        $file = UploadedFile::fake()->createWithContent(
+            'Joint_Account_1_Transactions_2026-06-15_2026-08-16.txt',
+            implode("\t", ['"Account Name"', '"Processed Date"', '"Description"', '"Check Number"', '"Credit or Debit"', '"Amount"'])."\n",
+        );
+
+        $response = $this->actingAs($user)->post(route('accounts.imports.store', $account), [
+            'file' => $file,
+        ]);
+
+        $batch = ImportBatch::query()->first();
+
+        $this->assertNotNull($batch);
+        $this->assertSame(
+            'Joint_Account_1_Transactions_2026-06-15_2026-08-16.txt',
+            $batch->original_filename,
+        );
+        Storage::disk('local')->assertExists($batch->storage_path);
+
+        Queue::assertPushed(ProcessImportBatch::class, function (ProcessImportBatch $job) use ($batch) {
+            return $job->importBatch->is($batch);
+        });
+
+        $response->assertRedirect(route('accounts.imports.show', [$account, $batch]));
+    }
+
     public function test_authenticated_user_can_view_account_import_batch(): void
     {
         $user = User::factory()->create();

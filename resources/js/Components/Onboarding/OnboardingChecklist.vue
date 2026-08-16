@@ -16,7 +16,9 @@
 </script>
 
 <template>
-    <section class="rounded border px-4 py-3">
+    <section
+        class="rounded border bg-[color-mix(in_srgb,var(--color-brand)_5%,white)] px-4 py-3"
+    >
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h2 class="text-sm font-semibold">Getting started</h2>

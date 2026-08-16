@@ -44,7 +44,7 @@
             </p>
             <h1 class="mt-2 text-2xl font-semibold">Import bank transactions</h1>
             <p class="text-sm text-neutral-600">
-                Upload a CSV for {{ account.name }}
+                Upload a CSV or TXT export for {{ account.name }}
                 <template v-if="account.last_four">
                     (•••• {{ account.last_four }})</template
                 >.
@@ -60,11 +60,11 @@
 
         <form class="space-y-4" @submit.prevent="submit">
             <div>
-                <label class="mb-1 block text-sm" for="file">CSV file</label>
+                <label class="mb-1 block text-sm" for="file">CSV or TXT file</label>
                 <input
                     id="file"
                     type="file"
-                    accept=".csv,text/csv"
+                    accept=".csv,.txt,text/csv,text/plain"
                     class="w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-brand file:px-4 file:inline-flex file:h-10 file:items-center file:text-sm file:font-medium file:text-white hover:file:bg-brand-hover"
                     data-tour="import-bank-file"
                     required
