@@ -253,6 +253,16 @@
         { deep: true },
     );
 
+    watch(
+        flashSuccess,
+        (message, previous) => {
+            if (message && message !== previous) {
+                pushToast({ type: 'success', message });
+            }
+        },
+        { immediate: true },
+    );
+
     onUnmounted(() => {
         stopMatchPolling();
 
@@ -722,13 +732,6 @@
                     {{ showCreate === 'bill' ? 'Cancel' : 'New bill plan' }}
                 </button>
             </div>
-        </div>
-
-        <div
-            v-if="flashSuccess"
-            class="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
-        >
-            {{ flashSuccess }}
         </div>
 
         <div
