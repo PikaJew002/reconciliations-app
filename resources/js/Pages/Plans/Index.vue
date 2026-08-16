@@ -563,6 +563,11 @@
         return bill.assigned_paycheck;
     };
 
+    let assignableBillsFor = (paycheck) =>
+        props.bill_templates.filter(
+            (bill) => !otherPaycheckForBill(paycheck, bill),
+        );
+
     let assignedBillsTotal = (paycheck) => {
         let ids = selectedBillIds(paycheck);
 
@@ -1482,24 +1487,22 @@
                     >
                         {{ assignmentError }}
                     </p>
+                    <p
+                        v-if="assignableBillsFor(template).length === 0"
+                        class="text-sm text-neutral-600"
+                    >
+                        No bills available to assign.
+                    </p>
                     <label
-                        v-for="bill in bill_templates"
+                        v-for="bill in assignableBillsFor(template)"
                         :key="bill.id"
                         class="flex items-start gap-2 text-sm"
-                        :class="
-                            otherPaycheckForBill(template, bill)
-                                ? 'text-neutral-400'
-                                : ''
-                        "
                     >
                         <input
                             type="checkbox"
                             class="mt-0.5"
                             :checked="isBillSelected(template, bill)"
-                            :disabled="
-                                Boolean(otherPaycheckForBill(template, bill)) ||
-                                savingAssignmentsFor === template.id
-                            "
+                            :disabled="savingAssignmentsFor === template.id"
                             @change="toggleBillAssignment(template, bill)"
                         />
                         <span>
@@ -1510,15 +1513,6 @@
                                 class="text-neutral-500"
                             >
                                 (Inactive)
-                            </span>
-                            <span
-                                v-if="otherPaycheckForBill(template, bill)"
-                                class="text-neutral-500"
-                            >
-                                · Assigned to
-                                {{
-                                    otherPaycheckForBill(template, bill).name
-                                }}
                             </span>
                         </span>
                     </label>
