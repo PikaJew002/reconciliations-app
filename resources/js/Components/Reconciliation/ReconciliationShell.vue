@@ -402,7 +402,7 @@
             data you have already imported.
         </p>
 
-        <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+        <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
             <div class="rounded border px-3 py-2">
                 <dt class="text-neutral-600">Needs review</dt>
                 <dd class="text-lg font-medium">
@@ -422,19 +422,9 @@
                 </dd>
             </div>
             <div class="rounded border px-3 py-2">
-                <dt class="text-neutral-600">Matched pairs</dt>
-                <dd class="text-lg font-medium">{{ summary.matched_pairs }}</dd>
-            </div>
-            <div class="rounded border px-3 py-2">
                 <dt class="text-neutral-600">Unmatched transactions</dt>
                 <dd class="text-lg font-medium">
                     {{ summary.unmatched_transactions }}
-                </dd>
-            </div>
-            <div class="rounded border px-3 py-2">
-                <dt class="text-neutral-600">Partial transactions</dt>
-                <dd class="text-lg font-medium">
-                    {{ summary.partial_transactions }}
                 </dd>
             </div>
         </dl>

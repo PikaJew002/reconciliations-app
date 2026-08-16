@@ -5,10 +5,8 @@ namespace App\Services\Reconciliation;
 use App\Models\BankTransaction;
 use App\Models\Order;
 use App\Models\ReimbursementGroup;
-use App\Models\TransactionAllocation;
 use App\Models\TransactionTransferLink;
 use App\Models\VenmoActivity;
-use Illuminate\Support\Facades\DB;
 
 class ReconciliationReviewService
 {
@@ -75,11 +73,6 @@ class ReconciliationReviewService
                 ->where('status', 'reconciled')
                 ->count(),
             'unmatched_transactions' => $this->unmatchedTransactionsQuery($userId)->count(),
-            'partial_transactions' => BankTransaction::query()
-                ->where('user_id', $userId)
-                ->where('status', 'partial')
-                ->count(),
-            'matched_pairs' => $this->matchedPairCount($userId),
             'unbalanced_orders' => count($unbalancedOrders),
             'payment_review_orders' => count($paymentReviewOrders),
             'suggested_transfers' => $suggestedTransfersCount,
@@ -200,13 +193,6 @@ class ReconciliationReviewService
                 'classification' => $transaction->classification,
             ])
             ->all();
-    }
-
-    protected function matchedPairCount(int $userId): int
-    {
-        return (int) DB::query()
-            ->fromSub($this->matchedPairsQuery($userId), 'pairs')
-            ->count();
     }
 
     /**
@@ -479,24 +465,5 @@ class ReconciliationReviewService
         }
 
         return $payload;
-    }
-
-    protected function matchedPairsQuery(int $userId)
-    {
-        return TransactionAllocation::query()
-            ->join('bank_transactions', 'bank_transactions.id', '=', 'transaction_allocations.bank_transaction_id')
-            ->join('order_components', 'order_components.id', '=', 'transaction_allocations.order_component_id')
-            ->join('orders', 'orders.id', '=', 'order_components.order_id')
-            ->where('bank_transactions.user_id', $userId)
-            ->groupBy(
-                'transaction_allocations.bank_transaction_id',
-                'order_components.order_id',
-            )
-            ->select([
-                'transaction_allocations.bank_transaction_id',
-                'order_components.order_id',
-                DB::raw('SUM(transaction_allocations.allocated_amount) as allocated_amount'),
-                DB::raw('MAX(transaction_allocations.created_at) as matched_at'),
-            ]);
     }
 }
