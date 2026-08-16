@@ -559,7 +559,7 @@
 
                 <form
                     v-if="transaction.can_categorize"
-                    class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-4"
+                    class="grid items-end gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-4"
                     @submit.prevent="categorizeTransaction(transaction)"
                 >
                     <label class="block space-y-1">
@@ -675,10 +675,10 @@
                             </option>
                         </select>
                     </label>
-                    <div class="flex items-end">
+                    <div>
                         <button
                             type="submit"
-                            class="w-full rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
+                            class="w-full rounded border border-brand bg-brand px-3 py-1.5 text-white hover:border-brand-hover hover:bg-brand-hover disabled:opacity-50"
                             :disabled="
                                 categorizingTransactionId === transaction.id ||
                                 !canSubmitCategorize(transaction)
