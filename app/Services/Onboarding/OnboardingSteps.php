@@ -4,6 +4,8 @@ namespace App\Services\Onboarding;
 
 class OnboardingSteps
 {
+    public const ADD_ACCOUNT = 'add-account';
+
     public const IMPORT_BANK = 'import-bank';
 
     public const IMPORT_ORDERS = 'import-orders';
@@ -24,9 +26,19 @@ class OnboardingSteps
     {
         return [
             [
+                'key' => self::ADD_ACCOUNT,
+                'title' => 'Create your account(s)',
+                'description' => 'Add the checking, savings, and credit card accounts you will import. You can add more later.',
+                'cta' => 'Add account',
+                'skippable' => false,
+                'tour' => self::ADD_ACCOUNT,
+                'completeIf' => fn (OnboardingSnapshot $snapshot): bool => $snapshot->hasAccount,
+                'href' => fn (OnboardingSnapshot $snapshot): string => '/accounts/create',
+            ],
+            [
                 'key' => self::IMPORT_BANK,
                 'title' => 'Import bank transactions',
-                'description' => 'Upload about six weeks of history so you can see a full cycle of spend. Create an account first if you do not have one yet.',
+                'description' => 'Upload about six weeks of history so you can see a full cycle of spend.',
                 'cta' => 'Import CSV',
                 'skippable' => false,
                 'tour' => self::IMPORT_BANK,

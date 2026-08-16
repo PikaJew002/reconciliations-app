@@ -24,7 +24,7 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding', null));
     }
 
-    public function test_new_user_sees_incomplete_import_steps(): void
+    public function test_new_user_sees_incomplete_setup_steps(): void
     {
         $user = User::factory()->create();
 
@@ -35,18 +35,21 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.visible', true)
                 ->where('onboarding.finished', false)
                 ->where('onboarding.percentage', 0)
-                ->has('onboarding.steps', 2)
-                ->where('onboarding.steps.0.key', OnboardingSteps::IMPORT_BANK)
+                ->has('onboarding.steps', 3)
+                ->where('onboarding.steps.0.key', OnboardingSteps::ADD_ACCOUNT)
                 ->where('onboarding.steps.0.complete', false)
                 ->where('onboarding.steps.0.href', '/accounts/create')
-                ->where('onboarding.steps.0.tour', OnboardingSteps::IMPORT_BANK)
-                ->where('onboarding.steps.1.key', OnboardingSteps::IMPORT_ORDERS)
+                ->where('onboarding.steps.0.tour', OnboardingSteps::ADD_ACCOUNT)
+                ->where('onboarding.steps.1.key', OnboardingSteps::IMPORT_BANK)
                 ->where('onboarding.steps.1.complete', false)
-                ->where('onboarding.steps.1.skippable', true)
-                ->where('onboarding.steps.1.href', '/orders'));
+                ->where('onboarding.steps.1.href', '/accounts/create')
+                ->where('onboarding.steps.2.key', OnboardingSteps::IMPORT_ORDERS)
+                ->where('onboarding.steps.2.complete', false)
+                ->where('onboarding.steps.2.skippable', true)
+                ->where('onboarding.steps.2.href', '/orders'));
     }
 
-    public function test_import_bank_href_uses_existing_account(): void
+    public function test_creating_an_account_completes_the_first_step(): void
     {
         $user = User::factory()->create();
         $account = Account::factory()->for($user)->create();
@@ -56,8 +59,11 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
-                ->where('onboarding.steps.0.complete', false)
-                ->where('onboarding.steps.0.href', "/accounts/{$account->id}/imports"));
+                ->where('onboarding.steps.0.key', OnboardingSteps::ADD_ACCOUNT)
+                ->where('onboarding.steps.0.complete', true)
+                ->where('onboarding.steps.1.key', OnboardingSteps::IMPORT_BANK)
+                ->where('onboarding.steps.1.complete', false)
+                ->where('onboarding.steps.1.href', "/accounts/{$account->id}/imports"));
     }
 
     public function test_completed_bank_import_marks_import_bank_complete(): void
@@ -78,9 +84,10 @@ class OnboardingPayloadTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
                 ->where('onboarding.finished', false)
-                ->where('onboarding.percentage', 50)
+                ->where('onboarding.percentage', 67)
                 ->where('onboarding.steps.0.complete', true)
-                ->where('onboarding.steps.1.complete', false));
+                ->where('onboarding.steps.1.complete', true)
+                ->where('onboarding.steps.2.complete', false));
     }
 
     public function test_bank_transactions_without_completed_batch_still_complete_import_bank(): void
@@ -105,7 +112,8 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.steps.0.complete', true)
-                ->where('onboarding.steps.1.complete', false));
+                ->where('onboarding.steps.1.complete', true)
+                ->where('onboarding.steps.2.complete', false));
     }
 
     public function test_pending_empty_bank_import_does_not_complete_the_step(): void
@@ -124,7 +132,8 @@ class OnboardingPayloadTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('onboarding.steps.0.complete', false));
+                ->where('onboarding.steps.0.complete', true)
+                ->where('onboarding.steps.1.complete', false));
     }
 
     public function test_another_users_data_does_not_complete_steps(): void
@@ -152,7 +161,8 @@ class OnboardingPayloadTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
                 ->where('onboarding.steps.0.complete', false)
-                ->where('onboarding.steps.1.complete', false));
+                ->where('onboarding.steps.1.complete', false)
+                ->where('onboarding.steps.2.complete', false));
     }
 
     public function test_existing_user_with_bank_and_orders_is_auto_hidden(): void
@@ -166,7 +176,8 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', false)
-                ->missing('onboarding.steps'));
+                ->where('onboarding.finished', true)
+                ->has('onboarding.steps', 3));
 
         $this->assertNotNull($user->fresh()->onboarding_hidden_at);
     }
@@ -187,7 +198,9 @@ class OnboardingPayloadTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('onboarding.visible', false));
+                ->where('onboarding.visible', false)
+                ->where('onboarding.finished', true)
+                ->has('onboarding.steps', 2));
     }
 
     public function test_skipped_orders_are_excluded_while_bank_import_is_still_open(): void
@@ -204,8 +217,9 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
-                ->has('onboarding.steps', 1)
-                ->where('onboarding.steps.0.key', OnboardingSteps::IMPORT_BANK)
+                ->has('onboarding.steps', 2)
+                ->where('onboarding.steps.0.key', OnboardingSteps::ADD_ACCOUNT)
+                ->where('onboarding.steps.1.key', OnboardingSteps::IMPORT_BANK)
                 ->where('onboarding.finished', false));
     }
 
@@ -216,6 +230,16 @@ class OnboardingPayloadTest extends TestCase
         $this->actingAs($user)
             ->from('/')
             ->post(route('onboarding.skip'), ['step' => OnboardingSteps::IMPORT_BANK])
+            ->assertSessionHasErrors('step');
+    }
+
+    public function test_cannot_skip_add_account(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from('/')
+            ->post(route('onboarding.skip'), ['step' => OnboardingSteps::ADD_ACCOUNT])
             ->assertSessionHasErrors('step');
     }
 
@@ -245,7 +269,10 @@ class OnboardingPayloadTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('onboarding.visible', false));
+                ->where('onboarding.visible', false)
+                ->where('onboarding.finished', false)
+                ->where('onboarding.percentage', 0)
+                ->has('onboarding.steps', 3));
 
         $this->actingAs($user)
             ->from('/')
@@ -259,10 +286,10 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
-                ->has('onboarding.steps', 2));
+                ->has('onboarding.steps', 3));
     }
 
-    public function test_hidden_user_does_not_need_domain_rows_to_receive_hidden_payload(): void
+    public function test_hidden_user_still_receives_step_progress(): void
     {
         $user = User::factory()->create([
             'onboarding_hidden_at' => now(),
@@ -273,7 +300,9 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', false)
-                ->missing('onboarding.steps'));
+                ->where('onboarding.finished', false)
+                ->where('onboarding.percentage', 0)
+                ->has('onboarding.steps', 3));
     }
 
     public function test_tour_complete_and_dismiss_are_persisted(): void
@@ -296,8 +325,9 @@ class OnboardingPayloadTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('onboarding.steps.0.tour', null)
-                ->where('onboarding.steps.1.tour', OnboardingSteps::IMPORT_ORDERS));
+                ->where('onboarding.steps.0.tour', OnboardingSteps::ADD_ACCOUNT)
+                ->where('onboarding.steps.1.tour', null)
+                ->where('onboarding.steps.2.tour', OnboardingSteps::IMPORT_ORDERS));
 
         $this->actingAs($user)
             ->from('/')
@@ -351,7 +381,8 @@ class OnboardingPayloadTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
                 ->where('onboarding.steps.0.complete', false)
-                ->where('onboarding.steps.1.complete', true));
+                ->where('onboarding.steps.1.complete', false)
+                ->where('onboarding.steps.2.complete', true));
     }
 
     protected function seedCompletedBankImport(User $user): void

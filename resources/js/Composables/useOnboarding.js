@@ -19,7 +19,7 @@ export function useOnboarding() {
             return null;
         }
 
-        if (!isVisible.value || totalCount.value === 0) {
+        if (totalCount.value === 0) {
             return 'Setup';
         }
 

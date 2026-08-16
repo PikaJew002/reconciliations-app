@@ -15,8 +15,8 @@ class OnboardingPayload
     ) {}
 
     /**
-     * @return array{visible: false}|array{
-     *     visible: true,
+     * @return array{
+     *     visible: bool,
      *     finished: bool,
      *     percentage: int,
      *     steps: list<array<string, mixed>>
@@ -24,20 +24,23 @@ class OnboardingPayload
      */
     public function for(User $user): array
     {
+        $payload = $this->visiblePayload($user);
+
         if ($this->request->session()->get(self::FORCE_VISIBLE_SESSION_KEY)) {
-            return $this->visiblePayload($user);
+            return $payload;
         }
 
         if ($user->onboarding_hidden_at !== null) {
-            return ['visible' => false];
-        }
+            $payload['visible'] = false;
 
-        $payload = $this->visiblePayload($user);
+            return $payload;
+        }
 
         if ($payload['finished']) {
             $user->forceFill(['onboarding_hidden_at' => now()])->save();
+            $payload['visible'] = false;
 
-            return ['visible' => false];
+            return $payload;
         }
 
         return $payload;
