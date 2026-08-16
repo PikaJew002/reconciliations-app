@@ -577,8 +577,13 @@
                 100,
         ) / 100;
 
-    let leftoverClass = (amount) =>
-        amount < 0 ? 'text-red-700' : 'text-emerald-800';
+    let leftoverClass = (amount) => {
+        if (amount === null || amount === undefined) {
+            return 'text-neutral-600';
+        }
+
+        return amount < 0 ? 'text-red-700' : 'text-emerald-800';
+    };
 
     let occurrencesPendingThisMonth = computed(
         () =>
@@ -1147,6 +1152,7 @@
                                 <th class="px-3 py-2 font-medium">Plan</th>
                                 <th class="px-3 py-2 font-medium">Status</th>
                                 <th class="px-3 py-2 font-medium">Amount</th>
+                                <th class="px-3 py-2 font-medium">Leftover</th>
                                 <th class="px-3 py-2 font-medium">Posted</th>
                                 <th class="px-3 py-2 font-medium"></th>
                             </tr>
@@ -1168,6 +1174,17 @@
                                 </td>
                                 <td class="px-3 py-2 tabular-nums">
                                     {{ formatMoney(occurrence.amount) }}
+                                </td>
+                                <td
+                                    class="px-3 py-2 tabular-nums"
+                                    :class="leftoverClass(occurrence.leftover)"
+                                >
+                                    {{
+                                        occurrence.leftover === null ||
+                                        occurrence.leftover === undefined
+                                            ? '—'
+                                            : formatMoney(occurrence.leftover)
+                                    }}
                                 </td>
                                 <td class="px-3 py-2 text-neutral-600">
                                     <template

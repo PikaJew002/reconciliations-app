@@ -80,10 +80,17 @@ class PlannedTemplateController extends Controller
             ->orderBy('id')
             ->get();
 
+        $monthPlan = $assignments->monthCards($userId, $monthStart);
+        $leftoverByTemplateId = collect($monthPlan['paychecks'])
+            ->mapWithKeys(fn (array $card) => [$card['id'] => $card['leftover']]);
+
         $paycheckOccurrences = $occurrences
             ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
             ->values()
-            ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
+            ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload(
+                $occurrence,
+                $leftoverByTemplateId->get($occurrence->template_id),
+            ));
 
         $billOccurrences = $occurrences
             ->where('classification', BankTransaction::CLASSIFICATION_BILL)
@@ -265,7 +272,7 @@ class PlannedTemplateController extends Controller
     /**
      * @return array<string, mixed>
      */
-    protected function occurrencePayload(PlannedOccurrence $occurrence): array
+    protected function occurrencePayload(PlannedOccurrence $occurrence, ?float $leftover = null): array
     {
         $actualAmount = $occurrence->isResolved() && $occurrence->bankTransaction !== null
             ? abs((float) $occurrence->bankTransaction->amount)
@@ -283,6 +290,7 @@ class PlannedTemplateController extends Controller
             'expected_date' => $occurrence->expected_date?->toDateString(),
             'expected_amount' => (float) $occurrence->expected_amount,
             'amount' => $actualAmount,
+            'leftover' => $leftover,
             'status' => $occurrence->status,
             'bank_transaction' => $occurrence->bankTransaction ? [
                 'id' => $occurrence->bankTransaction->id,

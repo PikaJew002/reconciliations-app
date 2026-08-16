@@ -2,7 +2,11 @@
 
 namespace Tests\Feature\Plans;
 
+use App\Models\Account;
+use App\Models\BankTransaction;
 use App\Models\Category;
+use App\Models\ImportBatch;
+use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
@@ -210,6 +214,101 @@ class PaycheckBillAssignmentTest extends TestCase
                 'bill_template_ids' => [$foreignBill->id],
             ])
             ->assertSessionHasErrors('bill_template_ids');
+    }
+
+    public function test_paycheck_occurrence_leftover_uses_expected_amounts_until_resolved(): void
+    {
+        [$user, $paycheck, $rent, $electric] = $this->assignmentSetup();
+        $paycheck->assignedBills()->sync([$rent->id, $electric->id]);
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-03')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where(
+                    'paycheck_occurrences',
+                    fn ($occurrences) => collect($occurrences)->contains(
+                        fn ($occurrence) => $occurrence['expected_date'] === '2026-03-01'
+                            && (float) $occurrence['leftover'] === 1660.0,
+                    ),
+                ));
+    }
+
+    public function test_paycheck_occurrence_leftover_uses_actuals_when_resolved(): void
+    {
+        [$user, $paycheck, $rent, $electric] = $this->assignmentSetup();
+        $paycheck->assignedBills()->sync([$rent->id, $electric->id]);
+
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $this->actingAs($user)->get('/plans?month=2026-03');
+
+        $paycheckOccurrence = PlannedOccurrence::query()
+            ->where('template_id', $paycheck->id)
+            ->whereDate('expected_date', '2026-03-01')
+            ->firstOrFail();
+        $rentOccurrence = PlannedOccurrence::query()
+            ->where('template_id', $rent->id)
+            ->whereDate('expected_date', '2026-03-01')
+            ->firstOrFail();
+        $electricOccurrence = PlannedOccurrence::query()
+            ->where('template_id', $electric->id)
+            ->whereDate('expected_date', '2026-03-05')
+            ->firstOrFail();
+
+        $paycheckTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => 2987.0,
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'posted_at' => '2026-03-01',
+        ]);
+        $rentTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -1200.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'posted_at' => '2026-03-01',
+        ]);
+        $electricTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -135.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'posted_at' => '2026-03-05',
+        ]);
+
+        $paycheckOccurrence->update([
+            'bank_transaction_id' => $paycheckTx->id,
+            'status' => PlannedOccurrence::STATUS_RESOLVED,
+        ]);
+        $rentOccurrence->update([
+            'bank_transaction_id' => $rentTx->id,
+            'status' => PlannedOccurrence::STATUS_RESOLVED,
+        ]);
+        $electricOccurrence->update([
+            'bank_transaction_id' => $electricTx->id,
+            'status' => PlannedOccurrence::STATUS_RESOLVED,
+        ]);
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-03')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where(
+                    'paycheck_occurrences',
+                    fn ($occurrences) => collect($occurrences)->contains(
+                        fn ($occurrence) => $occurrence['expected_date'] === '2026-03-01'
+                            && (float) $occurrence['amount'] === 2987.0
+                            && (float) $occurrence['leftover'] === 1652.0,
+                    ),
+                ));
     }
 
     /**

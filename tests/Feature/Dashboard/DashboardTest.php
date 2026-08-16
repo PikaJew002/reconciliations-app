@@ -10,6 +10,9 @@ use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Models\PlannedOccurrence;
+use App\Models\PlannedTemplate;
+use App\Models\TransactionCategorizationRule;
 use App\Models\User;
 use App\Services\Reconciliation\ReimbursementGroupService;
 use App\Services\Reporting\CategorySpendQuery;
@@ -461,5 +464,147 @@ class DashboardTest extends TestCase
                 ->component('Dashboard/Index')
                 ->where('total_income', 500)
                 ->where('sections.income.uncategorized.amount', 50));
+    }
+
+    public function test_month_dashboard_shows_projected_paycheck_plan_cards(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        $housing = Category::factory()->for($user)->bill()->create(['name' => 'Housing']);
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $paycheck = PlannedTemplate::factory()->create([
+            'user_id' => $user->id,
+            'category_id' => $salary->id,
+            'name' => 'Acme paycheck',
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+            'normalized_pattern' => 'acme payroll',
+            'expected_day' => 1,
+            'expected_amount' => 3000,
+        ]);
+        $rent = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $housing->id,
+            'name' => 'Rent',
+            'expected_day' => 1,
+            'expected_amount' => 1200,
+            'amount' => 1200,
+        ]);
+        $electric = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'name' => 'Electric',
+            'expected_day' => 5,
+            'expected_amount' => 140,
+            'amount' => 140,
+        ]);
+        $paycheck->assignedBills()->sync([$rent->id, $electric->id]);
+
+        $this->actingAs($user)
+            ->get('/?view=month&month=2026-08')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Dashboard/Index')
+                ->has('paycheck_plans.paychecks', 1)
+                ->where('paycheck_plans.paychecks.0.name', 'Acme paycheck')
+                ->where('paycheck_plans.paychecks.0.amount', 3000)
+                ->where('paycheck_plans.paychecks.0.bills_amount', 1340)
+                ->where('paycheck_plans.paychecks.0.leftover', 1660)
+                ->where('paycheck_plans.paychecks.0.bills.0.name', 'Rent')
+                ->where('paycheck_plans.paychecks.0.bills.1.name', 'Electric')
+                ->where('paycheck_plans.leftover', 1660));
+    }
+
+    public function test_month_dashboard_paycheck_cards_use_actuals_when_resolved(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        $housing = Category::factory()->for($user)->bill()->create(['name' => 'Housing']);
+
+        $paycheck = PlannedTemplate::factory()->create([
+            'user_id' => $user->id,
+            'category_id' => $salary->id,
+            'name' => 'Acme paycheck',
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+            'normalized_pattern' => 'acme payroll',
+            'expected_day' => 1,
+            'expected_amount' => 3000,
+        ]);
+        $rent = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $housing->id,
+            'name' => 'Rent',
+            'expected_day' => 1,
+            'expected_amount' => 1200,
+            'amount' => 1200,
+        ]);
+        $paycheck->assignedBills()->sync([$rent->id]);
+
+        $this->actingAs($user)->get('/?view=month&month=2026-08');
+
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $paycheckTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => 2987.0,
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'posted_at' => '2026-08-01',
+        ]);
+        $rentTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -1180.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'posted_at' => '2026-08-01',
+        ]);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $paycheck->id)
+            ->whereDate('expected_date', '2026-08-01')
+            ->update([
+                'bank_transaction_id' => $paycheckTx->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+            ]);
+        PlannedOccurrence::query()
+            ->where('template_id', $rent->id)
+            ->whereDate('expected_date', '2026-08-01')
+            ->update([
+                'bank_transaction_id' => $rentTx->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+            ]);
+
+        $this->actingAs($user)
+            ->get('/?view=month&month=2026-08')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Dashboard/Index')
+                ->where('paycheck_plans.paychecks.0.amount', 2987)
+                ->where('paycheck_plans.paychecks.0.bills.0.amount', 1180)
+                ->where('paycheck_plans.paychecks.0.leftover', 1807)
+                ->where('paycheck_plans.leftover', 1807));
+    }
+
+    public function test_ytm_dashboard_omits_paycheck_plan_cards(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        PlannedTemplate::factory()->create([
+            'user_id' => $user->id,
+            'category_id' => $salary->id,
+            'expected_amount' => 3000,
+        ]);
+
+        $this->actingAs($user)
+            ->get('/?view=ytm')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Dashboard/Index')
+                ->where('paycheck_plans.paychecks', []));
     }
 }
