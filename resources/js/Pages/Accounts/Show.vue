@@ -311,7 +311,10 @@
                     </div>
                     <p class="text-neutral-600">
                         {{ formatDate(transaction.posted_at) }}
-                        <template v-if="transaction.merchant">
+                        <template v-if="transaction.venmo_summary">
+                            · {{ transaction.venmo_summary }}
+                        </template>
+                        <template v-else-if="transaction.merchant">
                             · {{ transaction.merchant.name }}
                         </template>
                         <template v-if="transaction.card_last_four">

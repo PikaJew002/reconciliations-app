@@ -4,6 +4,7 @@
     import ReconciliationShell from '../../Components/Reconciliation/ReconciliationShell.vue';
     import SuggestedTransfers from '../../Components/Reconciliation/SuggestedTransfers.vue';
     import UnbalancedOrders from '../../Components/Reconciliation/UnbalancedOrders.vue';
+    import VenmoMatches from '../../Components/Reconciliation/VenmoMatches.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { router } from '@inertiajs/vue3';
     import { watch } from 'vue';
@@ -39,6 +40,14 @@
             type: Array,
             default: () => [],
         },
+        suggestedVenmoMatches: {
+            type: Array,
+            default: () => [],
+        },
+        unmatchedVenmoActivities: {
+            type: Array,
+            default: () => [],
+        },
         categories: {
             type: Array,
             default: () => [],
@@ -60,6 +69,8 @@
         'openReimbursementGroups',
         'closedReimbursementGroups',
         'reimbursementEligibleTransactions',
+        'suggestedVenmoMatches',
+        'unmatchedVenmoActivities',
         'categories',
     ];
 
@@ -88,6 +99,14 @@
             <SuggestedTransfers
                 v-if="suggestedTransfers.length > 0"
                 :suggested-transfers="suggestedTransfers"
+            />
+            <VenmoMatches
+                v-if="
+                    suggestedVenmoMatches.length > 0 ||
+                    unmatchedVenmoActivities.length > 0
+                "
+                :suggested-venmo-matches="suggestedVenmoMatches"
+                :unmatched-venmo-activities="unmatchedVenmoActivities"
             />
             <ReimbursementGroups
                 v-if="

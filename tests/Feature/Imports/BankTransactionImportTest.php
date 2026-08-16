@@ -6,6 +6,7 @@ use App\Jobs\CategorizeTransactions;
 use App\Jobs\GenerateOrderComponents;
 use App\Jobs\MatchMerchants;
 use App\Jobs\MatchPlannedOccurrences;
+use App\Jobs\MatchVenmoActivities;
 use App\Jobs\PairCreditCardPayments;
 use App\Jobs\PairTransfers;
 use App\Jobs\ProcessImportBatch;
@@ -235,6 +236,7 @@ CSV);
             CategorizeTransactions::class,
             GenerateOrderComponents::class,
             MatchMerchants::class,
+            MatchVenmoActivities::class,
             MatchPlannedOccurrences::class,
             RunReconciliation::class,
         ]);

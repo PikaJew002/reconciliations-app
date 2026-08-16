@@ -26,8 +26,10 @@ use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
+use App\Http\Controllers\Reconciliation\VenmoMatchController;
 use App\Http\Controllers\Rules\IncomeClassificationRuleController;
 use App\Http\Controllers\Rules\RuleController;
+use App\Http\Controllers\Venmo\VenmoImportController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -55,6 +57,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/accounts/{account}/imports/{importBatch}', [ImportBatchController::class, 'showForAccount'])
         ->name('accounts.imports.show');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
+
+    Route::get('/venmo/imports', [VenmoImportController::class, 'index'])
+        ->name('venmo.imports.index');
+    Route::post('/venmo/imports', [VenmoImportController::class, 'store'])
+        ->name('venmo.imports.store');
+    Route::get('/venmo/imports/{importBatch}', [ImportBatchController::class, 'showForVenmo'])
+        ->name('venmo.imports.show');
 
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
     Route::get('/categories/create', [CategoryController::class, 'create'])->name('categories.create');
@@ -143,6 +152,12 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.transfers.confirm');
     Route::post('/reconciliation/transfers/{transferLink}/reject', [TransferLinkController::class, 'reject'])
         ->name('reconciliation.transfers.reject');
+    Route::post('/reconciliation/venmo/{venmoActivity}/confirm', [VenmoMatchController::class, 'confirm'])
+        ->name('reconciliation.venmo.confirm');
+    Route::post('/reconciliation/venmo/{venmoActivity}/reject', [VenmoMatchController::class, 'reject'])
+        ->name('reconciliation.venmo.reject');
+    Route::post('/reconciliation/venmo/{venmoActivity}/assign', [VenmoMatchController::class, 'assign'])
+        ->name('reconciliation.venmo.assign');
     Route::post('/reconciliation/transactions/{transaction}/categorize', [TransactionCategorizationController::class, 'store'])
         ->name('reconciliation.transactions.categorize');
     Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])

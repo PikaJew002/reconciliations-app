@@ -99,6 +99,10 @@
     }
 
     function unmatchedTransactionTitle(transaction) {
+        if (transaction.venmo_summary) {
+            return transaction.venmo_summary;
+        }
+
         if (transaction.merchant) {
             return transaction.merchant;
         }

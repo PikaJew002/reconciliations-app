@@ -61,12 +61,20 @@
                     Bank accounts and their posted-date coverage.
                 </p>
             </div>
-            <Link
-                href="/accounts/create"
-                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
-            >
-                Add account
-            </Link>
+            <div class="flex flex-wrap gap-2">
+                <Link
+                    href="/accounts/create"
+                    class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
+                >
+                    Add account
+                </Link>
+                <Link
+                    href="/venmo/imports"
+                    class="rounded border px-4 py-2 text-sm"
+                >
+                    Import Venmo statement
+                </Link>
+            </div>
         </div>
 
         <p

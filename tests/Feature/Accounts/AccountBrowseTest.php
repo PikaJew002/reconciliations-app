@@ -4,7 +4,9 @@ namespace Tests\Feature\Accounts;
 
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\ImportBatch;
 use App\Models\User;
+use App\Models\VenmoActivity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -252,5 +254,49 @@ class AccountBrowseTest extends TestCase
                 ->has('transactions', 1)
                 ->where('transactions.0.description', 'WALMART.COM ORDER')
                 ->where('filters.q', 'WALMART'));
+    }
+
+    public function test_show_includes_venmo_summary_and_search_matches_statement_note(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'posted_at' => '2026-06-06',
+            'description' => 'VENMO PURCHASE 1051937135825',
+            'amount' => -250.00,
+        ]);
+
+        VenmoActivity::factory()->cardPayment('2195', -250.00)->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'bank_transaction_id' => $transaction->id,
+            'match_status' => VenmoActivity::STATUS_CONFIRMED,
+            'note' => 'Extreme',
+            'to_name' => 'Tyler Adams',
+            'occurred_at' => '2026-06-05 19:11:43',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', $account))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('transactions.0.description', 'VENMO PURCHASE 1051937135825')
+                ->where('transactions.0.venmo_summary', 'Tyler Adams · Extreme'));
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', ['account' => $account, 'q' => 'Extreme']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 1)
+                ->where('transactions.0.venmo_summary', 'Tyler Adams · Extreme')
+                ->where('filters.q', 'Extreme'));
     }
 }

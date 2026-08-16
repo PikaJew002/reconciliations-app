@@ -12,6 +12,7 @@ use App\Services\Reconciliation\ProductMatchingService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Services\Reconciliation\TransferPairingService;
+use App\Services\Reconciliation\VenmoActivityMatcher;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -32,6 +33,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
         PlannedOccurrenceMatcher $plannedOccurrences,
         OrderPaymentResolutionService $paymentResolution,
         ReconciliationService $reconciliation,
+        VenmoActivityMatcher $venmoMatcher,
     ): void {
         $run = ReconciliationRun::query()->find($this->reconciliationRunId);
 
@@ -49,6 +51,7 @@ class RunUserReconciliationPipeline implements ShouldQueue
             $ordersWithComponents = $components->generateForUser($run->user_id);
             $merchantsMatched = $matcher->matchForUser($run->user_id);
             $plannedMatched = $plannedOccurrences->matchForUser($run->user_id);
+            $venmoMatched = $venmoMatcher->matchForUser($run->user_id);
             $nonBankResolved = $paymentResolution->autoResolveNonBankOnlyOrders($run->user_id);
             $transactionsMatched = $reconciliation->reconcileForUser($run->user_id);
 
@@ -64,6 +67,8 @@ class RunUserReconciliationPipeline implements ShouldQueue
                 'orders_with_components' => $ordersWithComponents,
                 'merchants_matched' => $merchantsMatched,
                 'planned_occurrences_matched' => $plannedMatched['matched'],
+                'venmo_confirmed' => $venmoMatched['confirmed'],
+                'venmo_suggested' => $venmoMatched['suggested'],
                 'non_bank_resolved' => $nonBankResolved,
                 'transactions_matched' => $transactionsMatched,
             ]);

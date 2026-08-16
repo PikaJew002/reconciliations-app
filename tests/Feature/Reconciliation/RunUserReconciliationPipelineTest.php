@@ -26,6 +26,7 @@ use App\Services\Reconciliation\ProductMatchingService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Services\Reconciliation\TransferPairingService;
+use App\Services\Reconciliation\VenmoActivityMatcher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -221,6 +222,7 @@ class RunUserReconciliationPipelineTest extends TestCase
             app(PlannedOccurrenceMatcher::class),
             app(OrderPaymentResolutionService::class),
             app(ReconciliationService::class),
+            app(VenmoActivityMatcher::class),
         );
     }
 }
