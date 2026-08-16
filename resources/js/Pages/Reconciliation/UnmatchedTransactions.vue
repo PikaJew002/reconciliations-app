@@ -169,7 +169,7 @@
                 </span>
                 <button
                     type="button"
-                    class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-white disabled:opacity-50"
                     :disabled="reimbursementActionKey !== null"
                     @click="createReimbursementGroup()"
                 >
@@ -182,7 +182,7 @@
                 <template v-if="openReimbursementGroups.length > 0">
                     <select
                         v-model="targetOpenGroupId"
-                        class="rounded border px-2 py-1.5"
+                        class="rounded border px-2"
                     >
                         <option value="">Add to open group…</option>
                         <option
@@ -196,7 +196,7 @@
                     </select>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                        class="btn rounded border px-3 text-neutral-700 disabled:opacity-50"
                         :disabled="
                             reimbursementActionKey !== null ||
                             !targetOpenGroupId
@@ -208,7 +208,7 @@
                 </template>
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-neutral-700"
+                    class="btn rounded border px-3 text-neutral-700"
                     @click="clearTransactionSelection"
                 >
                     Clear

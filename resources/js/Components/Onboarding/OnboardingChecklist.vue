@@ -27,7 +27,7 @@
             </div>
             <button
                 type="button"
-                class="rounded border px-3 py-1.5 text-sm hover:bg-brand-wash"
+                class="btn rounded border px-3 text-sm hover:bg-brand-wash"
                 @click="emit('hide')"
             >
                 Hide setup
@@ -61,14 +61,14 @@
                 >
                     <Link
                         :href="stepHref(step)"
-                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white"
+                        class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white"
                     >
                         {{ step.cta }}
                     </Link>
                     <button
                         v-if="step.skippable"
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-brand-wash"
+                        class="btn rounded border px-3 text-sm hover:bg-brand-wash"
                         @click="emit('skip', step)"
                     >
                         Skip

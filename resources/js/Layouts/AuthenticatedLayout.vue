@@ -75,7 +75,7 @@
                     <button
                         v-if="isPresent"
                         type="button"
-                        class="rounded border px-3 py-1.5 hover:bg-brand-wash"
+                        class="btn rounded border px-3 hover:bg-brand-wash"
                         :aria-expanded="isVisible && panelOpen"
                         :aria-controls="
                             isVisible ? 'onboarding-checklist' : undefined
@@ -89,7 +89,7 @@
                         href="/logout"
                         method="post"
                         as="button"
-                        class="rounded border px-3 py-1.5 hover:bg-brand-wash"
+                        class="btn rounded border px-3 hover:bg-brand-wash"
                     >
                         Log out
                     </Link>

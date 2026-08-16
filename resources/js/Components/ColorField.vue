@@ -79,7 +79,7 @@
                 maxlength="7"
                 spellcheck="false"
                 autocomplete="off"
-                class="w-full border-0 px-3 py-2 font-mono outline-none"
+                class="h-full w-full border-0 px-3 font-mono outline-none"
                 @input="onTextInput"
             />
         </div>

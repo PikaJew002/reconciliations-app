@@ -63,7 +63,7 @@
                     id="name"
                     v-model="form.name"
                     type="text"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 />
                 <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
@@ -78,7 +78,7 @@
                 <select
                     id="institution_name"
                     v-model="form.institution_name"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 >
                     <option disabled value="">Select an institution</option>
@@ -105,7 +105,7 @@
                 <select
                     id="account_type"
                     v-model="form.account_type"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 >
                     <option disabled value="">Select a type</option>
@@ -132,7 +132,7 @@
                 <select
                     id="default_classification"
                     v-model="form.default_classification"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 >
                     <option
@@ -164,7 +164,7 @@
                     id="account_name"
                     v-model="form.account_name"
                     type="text"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                 />
                 <p
                     v-if="form.errors.account_name"
@@ -184,7 +184,7 @@
                         v-model="form.currency"
                         type="text"
                         maxlength="3"
-                        class="w-full rounded border px-3 py-2 uppercase"
+                        class="w-full rounded border px-3 uppercase"
                         required
                     />
                     <p
@@ -207,7 +207,7 @@
                         inputmode="numeric"
                         maxlength="4"
                         pattern="[0-9]{4}"
-                        class="w-full rounded border px-3 py-2"
+                        class="w-full rounded border px-3"
                     />
                     <p
                         v-if="form.errors.last_four"
@@ -221,14 +221,14 @@
             <div class="flex flex-wrap gap-2">
                 <button
                     type="submit"
-                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-4 text-white disabled:opacity-50"
                     :disabled="form.processing"
                 >
                     Create account
                 </button>
                 <Link
                     href="/accounts"
-                    class="rounded border px-4 py-2 text-neutral-700 hover:bg-neutral-100"
+                    class="btn rounded border px-4 text-neutral-700 hover:bg-neutral-100"
                 >
                     Cancel
                 </Link>

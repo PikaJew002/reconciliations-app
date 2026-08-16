@@ -23,7 +23,7 @@ let submit = () => {
                     id="email"
                     v-model="form.email"
                     type="email"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                     autofocus
                 />
@@ -36,7 +36,7 @@ let submit = () => {
                     id="password"
                     v-model="form.password"
                     type="password"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 />
                 <p v-if="form.errors.password" class="mt-1 text-sm text-red-600">{{ form.errors.password }}</p>
@@ -49,7 +49,7 @@ let submit = () => {
 
             <button
                 type="submit"
-                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-white disabled:opacity-50"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-white disabled:opacity-50"
                 :disabled="form.processing"
             >
                 Log in

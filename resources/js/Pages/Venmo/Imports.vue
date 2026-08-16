@@ -54,7 +54,7 @@
                     id="file"
                     type="file"
                     accept=".csv,text/csv"
-                    class="w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-brand file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-brand-hover"
+                    class="w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-brand file:px-4 file:inline-flex file:h-10 file:items-center file:text-sm file:font-medium file:text-white hover:file:bg-brand-hover"
                     required
                     @input="form.file = $event.target.files[0]"
                 />
@@ -65,7 +65,7 @@
 
             <button
                 type="submit"
-                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-white disabled:opacity-50"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-white disabled:opacity-50"
                 :disabled="form.processing"
             >
                 Queue import

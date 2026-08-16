@@ -211,13 +211,13 @@
             <div class="flex flex-wrap gap-2">
                 <Link
                     :href="`/accounts/${account.id}/imports`"
-                    class="rounded border px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                    class="btn rounded border px-4 text-sm text-neutral-700 hover:bg-neutral-100"
                 >
                     Imports
                 </Link>
                 <Link
                     :href="`/accounts/${account.id}/edit`"
-                    class="rounded border px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                    class="btn rounded border px-4 text-sm text-neutral-700 hover:bg-neutral-100"
                 >
                     Edit account
                 </Link>
@@ -247,9 +247,9 @@
                 v-model="search"
                 type="search"
                 placeholder="Search description or amount"
-                class="min-w-64 flex-1 rounded border px-3 py-2 text-sm"
+                class="min-w-64 flex-1 rounded border px-3 text-sm"
             />
-            <button type="submit" class="rounded border px-4 py-2 text-sm">
+            <button type="submit" class="btn rounded border px-4 text-sm">
                 Search
             </button>
         </form>

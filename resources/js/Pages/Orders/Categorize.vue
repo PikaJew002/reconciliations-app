@@ -363,9 +363,9 @@
                 v-model="search"
                 type="search"
                 placeholder="Search order number or total"
-                class="min-w-64 flex-1 rounded border px-3 py-2 text-sm"
+                class="min-w-64 flex-1 rounded border px-3 text-sm"
             />
-            <button type="submit" class="rounded border px-4 py-2 text-sm">
+            <button type="submit" class="btn rounded border px-4 text-sm">
                 Search
             </button>
         </form>
@@ -419,7 +419,7 @@
                                 >
                                 <select
                                     v-model="orderCategorySelections[order.id]"
-                                    class="mt-1 block rounded border px-3 py-1.5"
+                                    class="mt-1 block rounded border px-3"
                                 >
                                     <option value="">Select…</option>
                                     <option
@@ -433,7 +433,7 @@
                             </label>
                             <button
                                 type="submit"
-                                class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                 :disabled="
                                     !orderCategorySelections[order.id] ||
                                     savingKey === `order:${order.id}`
@@ -495,7 +495,7 @@
                                                         )
                                                     ]
                                                 "
-                                                class="mt-1 block rounded border px-3 py-1.5"
+                                                class="mt-1 block rounded border px-3"
                                             >
                                                 <option value="">
                                                     Select…
@@ -511,7 +511,7 @@
                                         </label>
                                         <button
                                             type="submit"
-                                            class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                            class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                             :disabled="
                                                 !categorySelections[
                                                     selectionKey(order, line)
@@ -529,7 +529,7 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="rounded border px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
+                                            class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
                                             :disabled="
                                                 savingKey ===
                                                     selectionKey(order, line) ||
@@ -598,7 +598,7 @@
                                                         )
                                                     ]
                                                 "
-                                                class="mt-1 block rounded border px-3 py-1.5"
+                                                class="mt-1 block rounded border px-3"
                                             >
                                                 <option value="">
                                                     Select…
@@ -614,7 +614,7 @@
                                         </label>
                                         <button
                                             type="submit"
-                                            class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                            class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                             :disabled="
                                                 !categorySelections[
                                                     selectionKey(order, line)
@@ -632,7 +632,7 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="rounded border px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
+                                            class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
                                             :disabled="
                                                 savingKey ===
                                                     selectionKey(order, line) ||
@@ -688,7 +688,7 @@
                                                 selectionKey(order, line)
                                             ]
                                         "
-                                        class="mt-1 block rounded border px-3 py-1.5"
+                                        class="mt-1 block rounded border px-3"
                                     >
                                         <option value="">Select…</option>
                                         <option
@@ -702,7 +702,7 @@
                                 </label>
                                 <button
                                     type="submit"
-                                    class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                     :disabled="
                                         !categorySelections[
                                             selectionKey(order, line)
@@ -720,7 +720,7 @@
                                 </button>
                                 <button
                                     type="button"
-                                    class="rounded border px-3 py-1.5 text-sm text-red-700 disabled:opacity-50"
+                                    class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
                                     :disabled="
                                         savingKey ===
                                             selectionKey(order, line) ||

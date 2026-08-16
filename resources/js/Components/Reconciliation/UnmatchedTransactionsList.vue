@@ -619,7 +619,7 @@
                                 ensureCategorizeForm(transaction).classification
                             "
                             data-tour="categorize-type"
-                            class="h-9 w-full rounded border px-2 py-1.5"
+                            class="w-full rounded border px-2"
                             :disabled="isCreditTransaction(transaction)"
                             @change="
                                 onCategorizeClassificationChange(transaction)
@@ -666,7 +666,7 @@
                                     ensureCategorizeForm(transaction)
                                         .category_id
                                 "
-                                class="h-9 w-full rounded border px-2 py-1.5"
+                                class="w-full rounded border px-2"
                                 required
                                 @change="onCategoryIdChange(transaction)"
                             >
@@ -696,7 +696,7 @@
                                         .category_name
                                 "
                                 type="text"
-                                class="h-9 w-full rounded border px-2 py-1.5"
+                                class="w-full rounded border px-2"
                                 :placeholder="
                                     categoryNamePlaceholder(
                                         ensureCategorizeForm(transaction)
@@ -718,7 +718,7 @@
                                 ensureCategorizeForm(transaction).match_mode
                             "
                             data-tour="categorize-match"
-                            class="h-9 w-full rounded border px-2 py-1.5"
+                            class="w-full rounded border px-2"
                             @change="onCategorizeMatchModeChange(transaction)"
                         >
                             <option
@@ -748,7 +748,7 @@
                                     .normalized_pattern
                             "
                             type="text"
-                            class="h-9 w-full rounded border px-2 py-1.5"
+                            class="w-full rounded border px-2"
                             placeholder="e.g. toyota financial"
                             required
                         />
@@ -772,7 +772,7 @@
                         />
                         <button
                             type="submit"
-                            class="h-9 w-full rounded border border-brand bg-brand px-3 py-1.5 text-white hover:border-brand-hover hover:bg-brand-hover disabled:opacity-50"
+                            class="btn w-full rounded border border-brand bg-brand px-3 text-white hover:border-brand-hover hover:bg-brand-hover disabled:opacity-50"
                             :disabled="
                                 categorizingTransactionId === transaction.id ||
                                 !canSubmitCategorize(transaction)

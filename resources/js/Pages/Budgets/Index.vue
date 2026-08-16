@@ -324,7 +324,7 @@
             <div class="flex flex-wrap gap-2">
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="showCreate = !showCreate"
                 >
                     New budget year
@@ -332,7 +332,7 @@
                 <button
                     v-if="budget_year"
                     type="button"
-                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                     :disabled="form.processing"
                     @click="save"
                 >
@@ -359,7 +359,7 @@
                     <input
                         v-model="createForm.starts_on"
                         type="month"
-                        class="mt-1 block w-full rounded border px-2 py-1.5"
+                        class="mt-1 block w-full rounded border px-2"
                     />
                 </label>
                 <label class="block text-sm">
@@ -372,7 +372,7 @@
                         />
                         <button
                             type="button"
-                            class="inline-flex h-10 items-center rounded border px-3 text-sm hover:bg-neutral-100"
+                            class="btn rounded border px-3 text-sm hover:bg-neutral-100"
                             @click="generateCreateColor"
                         >
                             Generate a color
@@ -384,7 +384,7 @@
                     <input
                         v-model="createForm.label"
                         type="text"
-                        class="mt-1 block w-full rounded border px-2 py-1.5"
+                        class="mt-1 block w-full rounded border px-2"
                         placeholder="Auto from start month"
                     />
                 </label>
@@ -396,7 +396,7 @@
             <div class="flex gap-2">
                 <button
                     type="button"
-                    class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                     :disabled="createForm.processing"
                     @click="createYear"
                 >
@@ -405,7 +405,7 @@
                 <button
                     v-if="budget_years.length > 0"
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm"
+                    class="btn rounded border px-3 text-sm"
                     @click="showCreate = false"
                 >
                     Cancel
@@ -463,14 +463,14 @@
                     <button
                         v-if="!budget_year.is_current"
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-white/60"
+                        class="btn rounded border px-3 text-sm hover:bg-white/60"
                         @click="makeCurrent"
                     >
                         Set as current
                     </button>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-white/60"
+                        class="btn rounded border px-3 text-sm hover:bg-white/60"
                         @click="showEdit = !showEdit"
                     >
                         Edit year
@@ -484,7 +484,7 @@
                     <input
                         v-model="editForm.label"
                         type="text"
-                        class="mt-1 block w-full rounded border bg-white px-2 py-1.5"
+                        class="mt-1 block w-full rounded border bg-white px-2"
                     />
                 </label>
                 <label class="block text-sm">
@@ -492,7 +492,7 @@
                     <input
                         v-model="editForm.starts_on"
                         type="month"
-                        class="mt-1 block w-full rounded border bg-white px-2 py-1.5"
+                        class="mt-1 block w-full rounded border bg-white px-2"
                     />
                 </label>
                 <label class="block text-sm">
@@ -505,7 +505,7 @@
                         />
                         <button
                             type="button"
-                            class="inline-flex h-10 items-center rounded border px-3 text-sm hover:bg-white/60"
+                            class="btn rounded border px-3 text-sm hover:bg-white/60"
                             @click="generateEditColor"
                         >
                             Generate a color
@@ -515,7 +515,7 @@
                 <div class="sm:col-span-3">
                     <button
                         type="button"
-                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                        class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                         :disabled="editForm.processing"
                         @click="saveYearMeta"
                     >
@@ -609,7 +609,7 @@
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                class="mt-1 block w-full rounded border px-2 py-1.5"
+                                class="mt-1 block w-full rounded border px-2"
                                 placeholder="None"
                             />
                         </label>

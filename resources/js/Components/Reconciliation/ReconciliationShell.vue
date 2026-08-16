@@ -343,7 +343,7 @@
 
             <button
                 type="button"
-                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                 :disabled="runForm.processing || isRunInProgress"
                 @click="runReconciliation"
             >

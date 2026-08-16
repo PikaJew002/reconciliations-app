@@ -69,7 +69,7 @@
                     id="name"
                     v-model="form.name"
                     type="text"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 />
                 <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">
@@ -82,7 +82,7 @@
                 <select
                     id="kind"
                     v-model="form.kind"
-                    class="w-full rounded border px-3 py-2"
+                    class="w-full rounded border px-3"
                     required
                 >
                     <option v-for="kind in kinds" :key="kind" :value="kind">
@@ -107,7 +107,7 @@
                     />
                     <button
                         type="button"
-                        class="inline-flex h-10 items-center rounded border px-3 text-sm text-neutral-700 hover:bg-neutral-100"
+                        class="btn rounded border px-3 text-sm text-neutral-700 hover:bg-neutral-100"
                         @click="generateColor"
                     >
                         Generate a color
@@ -121,14 +121,14 @@
             <div class="flex flex-wrap gap-2">
                 <button
                     type="submit"
-                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-4 text-white disabled:opacity-50"
                     :disabled="form.processing"
                 >
                     Create category
                 </button>
                 <Link
                     href="/categories"
-                    class="rounded border px-4 py-2 text-neutral-700 hover:bg-neutral-100"
+                    class="btn rounded border px-4 text-neutral-700 hover:bg-neutral-100"
                 >
                     Cancel
                 </Link>

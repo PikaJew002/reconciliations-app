@@ -229,7 +229,7 @@
                                         type="number"
                                         min="0.001"
                                         step="any"
-                                        class="w-20 rounded border px-2 py-1"
+                                        class="w-20 rounded border px-2"
                                         required
                                     />
                                 </label>
@@ -255,7 +255,7 @@
                                     v-model="
                                         componentCategoryForms[component.id]
                                     "
-                                    class="rounded border px-2 py-1 text-xs"
+                                    class="rounded border px-2 text-xs"
                                 >
                                     <option disabled value="">Category</option>
                                     <option
@@ -302,7 +302,7 @@
                         <span class="text-neutral-600">Type</span>
                         <select
                             v-model="componentForms[order.id].type"
-                            class="w-full rounded border px-2 py-1.5"
+                            class="w-full rounded border px-2"
                         >
                             <option value="delivery">Delivery</option>
                             <option value="fee">Fee</option>
@@ -317,7 +317,7 @@
                         <input
                             v-model="componentForms[order.id].description"
                             type="text"
-                            class="w-full rounded border px-2 py-1.5"
+                            class="w-full rounded border px-2"
                             required
                         />
                     </label>
@@ -328,7 +328,7 @@
                             v-model="componentForms[order.id].amount"
                             type="number"
                             step="0.01"
-                            class="w-full rounded border px-2 py-1.5"
+                            class="w-full rounded border px-2"
                             required
                         />
                     </label>
@@ -336,7 +336,7 @@
                     <div class="sm:col-span-4">
                         <button
                             type="submit"
-                            class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
+                            class="btn rounded bg-brand hover:bg-brand-hover px-3 text-white disabled:opacity-50"
                             :disabled="savingOrderId === order.id"
                         >
                             {{

@@ -48,6 +48,17 @@
         background-color: #fff;
     }
 
+    input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(
+            [type='range']
+        ):not([type='hidden']),
+    select {
+        box-sizing: border-box;
+        height: 2.5rem;
+        padding-inline: 0.75rem;
+        padding-block: 0;
+        line-height: 1.25;
+    }
+
     [class~='rounded'][class~='border'] {
         background-color: #fff;
     }
@@ -58,6 +69,18 @@
 
     a.underline:hover {
         color: var(--color-brand-hover);
+    }
+}
+
+@layer components {
+    /* 40px control height — match inputs/selects. Do not use on chips, tabs, or nav. */
+    .btn {
+        display: inline-flex;
+        box-sizing: border-box;
+        height: 2.5rem;
+        align-items: center;
+        justify-content: center;
+        padding-block: 0;
     }
 }
 

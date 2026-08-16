@@ -223,7 +223,7 @@
                         <div class="flex flex-wrap gap-2">
                             <button
                                 type="button"
-                                class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                                class="btn rounded border px-3 text-neutral-700 disabled:opacity-50"
                                 :disabled="reimbursementActionKey !== null"
                                 @click="destroyReimbursementGroup(group)"
                             >
@@ -291,7 +291,7 @@
                             >
                             <select
                                 v-model="addToGroupSelections[group.id]"
-                                class="w-full rounded border px-2 py-1.5"
+                                class="w-full rounded border px-2"
                             >
                                 <option value="">Select…</option>
                                 <option
@@ -309,7 +309,7 @@
                         </label>
                         <button
                             type="button"
-                            class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                            class="btn rounded border px-3 text-neutral-700 disabled:opacity-50"
                             :disabled="
                                 reimbursementActionKey !== null ||
                                 !addToGroupSelections[group.id]
@@ -349,7 +349,7 @@
                                         ensureCloseForm(group)
                                             .remainder_classification
                                     "
-                                    class="w-full rounded border px-2 py-1.5"
+                                    class="w-full rounded border px-2"
                                 >
                                     <option value="expense">Expense</option>
                                     <option value="bill">Bill</option>
@@ -364,7 +364,7 @@
                                         ensureCloseForm(group)
                                             .remainder_category_id
                                     "
-                                    class="w-full rounded border px-2 py-1.5"
+                                    class="w-full rounded border px-2"
                                 >
                                     <option value="">Select</option>
                                     <option
@@ -391,7 +391,7 @@
                         <div class="flex items-end">
                             <button
                                 type="button"
-                                class="w-full rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
+                                class="btn w-full rounded bg-brand hover:bg-brand-hover px-3 text-white disabled:opacity-50"
                                 :disabled="
                                     reimbursementActionKey !== null ||
                                     (reimbursementNetState(group.net) ===
@@ -453,7 +453,7 @@
                     </div>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                        class="btn rounded border px-3 text-neutral-700 disabled:opacity-50"
                         :disabled="reimbursementActionKey !== null"
                         @click="reopenReimbursementGroup(group)"
                     >

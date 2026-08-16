@@ -356,7 +356,7 @@
                                     type="number"
                                     step="0.01"
                                     min="0.01"
-                                    class="w-full rounded border px-2 py-1.5"
+                                    class="w-full rounded border px-2"
                                     required
                                     @blur="
                                         onPaymentAmountBlur(order, paymentIndex)
@@ -381,7 +381,7 @@
                                         paymentForms[order.id][paymentIndex]
                                             .bank_transaction_id
                                     "
-                                    class="w-full rounded border px-2 py-1.5"
+                                    class="w-full rounded border px-2"
                                     required
                                     @change="
                                         onPaymentTransactionSelected(
@@ -423,7 +423,7 @@
                             order.components_balanced && paymentForms[order.id]
                         "
                         type="submit"
-                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
+                        class="btn rounded bg-brand hover:bg-brand-hover px-3 text-white disabled:opacity-50"
                         :disabled="resolvingOrderId === order.id"
                     >
                         {{

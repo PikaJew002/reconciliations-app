@@ -78,7 +78,7 @@
             </div>
             <button
                 type="button"
-                class="rounded border px-4 py-2 text-sm"
+                class="btn rounded border px-4 text-sm"
                 :disabled="reconciling"
                 @click="runProductReconciliation"
             >
@@ -131,7 +131,7 @@
                         <span class="text-neutral-600">Category</span>
                         <select
                             v-model="categorySelections[product.id]"
-                            class="mt-1 block rounded border px-3 py-1.5"
+                            class="mt-1 block rounded border px-3"
                         >
                             <option value="">Select…</option>
                             <option
@@ -145,7 +145,7 @@
                     </label>
                     <button
                         type="submit"
-                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                        class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                         :disabled="
                             !categorySelections[product.id] ||
                             savingProductId === product.id

@@ -71,13 +71,13 @@
             <div class="flex flex-wrap gap-2">
                 <Link
                     href="/products"
-                    class="rounded border px-4 py-2 text-sm"
+                    class="btn rounded border px-4 text-sm"
                 >
                     Uncategorized products
                 </Link>
                 <Link
                     href="/rules?tab=expenses"
-                    class="rounded border px-4 py-2 text-sm"
+                    class="btn rounded border px-4 text-sm"
                 >
                     Rules
                 </Link>
@@ -87,7 +87,7 @@
                             ? `/categories/create?kind=${filters.kind}`
                             : '/categories/create'
                     "
-                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white"
                 >
                     Add category
                 </Link>
@@ -167,13 +167,13 @@
                 <div class="flex flex-wrap gap-2 text-sm">
                     <Link
                         :href="`/categories/${category.id}/edit`"
-                        class="rounded border px-3 py-1.5"
+                        class="btn rounded border px-3"
                     >
                         Edit
                     </Link>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-red-700 disabled:opacity-40"
+                        class="btn rounded border px-3 text-red-700 disabled:opacity-40"
                         :disabled="category.is_in_use"
                         :title="
                             category.is_in_use

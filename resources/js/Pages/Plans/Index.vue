@@ -726,7 +726,7 @@
             <div class="flex flex-wrap gap-2">
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="
                         showCreate = showCreate === 'paycheck' ? null : 'paycheck'
                     "
@@ -739,7 +739,7 @@
                 </button>
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="
                         showCreate = showCreate === 'bill' ? null : 'bill'
                     "
@@ -783,7 +783,7 @@
                     <input
                         v-model="createPaycheckForm.name"
                         type="text"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     />
                     <span
@@ -796,7 +796,7 @@
                     <span class="text-neutral-600">Category</span>
                     <select
                         v-model="createPaycheckForm.category_id"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     >
                         <option
@@ -823,7 +823,7 @@
                     <span class="text-neutral-600">Base on a transaction</span>
                     <select
                         v-model="paycheckSourceId"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         @change="onPaycheckSourceChange"
                     >
                         <option value="">Optional — pick a past credit</option>
@@ -849,7 +849,7 @@
                         type="number"
                         min="1"
                         max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     />
                 </label>
@@ -860,7 +860,7 @@
                         type="number"
                         min="0"
                         step="0.01"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     />
                 </label>
@@ -868,7 +868,7 @@
                     <span class="text-neutral-600">Match mode</span>
                     <select
                         v-model="createPaycheckForm.match_mode"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     >
                         <option
                             v-for="mode in match_modes"
@@ -887,7 +887,7 @@
                     <input
                         v-model="createPaycheckForm.normalized_pattern"
                         type="text"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                     <span
                         v-if="createPaycheckForm.errors.normalized_pattern"
@@ -902,7 +902,7 @@
                     <span class="text-neutral-600">Merchant</span>
                     <select
                         v-model="createPaycheckForm.merchant_id"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     >
                         <option value="">Select merchant</option>
                         <option
@@ -924,7 +924,7 @@
                         type="number"
                         min="0"
                         step="0.01"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                 </label>
                 <label class="block text-sm">
@@ -934,7 +934,7 @@
                         type="number"
                         min="0"
                         max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                 </label>
                 <label class="block text-sm">
@@ -944,13 +944,13 @@
                         type="number"
                         min="0"
                         max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                 </label>
             </div>
             <button
                 type="submit"
-                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                 :disabled="createPaycheckForm.processing"
             >
                 Create plan
@@ -969,7 +969,7 @@
                     <input
                         v-model="createBillForm.name"
                         type="text"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     />
                     <span
@@ -982,7 +982,7 @@
                     <span class="text-neutral-600">Category</span>
                     <select
                         v-model="createBillForm.category_id"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     >
                         <option
@@ -1009,7 +1009,7 @@
                     <span class="text-neutral-600">Base on a transaction</span>
                     <select
                         v-model="billSourceId"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         @change="onBillSourceChange"
                     >
                         <option value="">Optional — pick a past charge</option>
@@ -1035,7 +1035,7 @@
                         type="number"
                         min="1"
                         max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     />
                 </label>
@@ -1046,7 +1046,7 @@
                         type="number"
                         min="0"
                         step="0.01"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                         required
                     />
                     <span
@@ -1059,7 +1059,7 @@
                     <span class="text-neutral-600">Match mode</span>
                     <select
                         v-model="createBillForm.match_mode"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     >
                         <option
                             v-for="mode in bill_match_modes"
@@ -1078,7 +1078,7 @@
                     <input
                         v-model="createBillForm.normalized_pattern"
                         type="text"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                     <span
                         v-if="createBillForm.errors.normalized_pattern"
@@ -1093,7 +1093,7 @@
                     <span class="text-neutral-600">Merchant</span>
                     <select
                         v-model="createBillForm.merchant_id"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     >
                         <option value="">Select merchant</option>
                         <option
@@ -1112,7 +1112,7 @@
                         type="number"
                         min="0"
                         max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                 </label>
                 <label class="block text-sm">
@@ -1122,13 +1122,13 @@
                         type="number"
                         min="0"
                         max="31"
-                        class="mt-1 w-full rounded border px-3 py-2"
+                        class="mt-1 w-full rounded border px-3"
                     />
                 </label>
             </div>
             <button
                 type="submit"
-                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                 :disabled="createBillForm.processing"
             >
                 Create plan
@@ -1141,14 +1141,14 @@
                 <div class="flex gap-2">
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                        class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                         @click="shiftMonth(-1)"
                     >
                         Previous
                     </button>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                        class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                         @click="shiftMonth(1)"
                     >
                         Next
@@ -1238,7 +1238,7 @@
                                         >
                                             <select
                                                 v-model="linkTransactionId"
-                                                class="rounded border px-2 py-1"
+                                                class="rounded border px-2"
                                             >
                                                 <option value="">
                                                     Select credit
@@ -1263,7 +1263,7 @@
                                             </select>
                                             <button
                                                 type="button"
-                                                class="rounded border px-2 py-1 text-xs"
+                                                class="btn rounded border px-2 text-xs"
                                                 @click="
                                                     linkOccurrence(occurrence)
                                                 "
@@ -1357,7 +1357,7 @@
                                         >
                                             <select
                                                 v-model="linkTransactionId"
-                                                class="rounded border px-2 py-1"
+                                                class="rounded border px-2"
                                             >
                                                 <option value="">
                                                     Select debit
@@ -1384,7 +1384,7 @@
                                             </select>
                                             <button
                                                 type="button"
-                                                class="rounded border px-2 py-1 text-xs"
+                                                class="btn rounded border px-2 text-xs"
                                                 @click="
                                                     linkOccurrence(occurrence)
                                                 "
@@ -1452,7 +1452,7 @@
                     <div class="flex shrink-0 gap-2">
                         <button
                             type="button"
-                            class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                            class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                             @click="
                                 editingId === template.id
                                     ? (editingId = null)
@@ -1463,7 +1463,7 @@
                         </button>
                         <button
                             type="button"
-                            class="rounded border px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                            class="btn rounded border px-3 text-sm text-red-700 hover:bg-red-50"
                             @click="deleteTemplate(template)"
                         >
                             Delete
@@ -1547,7 +1547,7 @@
                         <input
                             v-model="editForm.name"
                             type="text"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                             required
                         />
                     </label>
@@ -1555,7 +1555,7 @@
                         <span class="text-neutral-600">Category</span>
                         <select
                             v-model="editForm.category_id"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         >
                             <option
                                 v-for="category in categories"
@@ -1573,7 +1573,7 @@
                             type="number"
                             min="1"
                             max="31"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
@@ -1583,14 +1583,14 @@
                             type="number"
                             min="0"
                             step="0.01"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
                         <span class="text-neutral-600">Match mode</span>
                         <select
                             v-model="editForm.match_mode"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         >
                             <option
                                 v-for="mode in match_modes"
@@ -1609,7 +1609,7 @@
                         <input
                             v-model="editForm.normalized_pattern"
                             type="text"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label
@@ -1619,7 +1619,7 @@
                         <span class="text-neutral-600">Merchant</span>
                         <select
                             v-model="editForm.merchant_id"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         >
                             <option value="">Select merchant</option>
                             <option
@@ -1641,7 +1641,7 @@
                             type="number"
                             min="0"
                             step="0.01"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
@@ -1651,7 +1651,7 @@
                             type="number"
                             min="0"
                             max="31"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
@@ -1661,7 +1661,7 @@
                             type="number"
                             min="0"
                             max="31"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="flex items-center gap-2 text-sm">
@@ -1671,7 +1671,7 @@
                     <div class="sm:col-span-2 lg:col-span-3">
                         <button
                             type="submit"
-                            class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
+                            class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                             :disabled="editForm.processing"
                         >
                             Save plan
@@ -1721,7 +1721,7 @@
                     <div class="flex shrink-0 gap-2">
                         <button
                             type="button"
-                            class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                            class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                             @click="
                                 editingId === template.id
                                     ? (editingId = null)
@@ -1732,7 +1732,7 @@
                         </button>
                         <button
                             type="button"
-                            class="rounded border px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+                            class="btn rounded border px-3 text-sm text-red-700 hover:bg-red-50"
                             @click="deleteTemplate(template)"
                         >
                             Delete
@@ -1750,7 +1750,7 @@
                         <input
                             v-model="editForm.name"
                             type="text"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                             required
                         />
                     </label>
@@ -1758,7 +1758,7 @@
                         <span class="text-neutral-600">Category</span>
                         <select
                             v-model="editForm.category_id"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         >
                             <option
                                 v-for="category in bill_categories"
@@ -1776,7 +1776,7 @@
                             type="number"
                             min="1"
                             max="31"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
@@ -1786,14 +1786,14 @@
                             type="number"
                             min="0"
                             step="0.01"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
                         <span class="text-neutral-600">Match mode</span>
                         <select
                             v-model="editForm.match_mode"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         >
                             <option
                                 v-for="mode in bill_match_modes"
@@ -1812,7 +1812,7 @@
                         <input
                             v-model="editForm.normalized_pattern"
                             type="text"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label
@@ -1822,7 +1822,7 @@
                         <span class="text-neutral-600">Merchant</span>
                         <select
                             v-model="editForm.merchant_id"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         >
                             <option value="">Select merchant</option>
                             <option
@@ -1841,7 +1841,7 @@
                             type="number"
                             min="0"
                             max="31"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="block text-sm">
@@ -1851,7 +1851,7 @@
                             type="number"
                             min="0"
                             max="31"
-                            class="mt-1 w-full rounded border px-3 py-2"
+                            class="mt-1 w-full rounded border px-3"
                         />
                     </label>
                     <label class="flex items-center gap-2 text-sm">
@@ -1861,7 +1861,7 @@
                     <div class="sm:col-span-2 lg:col-span-3">
                         <button
                             type="submit"
-                            class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
+                            class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                             :disabled="editForm.processing"
                         >
                             Save plan

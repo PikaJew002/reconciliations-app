@@ -289,14 +289,14 @@
             <div v-if="view === 'month'" class="flex gap-2">
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="shiftMonth(-1)"
                 >
                     Previous
                 </button>
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="shiftMonth(1)"
                 >
                     Next
