@@ -1,11 +1,11 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import ColorField from '../../Components/ColorField.vue';
     import {
         randomCategoryColor,
         stripColorHash,
     } from '../../Composables/categoryColor.js';
     import { Link, useForm } from '@inertiajs/vue3';
-    import { computed } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -26,12 +26,6 @@
         color: '',
     });
 
-    let colorPreview = computed(() => {
-        let hex = stripColorHash(form.color);
-
-        return /^[0-9A-Fa-f]{6}$/.test(hex) ? `#${hex}` : null;
-    });
-
     let kindLabel = (kind) => {
         return (
             {
@@ -42,12 +36,8 @@
         );
     };
 
-    let onColorInput = (event) => {
-        form.color = stripColorHash(event.target.value).slice(0, 6);
-    };
-
     let generateColor = () => {
-        form.color = stripColorHash(randomCategoryColor());
+        form.color = randomCategoryColor();
     };
 
     let submit = () => {
@@ -110,42 +100,14 @@
                     <span class="text-neutral-500">(optional)</span></label
                 >
                 <div class="flex flex-wrap items-center gap-3">
-                    <span
-                        class="h-10 w-10 shrink-0 rounded border"
-                        :class="
-                            colorPreview
-                                ? 'border-neutral-300'
-                                : 'border-dashed border-neutral-300 bg-neutral-50'
-                        "
-                        :style="
-                            colorPreview
-                                ? { backgroundColor: colorPreview }
-                                : undefined
-                        "
-                        :title="colorPreview || 'Enter a hex color'"
-                        aria-hidden="true"
+                    <ColorField
+                        id="color"
+                        v-model="form.color"
+                        class="min-w-0 flex-1"
                     />
-                    <div
-                        class="flex min-w-0 flex-1 items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
-                    >
-                        <span
-                            class="flex items-center border-r bg-neutral-50 px-3 font-mono text-neutral-500"
-                            aria-hidden="true"
-                            >#</span
-                        >
-                        <input
-                            id="color"
-                            :value="form.color"
-                            type="text"
-                            placeholder="336699"
-                            maxlength="7"
-                            class="w-full border-0 px-3 py-2 font-mono outline-none"
-                            @input="onColorInput"
-                        />
-                    </div>
                     <button
                         type="button"
-                        class="rounded border px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                        class="inline-flex h-10 items-center rounded border px-3 text-sm text-neutral-700 hover:bg-neutral-100"
                         @click="generateColor"
                     >
                         Generate a color

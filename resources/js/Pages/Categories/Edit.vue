@@ -1,7 +1,8 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import ColorField from '../../Components/ColorField.vue';
+    import { stripColorHash } from '../../Composables/categoryColor.js';
     import { Link, useForm } from '@inertiajs/vue3';
-    import { computed } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -16,22 +17,10 @@
         },
     });
 
-    function stripColorHash(value) {
-        return String(value || '')
-            .trim()
-            .replace(/^#/, '');
-    }
-
     let form = useForm({
         name: props.category.name,
         kind: props.category.kind,
-        color: stripColorHash(props.category.color),
-    });
-
-    let colorPreview = computed(() => {
-        let hex = stripColorHash(form.color);
-
-        return /^[0-9A-Fa-f]{6}$/.test(hex) ? `#${hex}` : null;
+        color: props.category.color ?? '',
     });
 
     let kindLabel = (kind) => {
@@ -42,10 +31,6 @@
                 income: 'Income',
             }[kind] ?? kind
         );
-    };
-
-    let onColorInput = (event) => {
-        form.color = stripColorHash(event.target.value).slice(0, 6);
     };
 
     let submit = () => {
@@ -107,41 +92,7 @@
                     >Color
                     <span class="text-neutral-500">(optional)</span></label
                 >
-                <div class="flex items-center gap-3">
-                    <span
-                        class="h-10 w-10 shrink-0 rounded border"
-                        :class="
-                            colorPreview
-                                ? 'border-neutral-300'
-                                : 'border-dashed border-neutral-300 bg-neutral-50'
-                        "
-                        :style="
-                            colorPreview
-                                ? { backgroundColor: colorPreview }
-                                : undefined
-                        "
-                        :title="colorPreview || 'Enter a hex color'"
-                        aria-hidden="true"
-                    />
-                    <div
-                        class="flex w-full items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
-                    >
-                        <span
-                            class="flex items-center border-r bg-neutral-50 px-3 font-mono text-neutral-500"
-                            aria-hidden="true"
-                            >#</span
-                        >
-                        <input
-                            id="color"
-                            :value="form.color"
-                            type="text"
-                            placeholder="336699"
-                            maxlength="7"
-                            class="w-full border-0 px-3 py-2 font-mono outline-none"
-                            @input="onColorInput"
-                        />
-                    </div>
-                </div>
+                <ColorField id="color" v-model="form.color" />
                 <p v-if="form.errors.color" class="mt-1 text-sm text-red-600">
                     {{ form.errors.color }}
                 </p>

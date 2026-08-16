@@ -1,5 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import ColorField from '../../Components/ColorField.vue';
+    import { randomCategoryColor } from '../../Composables/categoryColor.js';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, ref, watch } from 'vue';
 
@@ -147,6 +149,14 @@
             borderColor: color,
             backgroundColor: `${color}22`,
         };
+    };
+
+    let generateCreateColor = () => {
+        createForm.color = randomCategoryColor();
+    };
+
+    let generateEditColor = () => {
+        editForm.color = randomCategoryColor();
     };
 
     let categoryById = computed(() => {
@@ -354,11 +364,20 @@
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Color</span>
-                    <input
-                        v-model="createForm.color"
-                        type="color"
-                        class="mt-1 block h-10 w-full rounded border px-1 py-1"
-                    />
+                    <div class="mt-1 flex flex-wrap items-center gap-3">
+                        <ColorField
+                            id="create-color"
+                            v-model="createForm.color"
+                            class="min-w-0 flex-1"
+                        />
+                        <button
+                            type="button"
+                            class="inline-flex h-10 items-center rounded border px-3 text-sm hover:bg-neutral-100"
+                            @click="generateCreateColor"
+                        >
+                            Generate a color
+                        </button>
+                    </div>
                 </label>
                 <label class="block text-sm sm:col-span-2">
                     <span class="text-neutral-600">Label (optional)</span>
@@ -478,11 +497,20 @@
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Color</span>
-                    <input
-                        v-model="editForm.color"
-                        type="color"
-                        class="mt-1 block h-10 w-full rounded border bg-white px-1 py-1"
-                    />
+                    <div class="mt-1 flex flex-wrap items-center gap-3">
+                        <ColorField
+                            id="edit-color"
+                            v-model="editForm.color"
+                            class="min-w-0 flex-1"
+                        />
+                        <button
+                            type="button"
+                            class="inline-flex h-10 items-center rounded border px-3 text-sm hover:bg-white/60"
+                            @click="generateEditColor"
+                        >
+                            Generate a color
+                        </button>
+                    </div>
                 </label>
                 <div class="sm:col-span-3">
                     <button
