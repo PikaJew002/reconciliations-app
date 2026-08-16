@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Plans;
 
+use App\Jobs\MatchPlannedOccurrences;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\BudgetYear;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\PlannedOccurrence;
+use App\Models\PlannedOccurrenceMatchRun;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
@@ -16,6 +18,7 @@ use App\Services\Plans\PlannedOccurrenceMatcher;
 use App\Services\Reporting\CategorySpendQuery;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -239,6 +242,139 @@ class PaycheckPlanningTest extends TestCase
         $occurrence->refresh();
         $this->assertSame(PlannedOccurrence::STATUS_RESOLVED, $occurrence->status);
         $this->assertSame($transaction->id, $occurrence->bank_transaction_id);
+    }
+
+    public function test_creating_a_paycheck_plan_dispatches_occurrence_matching(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+
+        $this->actingAs($user)
+            ->post('/plans', [
+                'name' => 'Acme paycheck',
+                'category_id' => $salary->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+                'normalized_pattern' => 'ACME PAYROLL',
+                'expected_day' => 1,
+                'expected_amount' => 3000,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+            ])
+            ->assertRedirect(route('plans.index'));
+
+        $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
+        $this->assertNotNull($run);
+        $this->assertSame('pending', $run->status);
+
+        Queue::assertPushed(
+            MatchPlannedOccurrences::class,
+            fn (MatchPlannedOccurrences $job) => $job->userId === $user->id
+                && $job->matchRunId === $run->id,
+        );
+    }
+
+    public function test_updating_a_paycheck_plan_dispatches_occurrence_matching(): void
+    {
+        Queue::fake();
+
+        [$user, $salary, $template] = $this->paycheckSetup();
+
+        $this->actingAs($user)
+            ->patch("/plans/{$template->id}", [
+                'name' => $template->name,
+                'category_id' => $salary->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+                'normalized_pattern' => 'acme payroll',
+                'expected_day' => 1,
+                'expected_amount' => 3000,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+                'is_active' => true,
+            ])
+            ->assertRedirect();
+
+        $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
+        $this->assertNotNull($run);
+
+        Queue::assertPushed(
+            MatchPlannedOccurrences::class,
+            fn (MatchPlannedOccurrences $job) => $job->userId === $user->id
+                && $job->matchRunId === $run->id,
+        );
+    }
+
+    public function test_creating_a_paycheck_plan_matches_an_existing_credit(): void
+    {
+        $user = User::factory()->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => 3000.0,
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'category_id' => $salary->id,
+            'posted_at' => '2026-03-01',
+            'description' => 'ACME PAYROLL',
+            'normalized_description' => 'acme payroll',
+        ]);
+
+        $this->actingAs($user)
+            ->post('/plans', [
+                'name' => 'Acme paycheck',
+                'category_id' => $salary->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+                'normalized_pattern' => 'ACME PAYROLL',
+                'expected_day' => 1,
+                'expected_amount' => 3000,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+            ])
+            ->assertRedirect(route('plans.index'));
+
+        $this->assertDatabaseHas('planned_occurrences', [
+            'user_id' => $user->id,
+            'status' => PlannedOccurrence::STATUS_RESOLVED,
+            'bank_transaction_id' => $transaction->id,
+        ]);
+
+        $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
+        $this->assertNotNull($run);
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(1, $run->metadata['matched']);
+
+        $this->actingAs($user)
+            ->get('/plans')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->has('active_match_runs', 1)
+                ->where('active_match_runs.0.id', $run->id)
+                ->where('active_match_runs.0.status', 'completed')
+                ->where('active_match_runs.0.metadata.matched', 1));
+    }
+
+    public function test_plans_index_includes_in_progress_match_runs(): void
+    {
+        $user = User::factory()->create();
+        $run = PlannedOccurrenceMatchRun::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'processing',
+        ]);
+
+        $this->actingAs($user)
+            ->get('/plans')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->has('active_match_runs', 1)
+                ->where('active_match_runs.0.id', $run->id)
+                ->where('active_match_runs.0.status', 'processing'));
     }
 
     public function test_plans_index_is_scoped_to_the_authenticated_user(): void

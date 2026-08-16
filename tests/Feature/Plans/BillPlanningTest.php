@@ -2,11 +2,13 @@
 
 namespace Tests\Feature\Plans;
 
+use App\Jobs\MatchPlannedOccurrences;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\PlannedOccurrence;
+use App\Models\PlannedOccurrenceMatchRun;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
@@ -14,6 +16,7 @@ use App\Services\Plans\PlannedOccurrenceGenerator;
 use App\Services\Plans\PlannedOccurrenceMatcher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -80,6 +83,111 @@ class BillPlanningTest extends TestCase
                 ->where('bill_occurrences.0.status', PlannedOccurrence::STATUS_PLANNED)
                 ->where('bill_occurrences.0.amount', 140)
                 ->has('paycheck_templates', 0));
+    }
+
+    public function test_creating_a_bill_plan_dispatches_occurrence_matching(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $this->actingAs($user)
+            ->post('/plans', [
+                'name' => 'Electric',
+                'category_id' => $utilities->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'DUKE ENERGY',
+                'expected_day' => 15,
+                'expected_amount' => 140,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+            ])
+            ->assertRedirect(route('plans.index'));
+
+        $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
+        $this->assertNotNull($run);
+        $this->assertSame('pending', $run->status);
+
+        Queue::assertPushed(
+            MatchPlannedOccurrences::class,
+            fn (MatchPlannedOccurrences $job) => $job->userId === $user->id
+                && $job->matchRunId === $run->id,
+        );
+    }
+
+    public function test_updating_a_bill_plan_dispatches_occurrence_matching(): void
+    {
+        Queue::fake();
+
+        [$user, $utilities, $template] = $this->billSetup();
+
+        $this->actingAs($user)
+            ->patch("/plans/{$template->id}", [
+                'name' => $template->name,
+                'category_id' => $utilities->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'duke energy',
+                'expected_day' => 15,
+                'expected_amount' => 140,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+                'is_active' => true,
+            ])
+            ->assertRedirect();
+
+        $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
+        $this->assertNotNull($run);
+
+        Queue::assertPushed(
+            MatchPlannedOccurrences::class,
+            fn (MatchPlannedOccurrences $job) => $job->userId === $user->id
+                && $job->matchRunId === $run->id,
+        );
+    }
+
+    public function test_creating_a_bill_plan_matches_an_existing_debit(): void
+    {
+        $user = User::factory()->create();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -140.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'category_id' => $utilities->id,
+            'posted_at' => '2026-03-15',
+            'description' => 'DUKE ENERGY',
+            'normalized_description' => 'duke energy',
+        ]);
+
+        $this->actingAs($user)
+            ->post('/plans', [
+                'name' => 'Electric',
+                'category_id' => $utilities->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'DUKE ENERGY',
+                'expected_day' => 15,
+                'expected_amount' => 140,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+            ])
+            ->assertRedirect(route('plans.index'));
+
+        $this->assertDatabaseHas('planned_occurrences', [
+            'user_id' => $user->id,
+            'status' => PlannedOccurrence::STATUS_RESOLVED,
+            'bank_transaction_id' => $transaction->id,
+        ]);
+
+        $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
+        $this->assertNotNull($run);
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(1, $run->metadata['matched']);
     }
 
     public function test_two_bill_plans_can_share_the_same_category(): void

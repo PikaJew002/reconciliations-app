@@ -1,7 +1,8 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import StickyToasts from '../../Components/StickyToasts.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
-    import { computed, ref, watch } from 'vue';
+    import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -58,10 +59,200 @@
             type: Object,
             default: () => ({}),
         },
+        active_match_runs: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
     let flashSuccess = computed(() => page.props.flash?.success);
+    let matchRunsInProgress = computed(() =>
+        props.active_match_runs.filter((run) =>
+            ['pending', 'processing'].includes(run.status),
+        ),
+    );
+    let hasMatchRunsInProgress = computed(
+        () => matchRunsInProgress.value.length > 0,
+    );
+    let matchPollId = null;
+    let toasts = ref([]);
+    let nextToastId = 0;
+    let toastTimers = new Map();
+    let announcedMatchRunIds = new Set();
+    let matchProgressToastId = null;
+
+    function matchReloadKeys() {
+        return [
+            'paycheck_occurrences',
+            'bill_occurrences',
+            'paycheck_link_candidates',
+            'bill_link_candidates',
+            'active_match_runs',
+        ];
+    }
+
+    function startMatchPolling() {
+        if (matchPollId || !hasMatchRunsInProgress.value) {
+            return;
+        }
+
+        matchPollId = window.setInterval(() => {
+            router.reload({
+                only: matchReloadKeys(),
+                preserveScroll: true,
+                onSuccess: () => {
+                    if (!hasMatchRunsInProgress.value && matchPollId) {
+                        stopMatchPolling();
+                    }
+                },
+            });
+        }, 2000);
+    }
+
+    function stopMatchPolling() {
+        if (matchPollId) {
+            window.clearInterval(matchPollId);
+            matchPollId = null;
+        }
+    }
+
+    function dismissToast(id) {
+        toasts.value = toasts.value.filter((toast) => toast.id !== id);
+
+        let timer = toastTimers.get(id);
+        if (timer) {
+            window.clearTimeout(timer);
+            toastTimers.delete(id);
+        }
+
+        if (matchProgressToastId === id) {
+            matchProgressToastId = null;
+        }
+    }
+
+    function pushToast({ type, message, persistent = false, duration = 6000 }) {
+        let id = ++nextToastId;
+        toasts.value = [...toasts.value, { id, type, message, persistent }];
+
+        if (!persistent) {
+            let timer = window.setTimeout(() => dismissToast(id), duration);
+            toastTimers.set(id, timer);
+        }
+
+        return id;
+    }
+
+    function matchProgressMessage() {
+        let count = matchRunsInProgress.value.length;
+
+        return `Matching existing transactions to plan occurrences (${count} active)… linked transactions will update automatically.`;
+    }
+
+    function syncMatchProgressToast() {
+        if (!hasMatchRunsInProgress.value) {
+            if (matchProgressToastId !== null) {
+                dismissToast(matchProgressToastId);
+            }
+
+            return;
+        }
+
+        let message = matchProgressMessage();
+
+        if (matchProgressToastId === null) {
+            matchProgressToastId = pushToast({
+                type: 'warning',
+                message,
+                persistent: true,
+            });
+            return;
+        }
+
+        toasts.value = toasts.value.map((item) =>
+            item.id === matchProgressToastId ? { ...item, message } : item,
+        );
+    }
+
+    function completedMatchMessage(run) {
+        let matched = run.metadata?.matched ?? 0;
+
+        return `Plan matching finished. Linked ${matched} transaction${
+            matched === 1 ? '' : 's'
+        }.`;
+    }
+
+    function announceFinishedMatchRuns() {
+        for (let run of props.active_match_runs) {
+            if (announcedMatchRunIds.has(run.id)) {
+                continue;
+            }
+
+            if (run.status === 'completed') {
+                announcedMatchRunIds.add(run.id);
+                pushToast({
+                    type: 'success',
+                    message: completedMatchMessage(run),
+                    duration: 8000,
+                });
+                continue;
+            }
+
+            if (run.status === 'failed') {
+                announcedMatchRunIds.add(run.id);
+                pushToast({
+                    type: 'error',
+                    message: `Plan matching failed${
+                        run.error_message ? `: ${run.error_message}` : '.'
+                    }`,
+                    duration: 8000,
+                });
+            }
+        }
+    }
+
+    onMounted(() => {
+        for (let run of props.active_match_runs) {
+            if (run.status === 'completed' || run.status === 'failed') {
+                announcedMatchRunIds.add(run.id);
+            }
+        }
+
+        syncMatchProgressToast();
+
+        if (hasMatchRunsInProgress.value) {
+            startMatchPolling();
+        }
+    });
+
+    watch(hasMatchRunsInProgress, (inProgress) => {
+        syncMatchProgressToast();
+
+        if (inProgress) {
+            startMatchPolling();
+            return;
+        }
+
+        stopMatchPolling();
+    });
+
+    watch(
+        () => props.active_match_runs,
+        () => {
+            syncMatchProgressToast();
+            announceFinishedMatchRuns();
+        },
+        { deep: true },
+    );
+
+    onUnmounted(() => {
+        stopMatchPolling();
+
+        for (let timer of toastTimers.values()) {
+            window.clearTimeout(timer);
+        }
+        toastTimers.clear();
+    });
 
     let showCreate = ref(
         props.paycheck_templates.length === 0 &&
@@ -464,6 +655,8 @@
 
 <template>
     <div class="space-y-8">
+        <StickyToasts :toasts="toasts" @dismiss="dismissToast" />
+
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
                 <h1 class="text-2xl font-semibold">Plans</h1>

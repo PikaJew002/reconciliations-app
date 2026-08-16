@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Plans\StorePlannedTemplateRequest;
 use App\Http\Requests\Plans\UpdatePlannedTemplateAssignmentsRequest;
 use App\Http\Requests\Plans\UpdatePlannedTemplateRequest;
+use App\Jobs\MatchPlannedOccurrences;
 use App\Models\BankTransaction;
 use App\Models\Category;
 use App\Models\Merchant;
 use App\Models\PlannedOccurrence;
+use App\Models\PlannedOccurrenceMatchRun;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use App\Services\Plans\PaycheckBillAssignmentService;
@@ -134,6 +136,7 @@ class PlannedTemplateController extends Controller
             'match_modes' => PlannedTemplate::incomeMatchModes(),
             'bill_match_modes' => PlannedTemplate::billMatchModes(),
             'source_transactions' => $this->sourceTransactions($userId),
+            'active_match_runs' => $this->activeMatchRunsPayload($userId),
         ]);
     }
 
@@ -147,10 +150,11 @@ class PlannedTemplateController extends Controller
         ]);
 
         $generator->syncTemplate($template);
+        $this->dispatchMatchJob($template);
 
         return redirect()
             ->route('plans.index')
-            ->with('success', $request->planLabel().' created.');
+            ->with('success', $request->planLabel().' created. Matching existing transactions…');
     }
 
     public function update(
@@ -161,11 +165,13 @@ class PlannedTemplateController extends Controller
         $this->ensureOwned($request, $plannedTemplate);
 
         $plannedTemplate->update($request->templateAttributes());
-        $generator->syncTemplate($plannedTemplate->fresh());
+        $template = $plannedTemplate->fresh();
+        $generator->syncTemplate($template);
+        $this->dispatchMatchJob($template);
 
         return redirect()
             ->route('plans.index', array_filter(['month' => $request->string('month')->toString() ?: null]))
-            ->with('success', $request->planLabel().' updated.');
+            ->with('success', $request->planLabel().' updated. Matching existing transactions…');
     }
 
     public function destroy(Request $request, PlannedTemplate $plannedTemplate): RedirectResponse
@@ -465,6 +471,47 @@ class PlannedTemplateController extends Controller
                 'id' => $category->id,
                 'name' => $category->name,
             ]);
+    }
+
+    private function dispatchMatchJob(PlannedTemplate $template): void
+    {
+        $run = PlannedOccurrenceMatchRun::query()->create([
+            'user_id' => $template->user_id,
+            'status' => 'pending',
+            'metadata' => [
+                'template_id' => $template->id,
+                'template_name' => $template->name,
+                'classification' => $template->classification,
+            ],
+        ]);
+
+        MatchPlannedOccurrences::dispatch($template->user_id, $run->id);
+    }
+
+    /**
+     * @return list<array{id: int, status: string, error_message: ?string, metadata: array<string, mixed>}>
+     */
+    protected function activeMatchRunsPayload(int $userId): array
+    {
+        return PlannedOccurrenceMatchRun::query()
+            ->where('user_id', $userId)
+            ->where(function ($query) {
+                $query->whereIn('status', ['pending', 'processing'])
+                    ->orWhere(function ($recent) {
+                        $recent->whereIn('status', ['completed', 'failed'])
+                            ->where('completed_at', '>=', now()->subMinutes(5));
+                    });
+            })
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get()
+            ->map(fn (PlannedOccurrenceMatchRun $run) => [
+                'id' => $run->id,
+                'status' => $run->status,
+                'error_message' => $run->error_message,
+                'metadata' => $run->metadata ?? [],
+            ])
+            ->all();
     }
 
     private function ensureOwned(Request $request, PlannedTemplate $plannedTemplate): void
