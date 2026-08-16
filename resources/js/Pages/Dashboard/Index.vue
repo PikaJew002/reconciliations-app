@@ -455,7 +455,12 @@
                             :key="bill.id"
                             class="flex items-baseline justify-between gap-3 text-neutral-700"
                         >
-                            <span>{{ bill.name }}</span>
+                            <span>
+                                {{ bill.name }}
+                                <span class="text-neutral-500">
+                                    {{ bill.expected_date }}
+                                </span>
+                            </span>
                             <span class="tabular-nums">
                                 {{ formatMoney(bill.amount) }}
                             </span>

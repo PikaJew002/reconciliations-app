@@ -216,6 +216,47 @@ class PaycheckBillAssignmentTest extends TestCase
             ->assertSessionHasErrors('bill_template_ids');
     }
 
+    public function test_paycheck_occurrence_leftover_uses_next_month_bill_when_due_earlier(): void
+    {
+        [$user, $paycheck, $rent, $electric] = $this->assignmentSetup();
+        $paycheck->update(['expected_day' => 15]);
+        $paycheck->assignedBills()->sync([$rent->id, $electric->id]);
+
+        $this->actingAs($user)->get('/plans?month=2026-03');
+
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $marchRentTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -999.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'posted_at' => '2026-03-01',
+        ]);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $rent->id)
+            ->whereDate('expected_date', '2026-03-01')
+            ->update([
+                'bank_transaction_id' => $marchRentTx->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+            ]);
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-03')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where(
+                    'paycheck_occurrences',
+                    fn ($occurrences) => collect($occurrences)->contains(
+                        fn ($occurrence) => $occurrence['expected_date'] === '2026-03-15'
+                            && (float) $occurrence['leftover'] === 1660.0,
+                    ),
+                ));
+    }
+
     public function test_paycheck_occurrence_leftover_uses_expected_amounts_until_resolved(): void
     {
         [$user, $paycheck, $rent, $electric] = $this->assignmentSetup();

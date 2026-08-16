@@ -589,6 +589,123 @@ class DashboardTest extends TestCase
                 ->where('paycheck_plans.leftover', 1807));
     }
 
+    public function test_month_dashboard_pairs_earlier_bill_day_with_next_month_occurrence(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        $giving = Category::factory()->for($user)->bill()->create(['name' => 'Giving']);
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $paycheck = PlannedTemplate::factory()->create([
+            'user_id' => $user->id,
+            'category_id' => $salary->id,
+            'name' => 'Acme paycheck',
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+            'normalized_pattern' => 'acme payroll',
+            'expected_day' => 15,
+            'expected_amount' => 3000,
+        ]);
+        $tithe = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $giving->id,
+            'name' => 'Tithe - JCC',
+            'expected_day' => 1,
+            'expected_amount' => 300,
+            'amount' => 300,
+        ]);
+        $electric = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'name' => 'Electric',
+            'expected_day' => 20,
+            'expected_amount' => 140,
+            'amount' => 140,
+        ]);
+        $paycheck->assignedBills()->sync([$tithe->id, $electric->id]);
+
+        $this->actingAs($user)
+            ->get('/?view=month&month=2026-07')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Dashboard/Index')
+                ->where('paycheck_plans.paychecks.0.expected_date', '2026-07-15')
+                ->where('paycheck_plans.paychecks.0.bills.0.name', 'Tithe - JCC')
+                ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-08-01')
+                ->where('paycheck_plans.paychecks.0.bills.0.covers_next_month', true)
+                ->where('paycheck_plans.paychecks.0.bills.1.name', 'Electric')
+                ->where('paycheck_plans.paychecks.0.bills.1.expected_date', '2026-07-20')
+                ->where('paycheck_plans.paychecks.0.bills.1.covers_next_month', false)
+                ->where('paycheck_plans.paychecks.0.bills_amount', 440)
+                ->where('paycheck_plans.paychecks.0.leftover', 2560));
+
+        $this->actingAs($user)
+            ->get('/?view=month&month=2026-08')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Dashboard/Index')
+                ->where('paycheck_plans.paychecks.0.expected_date', '2026-08-15')
+                ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-09-01')
+                ->where('paycheck_plans.paychecks.0.bills.1.expected_date', '2026-08-20'));
+    }
+
+    public function test_month_dashboard_uses_next_month_bill_actual_when_resolved(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
+        $giving = Category::factory()->for($user)->bill()->create(['name' => 'Giving']);
+
+        $paycheck = PlannedTemplate::factory()->create([
+            'user_id' => $user->id,
+            'category_id' => $salary->id,
+            'name' => 'Acme paycheck',
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+            'normalized_pattern' => 'acme payroll',
+            'expected_day' => 15,
+            'expected_amount' => 3000,
+        ]);
+        $tithe = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $giving->id,
+            'name' => 'Tithe - JCC',
+            'expected_day' => 1,
+            'expected_amount' => 300,
+            'amount' => 300,
+        ]);
+        $paycheck->assignedBills()->sync([$tithe->id]);
+
+        $this->actingAs($user)->get('/?view=month&month=2026-07');
+
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $titheTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -280.0,
+            'classification' => BankTransaction::CLASSIFICATION_BILL,
+            'posted_at' => '2026-08-01',
+        ]);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $tithe->id)
+            ->whereDate('expected_date', '2026-08-01')
+            ->update([
+                'bank_transaction_id' => $titheTx->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+            ]);
+
+        $this->actingAs($user)
+            ->get('/?view=month&month=2026-07')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Dashboard/Index')
+                ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-08-01')
+                ->where('paycheck_plans.paychecks.0.bills.0.amount', 280)
+                ->where('paycheck_plans.paychecks.0.leftover', 2720));
+    }
+
     public function test_ytm_dashboard_omits_paycheck_plan_cards(): void
     {
         $user = User::factory()->create();

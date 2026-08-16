@@ -346,6 +346,18 @@
         }).format(amount);
     };
 
+    let planMatchSummary = (template) => {
+        return [
+            `Day ${template.expected_day}`,
+            formatMoney(template.expected_amount),
+            matchModeLabel(template.match_mode),
+            template.normalized_pattern,
+            template.merchant?.name,
+        ]
+            .filter(Boolean)
+            .join(' · ');
+    };
+
     let sourceTransactionsFor = (categoryId) => {
         if (!categoryId) {
             return [];
@@ -591,6 +603,9 @@
             (Number(paycheck.expected_amount) - assignedBillsTotal(paycheck)) *
                 100,
         ) / 100;
+
+    let billCoversNextMonth = (paycheck, bill) =>
+        Number(bill.expected_day) < Number(paycheck.expected_day);
 
     let leftoverClass = (amount) => {
         if (amount === null || amount === undefined) {
@@ -1417,8 +1432,8 @@
                 :key="template.id"
                 class="space-y-3 rounded border px-4 py-3"
             >
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1">
                         <p class="font-medium">
                             {{ template.name }}
                             <span
@@ -1427,19 +1442,14 @@
                                 >Inactive</span
                             >
                         </p>
-                        <p class="text-sm text-neutral-600">
-                            Day {{ template.expected_day }} ·
-                            {{ formatMoney(template.expected_amount) }} ·
-                            {{ matchModeLabel(template.match_mode) }}
-                            <span v-if="template.normalized_pattern">
-                                · {{ template.normalized_pattern }}
-                            </span>
-                            <span v-if="template.merchant">
-                                · {{ template.merchant.name }}
-                            </span>
+                        <p
+                            class="truncate text-sm text-neutral-600"
+                            :title="planMatchSummary(template)"
+                        >
+                            {{ planMatchSummary(template) }}
                         </p>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex shrink-0 gap-2">
                         <button
                             type="button"
                             class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
@@ -1511,6 +1521,12 @@
                         <span>
                             {{ bill.name }} · Day {{ bill.expected_day }} ·
                             {{ formatMoney(bill.expected_amount) }}
+                            <span
+                                v-if="billCoversNextMonth(template, bill)"
+                                class="text-neutral-500"
+                            >
+                                · next month
+                            </span>
                             <span
                                 v-if="!bill.is_active"
                                 class="text-neutral-500"
@@ -1678,8 +1694,8 @@
                 :key="template.id"
                 class="space-y-3 rounded border px-4 py-3"
             >
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1">
                         <p class="font-medium">
                             {{ template.name }}
                             <span
@@ -1688,16 +1704,11 @@
                                 >Inactive</span
                             >
                         </p>
-                        <p class="text-sm text-neutral-600">
-                            Day {{ template.expected_day }} ·
-                            {{ formatMoney(template.expected_amount) }} ·
-                            {{ matchModeLabel(template.match_mode) }}
-                            <span v-if="template.normalized_pattern">
-                                · {{ template.normalized_pattern }}
-                            </span>
-                            <span v-if="template.merchant">
-                                · {{ template.merchant.name }}
-                            </span>
+                        <p
+                            class="truncate text-sm text-neutral-600"
+                            :title="planMatchSummary(template)"
+                        >
+                            {{ planMatchSummary(template) }}
                         </p>
                         <p class="text-sm text-neutral-600">
                             {{
@@ -1707,7 +1718,7 @@
                             }}
                         </p>
                     </div>
-                    <div class="flex gap-2">
+                    <div class="flex shrink-0 gap-2">
                         <button
                             type="button"
                             class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"

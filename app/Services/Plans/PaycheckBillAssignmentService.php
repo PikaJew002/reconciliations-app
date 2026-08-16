@@ -42,6 +42,28 @@ class PaycheckBillAssignmentService
     }
 
     /**
+     * A paycheck covers assigned bills from its expected day up to, but not
+     * including, the next occurrence of that same paycheck. Bills due earlier
+     * in the month are therefore the following month's occurrence.
+     */
+    public function billCoversNextMonth(PlannedTemplate $paycheck, PlannedTemplate $bill): bool
+    {
+        return (int) $bill->expected_day < (int) $paycheck->expected_day;
+    }
+
+    public function billCoverageMonth(
+        PlannedTemplate $paycheck,
+        PlannedTemplate $bill,
+        CarbonInterface $paycheckMonth,
+    ): CarbonInterface {
+        $month = $paycheckMonth->copy()->startOfMonth()->startOfDay();
+
+        return $this->billCoversNextMonth($paycheck, $bill)
+            ? $month->addMonth()
+            : $month;
+    }
+
+    /**
      * @return array{
      *     paychecks: list<array<string, mixed>>,
      *     leftover: float,
@@ -52,7 +74,6 @@ class PaycheckBillAssignmentService
     public function monthCards(int $userId, CarbonInterface $monthStart): array
     {
         $monthStart = $monthStart->copy()->startOfMonth()->startOfDay();
-        $monthEnd = $monthStart->copy()->addMonth();
 
         $paychecks = PlannedTemplate::query()
             ->where('user_id', $userId)
@@ -66,18 +87,21 @@ class PaycheckBillAssignmentService
         $occurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
             ->where('expected_date', '>=', $monthStart)
-            ->where('expected_date', '<', $monthEnd)
+            ->where('expected_date', '<', $monthStart->copy()->addMonths(2))
             ->whereNotNull('template_id')
             ->with('bankTransaction:id,amount')
             ->get()
-            ->keyBy(fn (PlannedOccurrence $occurrence) => (int) $occurrence->template_id);
+            ->groupBy(fn (PlannedOccurrence $occurrence) => (int) $occurrence->template_id);
 
         $cards = [];
         $totalIncome = 0.0;
         $totalBills = 0.0;
 
         foreach ($paychecks as $paycheck) {
-            $paycheckOccurrence = $occurrences->get((int) $paycheck->id);
+            $paycheckOccurrence = $this->occurrenceInMonth(
+                $occurrences->get((int) $paycheck->id),
+                $monthStart,
+            );
             $paycheckAmount = $this->amountFor(
                 $paycheckOccurrence,
                 (float) $paycheck->expected_amount,
@@ -93,16 +117,22 @@ class PaycheckBillAssignmentService
                     continue;
                 }
 
-                $billOccurrence = $occurrences->get((int) $bill->id);
+                $coversNextMonth = $this->billCoversNextMonth($paycheck, $bill);
+                $billMonth = $this->billCoverageMonth($paycheck, $bill, $monthStart);
+                $billOccurrence = $this->occurrenceInMonth(
+                    $occurrences->get((int) $bill->id),
+                    $billMonth,
+                );
                 $billAmount = $this->amountFor($billOccurrence, (float) $bill->expected_amount);
                 $billDate = $billOccurrence?->expected_date
-                    ?? PlannedOccurrence::expectedDateForMonth($monthStart, (int) $bill->expected_day);
+                    ?? PlannedOccurrence::expectedDateForMonth($billMonth, (int) $bill->expected_day);
 
                 $bills[] = [
                     'id' => (int) $bill->id,
                     'name' => $bill->name,
                     'expected_day' => (int) $bill->expected_day,
                     'expected_date' => $billDate->toDateString(),
+                    'covers_next_month' => $coversNextMonth,
                     'amount' => $billAmount,
                     'status' => $billOccurrence?->status ?? PlannedOccurrence::STATUS_PLANNED,
                 ];
@@ -146,5 +176,19 @@ class PaycheckBillAssignmentService
         }
 
         $paycheck->assignedBills()->sync($billTemplateIds);
+    }
+
+    /**
+     * @param  Collection<int, PlannedOccurrence>|null  $occurrences
+     */
+    protected function occurrenceInMonth(?Collection $occurrences, CarbonInterface $month): ?PlannedOccurrence
+    {
+        if ($occurrences === null || $occurrences->isEmpty()) {
+            return null;
+        }
+
+        return $occurrences->first(
+            fn (PlannedOccurrence $occurrence) => $occurrence->expected_date->isSameMonth($month),
+        );
     }
 }
