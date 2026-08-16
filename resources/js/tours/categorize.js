@@ -19,7 +19,7 @@ export function categorizeTour(page) {
                 popover: {
                     title: 'Name the category',
                     description:
-                        'Pick an existing category, or type a name to create one from this transaction. You will reuse it on similar lines.',
+                        'Pick an existing category, or choose Create a category to type a new name. You will reuse it on similar lines.',
                     side: 'bottom',
                 },
             },

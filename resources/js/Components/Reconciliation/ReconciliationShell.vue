@@ -402,28 +402,28 @@
             data you have already imported.
         </p>
 
-        <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <div class="rounded border px-3 py-2">
+        <dl class="grid grid-cols-2 items-stretch gap-3 text-sm sm:grid-cols-4">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Needs review</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.needs_review ?? 0 }}
                 </dd>
             </div>
-            <div class="rounded border px-3 py-2">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Unmatched orders</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.unmatched_orders }}
                 </dd>
             </div>
-            <div class="rounded border px-3 py-2">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Reconciled orders</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.reconciled_orders }}
                 </dd>
             </div>
-            <div class="rounded border px-3 py-2">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Unmatched transactions</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.unmatched_transactions }}
                 </dd>
             </div>
