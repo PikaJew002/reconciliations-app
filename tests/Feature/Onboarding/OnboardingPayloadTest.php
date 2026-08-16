@@ -4,6 +4,7 @@ namespace Tests\Feature\Onboarding;
 
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Order;
 use App\Models\User;
@@ -35,7 +36,7 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.visible', true)
                 ->where('onboarding.finished', false)
                 ->where('onboarding.percentage', 0)
-                ->has('onboarding.steps', 3)
+                ->has('onboarding.steps', 4)
                 ->where('onboarding.steps.0.key', OnboardingSteps::ADD_ACCOUNT)
                 ->where('onboarding.steps.0.complete', false)
                 ->where('onboarding.steps.0.href', '/accounts/create')
@@ -46,7 +47,11 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.steps.2.key', OnboardingSteps::IMPORT_ORDERS)
                 ->where('onboarding.steps.2.complete', false)
                 ->where('onboarding.steps.2.skippable', true)
-                ->where('onboarding.steps.2.href', '/orders'));
+                ->where('onboarding.steps.2.href', '/orders')
+                ->where('onboarding.steps.3.key', OnboardingSteps::CATEGORIZE)
+                ->where('onboarding.steps.3.complete', false)
+                ->where('onboarding.steps.3.href', '/reconciliation/unmatched-transactions')
+                ->where('onboarding.steps.3.tour', OnboardingSteps::CATEGORIZE));
     }
 
     public function test_creating_an_account_completes_the_first_step(): void
@@ -84,10 +89,11 @@ class OnboardingPayloadTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
                 ->where('onboarding.finished', false)
-                ->where('onboarding.percentage', 67)
+                ->where('onboarding.percentage', 50)
                 ->where('onboarding.steps.0.complete', true)
                 ->where('onboarding.steps.1.complete', true)
-                ->where('onboarding.steps.2.complete', false));
+                ->where('onboarding.steps.2.complete', false)
+                ->where('onboarding.steps.3.complete', false));
     }
 
     public function test_bank_transactions_without_completed_batch_still_complete_import_bank(): void
@@ -113,7 +119,8 @@ class OnboardingPayloadTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.steps.0.complete', true)
                 ->where('onboarding.steps.1.complete', true)
-                ->where('onboarding.steps.2.complete', false));
+                ->where('onboarding.steps.2.complete', false)
+                ->where('onboarding.steps.3.complete', false));
     }
 
     public function test_pending_empty_bank_import_does_not_complete_the_step(): void
@@ -162,10 +169,28 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.visible', true)
                 ->where('onboarding.steps.0.complete', false)
                 ->where('onboarding.steps.1.complete', false)
-                ->where('onboarding.steps.2.complete', false));
+                ->where('onboarding.steps.2.complete', false)
+                ->where('onboarding.steps.3.complete', false));
     }
 
-    public function test_existing_user_with_bank_and_orders_is_auto_hidden(): void
+    public function test_existing_user_with_bank_orders_and_categories_is_auto_hidden(): void
+    {
+        $user = User::factory()->create();
+        $this->seedCompletedBankImport($user, categorized: true);
+        Order::factory()->create(['user_id' => $user->id]);
+
+        $this->actingAs($user)
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('onboarding.visible', false)
+                ->where('onboarding.finished', true)
+                ->has('onboarding.steps', 4));
+
+        $this->assertNotNull($user->fresh()->onboarding_hidden_at);
+    }
+
+    public function test_bank_and_orders_without_categorizing_is_not_finished(): void
     {
         $user = User::factory()->create();
         $this->seedCompletedBankImport($user);
@@ -175,14 +200,14 @@ class OnboardingPayloadTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
-                ->where('onboarding.visible', false)
-                ->where('onboarding.finished', true)
-                ->has('onboarding.steps', 3));
-
-        $this->assertNotNull($user->fresh()->onboarding_hidden_at);
+                ->where('onboarding.visible', true)
+                ->where('onboarding.finished', false)
+                ->where('onboarding.percentage', 75)
+                ->where('onboarding.steps.3.key', OnboardingSteps::CATEGORIZE)
+                ->where('onboarding.steps.3.complete', false));
     }
 
-    public function test_skipping_orders_after_bank_import_auto_hides_the_panel(): void
+    public function test_skipping_orders_after_bank_import_leaves_categorize_open(): void
     {
         $user = User::factory()->create();
         $this->seedCompletedBankImport($user);
@@ -198,9 +223,32 @@ class OnboardingPayloadTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
+                ->where('onboarding.visible', true)
+                ->where('onboarding.finished', false)
+                ->has('onboarding.steps', 3)
+                ->where('onboarding.steps.2.key', OnboardingSteps::CATEGORIZE)
+                ->where('onboarding.steps.2.complete', false));
+    }
+
+    public function test_skipping_orders_after_bank_and_categorize_auto_hides_the_panel(): void
+    {
+        $user = User::factory()->create();
+        $this->seedCompletedBankImport($user, categorized: true);
+
+        $this->actingAs($user)
+            ->from('/')
+            ->post(route('onboarding.skip'), ['step' => OnboardingSteps::IMPORT_ORDERS])
+            ->assertRedirect('/');
+
+        $this->actingAs($user)
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', false)
                 ->where('onboarding.finished', true)
-                ->has('onboarding.steps', 2));
+                ->has('onboarding.steps', 3));
+
+        $this->assertNotNull($user->fresh()->onboarding_hidden_at);
     }
 
     public function test_skipped_orders_are_excluded_while_bank_import_is_still_open(): void
@@ -217,9 +265,10 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
-                ->has('onboarding.steps', 2)
+                ->has('onboarding.steps', 3)
                 ->where('onboarding.steps.0.key', OnboardingSteps::ADD_ACCOUNT)
                 ->where('onboarding.steps.1.key', OnboardingSteps::IMPORT_BANK)
+                ->where('onboarding.steps.2.key', OnboardingSteps::CATEGORIZE)
                 ->where('onboarding.finished', false));
     }
 
@@ -272,7 +321,7 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.visible', false)
                 ->where('onboarding.finished', false)
                 ->where('onboarding.percentage', 0)
-                ->has('onboarding.steps', 3));
+                ->has('onboarding.steps', 4));
 
         $this->actingAs($user)
             ->from('/')
@@ -286,7 +335,7 @@ class OnboardingPayloadTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.visible', true)
-                ->has('onboarding.steps', 3));
+                ->has('onboarding.steps', 4));
     }
 
     public function test_hidden_user_still_receives_step_progress(): void
@@ -302,7 +351,7 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.visible', false)
                 ->where('onboarding.finished', false)
                 ->where('onboarding.percentage', 0)
-                ->has('onboarding.steps', 3));
+                ->has('onboarding.steps', 4));
     }
 
     public function test_tour_complete_and_dismiss_are_persisted(): void
@@ -327,7 +376,8 @@ class OnboardingPayloadTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('onboarding.steps.0.tour', OnboardingSteps::ADD_ACCOUNT)
                 ->where('onboarding.steps.1.tour', null)
-                ->where('onboarding.steps.2.tour', OnboardingSteps::IMPORT_ORDERS));
+                ->where('onboarding.steps.2.tour', OnboardingSteps::IMPORT_ORDERS)
+                ->where('onboarding.steps.3.tour', OnboardingSteps::CATEGORIZE));
 
         $this->actingAs($user)
             ->from('/')
@@ -382,10 +432,21 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.visible', true)
                 ->where('onboarding.steps.0.complete', false)
                 ->where('onboarding.steps.1.complete', false)
-                ->where('onboarding.steps.2.complete', true));
+                ->where('onboarding.steps.2.complete', true)
+                ->where('onboarding.steps.3.complete', false));
     }
 
-    protected function seedCompletedBankImport(User $user): void
+    public function test_cannot_skip_categorize(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from('/')
+            ->post(route('onboarding.skip'), ['step' => OnboardingSteps::CATEGORIZE])
+            ->assertSessionHasErrors('step');
+    }
+
+    protected function seedCompletedBankImport(User $user, bool $categorized = false): void
     {
         $account = Account::factory()->for($user)->create();
         $batch = ImportBatch::factory()->create([
@@ -395,10 +456,16 @@ class OnboardingPayloadTest extends TestCase
             'status' => 'completed',
             'record_count' => 8,
         ]);
+        $category = $categorized
+            ? Category::factory()->for($user)->expense()->create()
+            : null;
         BankTransaction::factory()->create([
             'user_id' => $user->id,
             'account_id' => $account->id,
             'import_batch_id' => $batch->id,
+            'category_id' => $category?->id,
+            'classification' => $categorized ? BankTransaction::CLASSIFICATION_EXPENSE : null,
+            'status' => $categorized ? 'ignored' : 'unmatched',
         ]);
     }
 }

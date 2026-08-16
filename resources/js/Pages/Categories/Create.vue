@@ -1,5 +1,9 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import {
+        randomCategoryColor,
+        stripColorHash,
+    } from '../../Composables/categoryColor.js';
     import { Link, useForm } from '@inertiajs/vue3';
     import { computed } from 'vue';
 
@@ -22,12 +26,6 @@
         color: '',
     });
 
-    function stripColorHash(value) {
-        return String(value || '')
-            .trim()
-            .replace(/^#/, '');
-    }
-
     let colorPreview = computed(() => {
         let hex = stripColorHash(form.color);
 
@@ -46,6 +44,10 @@
 
     let onColorInput = (event) => {
         form.color = stripColorHash(event.target.value).slice(0, 6);
+    };
+
+    let generateColor = () => {
+        form.color = stripColorHash(randomCategoryColor());
     };
 
     let submit = () => {
@@ -107,7 +109,7 @@
                     >Color
                     <span class="text-neutral-500">(optional)</span></label
                 >
-                <div class="flex items-center gap-3">
+                <div class="flex flex-wrap items-center gap-3">
                     <span
                         class="h-10 w-10 shrink-0 rounded border"
                         :class="
@@ -124,7 +126,7 @@
                         aria-hidden="true"
                     />
                     <div
-                        class="flex w-full items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
+                        class="flex min-w-0 flex-1 items-stretch overflow-hidden rounded border focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
                     >
                         <span
                             class="flex items-center border-r bg-neutral-50 px-3 font-mono text-neutral-500"
@@ -141,6 +143,13 @@
                             @input="onColorInput"
                         />
                     </div>
+                    <button
+                        type="button"
+                        class="rounded border px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100"
+                        @click="generateColor"
+                    >
+                        Generate a color
+                    </button>
                 </div>
                 <p v-if="form.errors.color" class="mt-1 text-sm text-red-600">
                     {{ form.errors.color }}

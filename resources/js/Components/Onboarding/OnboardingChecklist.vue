@@ -21,8 +21,8 @@
             <div>
                 <h2 class="text-sm font-semibold">Getting started</h2>
                 <p class="text-sm text-mute">
-                    Add your accounts, import recent bank activity, then
-                    optionally add Amazon or Walmart orders.
+                    Add your accounts, import recent bank activity, optionally
+                    add Amazon or Walmart orders, then categorize transactions.
                 </p>
             </div>
             <button

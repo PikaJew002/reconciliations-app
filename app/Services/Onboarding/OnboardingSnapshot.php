@@ -12,6 +12,7 @@ readonly class OnboardingSnapshot
         public ?string $firstAccountId,
         public bool $hasBankImport,
         public bool $hasOrderImport,
+        public bool $hasCategorizedTransaction,
     ) {}
 
     public static function for(User $user): self
@@ -41,6 +42,11 @@ readonly class OnboardingSnapshot
                     where user_id = ?
                 ) as has_bank_transaction,
                 exists(
+                    select 1 from bank_transactions
+                    where user_id = ?
+                        and category_id is not null
+                ) as has_categorized_transaction,
+                exists(
                     select 1 from import_batches
                     where user_id = ?
                         and source in (?, ?)
@@ -60,6 +66,7 @@ readonly class OnboardingSnapshot
                 'completed',
                 $user->id,
                 $user->id,
+                $user->id,
                 'amazon',
                 'walmart',
                 'completed',
@@ -72,6 +79,7 @@ readonly class OnboardingSnapshot
             firstAccountId: $row->first_account_id !== null ? (string) $row->first_account_id : null,
             hasBankImport: (bool) $row->has_completed_bank_import || (bool) $row->has_bank_transaction,
             hasOrderImport: (bool) $row->has_completed_order_import || (bool) $row->has_order,
+            hasCategorizedTransaction: (bool) $row->has_categorized_transaction,
         );
     }
 }

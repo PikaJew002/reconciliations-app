@@ -77,3 +77,12 @@
     background-color: var(--color-brand-hover);
     color: #fff;
 }
+
+.onboarding-driver-popover .driver-popover-description a {
+    color: var(--color-brand);
+    text-decoration: underline;
+}
+
+.onboarding-driver-popover .driver-popover-description a:hover {
+    color: var(--color-brand-hover);
+}

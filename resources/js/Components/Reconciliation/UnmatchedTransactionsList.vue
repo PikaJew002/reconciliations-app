@@ -342,6 +342,9 @@
         categorizeForms[transaction.id] = {
             classification: defaultClassification,
             category_id: '',
+            category_name: '',
+            creating_category: categoriesForClassification(defaultClassification)
+                .length === 0,
             match_mode: 'once',
             normalized_pattern: '',
         };
@@ -352,6 +355,9 @@
     function onCategorizeClassificationChange(transaction) {
         let form = ensureCategorizeForm(transaction);
         form.category_id = '';
+        form.category_name = '';
+        form.creating_category =
+            categoriesForClassification(form.classification).length === 0;
         let availableModes = matchModesForClassification(
             form.classification,
             transaction,
@@ -359,6 +365,29 @@
         if (!availableModes.includes(form.match_mode)) {
             form.match_mode = 'once';
         }
+    }
+
+    function toggleCreateCategory(transaction) {
+        let form = ensureCategorizeForm(transaction);
+        form.creating_category = !form.creating_category;
+
+        if (form.creating_category) {
+            form.category_id = '';
+        } else {
+            form.category_name = '';
+        }
+    }
+
+    function categoryNamePlaceholder(classification) {
+        if (classification === 'income') {
+            return 'e.g. Paycheck';
+        }
+
+        if (classification === 'bill') {
+            return 'e.g. Electric';
+        }
+
+        return 'e.g. Groceries';
     }
 
     function onCategorizeMatchModeChange(transaction) {
@@ -376,10 +405,12 @@
 
     function canSubmitCategorize(transaction) {
         let form = ensureCategorizeForm(transaction);
+        let hasCategory = form.creating_category
+            ? Boolean(form.category_name.trim())
+            : Boolean(form.category_id);
 
         return (
-            Boolean(form.category_id) &&
-            categoriesForClassification(form.classification).length > 0 &&
+            hasCategory &&
             !(
                 form.match_mode === 'description_prefix_and_amount' &&
                 !form.normalized_pattern
@@ -389,8 +420,13 @@
 
     function categorizeTransaction(transaction) {
         let form = ensureCategorizeForm(transaction);
+        let categoryName = form.category_name.trim();
 
-        if (!form.category_id) {
+        if (form.creating_category) {
+            if (!categoryName) {
+                return;
+            }
+        } else if (!form.category_id) {
             return;
         }
 
@@ -398,9 +434,14 @@
 
         let payload = {
             classification: form.classification,
-            category_id: form.category_id,
             match_mode: form.match_mode,
         };
+
+        if (form.creating_category) {
+            payload.category_name = categoryName;
+        } else {
+            payload.category_id = form.category_id;
+        }
 
         if (form.match_mode === 'description_prefix_and_amount') {
             payload.normalized_pattern = form.normalized_pattern;
@@ -527,6 +568,7 @@
                             v-model="
                                 ensureCategorizeForm(transaction).classification
                             "
+                            data-tour="categorize-type"
                             class="w-full rounded border px-2 py-1.5"
                             :disabled="isCreditTransaction(transaction)"
                             @change="
@@ -543,26 +585,72 @@
                         </select>
                     </label>
                     <label class="block space-y-1">
-                        <span class="text-neutral-600">Category</span>
-                        <select
-                            v-model="
-                                ensureCategorizeForm(transaction).category_id
-                            "
-                            class="w-full rounded border px-2 py-1.5"
-                            required
+                        <span
+                            class="flex items-center justify-between gap-2 text-neutral-600"
                         >
-                            <option disabled value="">Select</option>
-                            <option
-                                v-for="category in categoriesForClassification(
-                                    ensureCategorizeForm(transaction)
-                                        .classification,
-                                )"
-                                :key="category.id"
-                                :value="category.id"
+                            <span>Category</span>
+                            <button
+                                v-if="
+                                    categoriesForClassification(
+                                        ensureCategorizeForm(transaction)
+                                            .classification,
+                                    ).length > 0
+                                "
+                                type="button"
+                                class="text-xs text-brand underline"
+                                @click="toggleCreateCategory(transaction)"
                             >
-                                {{ category.name }}
-                            </option>
-                        </select>
+                                {{
+                                    ensureCategorizeForm(transaction)
+                                        .creating_category
+                                        ? 'Choose existing'
+                                        : 'New'
+                                }}
+                            </button>
+                        </span>
+                        <div data-tour="categorize-category">
+                            <select
+                                v-if="
+                                    !ensureCategorizeForm(transaction)
+                                        .creating_category
+                                "
+                                v-model="
+                                    ensureCategorizeForm(transaction)
+                                        .category_id
+                                "
+                                class="w-full rounded border px-2 py-1.5"
+                                required
+                            >
+                                <option disabled value="">Select</option>
+                                <option
+                                    v-for="category in categoriesForClassification(
+                                        ensureCategorizeForm(transaction)
+                                            .classification,
+                                    )"
+                                    :key="category.id"
+                                    :value="category.id"
+                                >
+                                    {{ category.name }}
+                                </option>
+                            </select>
+                            <input
+                                v-else
+                                v-model="
+                                    ensureCategorizeForm(transaction)
+                                        .category_name
+                                "
+                                type="text"
+                                class="w-full rounded border px-2 py-1.5"
+                                :placeholder="
+                                    categoryNamePlaceholder(
+                                        ensureCategorizeForm(transaction)
+                                            .classification,
+                                    )
+                                "
+                                autocomplete="off"
+                                required
+                            />
+                        </div>
                     </label>
                     <label class="block space-y-1">
                         <span class="text-neutral-600">Future match</span>
@@ -570,6 +658,7 @@
                             v-model="
                                 ensureCategorizeForm(transaction).match_mode
                             "
+                            data-tour="categorize-match"
                             class="w-full rounded border px-2 py-1.5"
                             @change="onCategorizeMatchModeChange(transaction)"
                         >
@@ -625,21 +714,6 @@
                             have the same amount.
                         </span>
                     </label>
-                    <p
-                        v-if="
-                            categoriesForClassification(
-                                ensureCategorizeForm(transaction)
-                                    .classification,
-                            ).length === 0
-                        "
-                        class="text-xs text-amber-800 sm:col-span-4"
-                    >
-                        Add a
-                        {{
-                            ensureCategorizeForm(transaction).classification
-                        }}
-                        category first.
-                    </p>
                 </form>
                 <p
                     v-else-if="transaction.supports_order_import"

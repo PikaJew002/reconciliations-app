@@ -10,6 +10,8 @@ class OnboardingSteps
 
     public const IMPORT_ORDERS = 'import-orders';
 
+    public const CATEGORIZE = 'categorize';
+
     /**
      * @return list<array{
      *     key: string,
@@ -60,6 +62,16 @@ class OnboardingSteps
                 'tour' => self::IMPORT_ORDERS,
                 'completeIf' => fn (OnboardingSnapshot $snapshot): bool => $snapshot->hasOrderImport,
                 'href' => fn (OnboardingSnapshot $snapshot): string => '/orders',
+            ],
+            [
+                'key' => self::CATEGORIZE,
+                'title' => 'Categorize imported transactions',
+                'description' => 'Assign categories as you go. Type a name to create one, and make a rule for anything that will recur.',
+                'cta' => 'Categorize',
+                'skippable' => false,
+                'tour' => self::CATEGORIZE,
+                'completeIf' => fn (OnboardingSnapshot $snapshot): bool => $snapshot->hasCategorizedTransaction,
+                'href' => fn (OnboardingSnapshot $snapshot): string => '/reconciliation/unmatched-transactions',
             ],
         ];
     }
