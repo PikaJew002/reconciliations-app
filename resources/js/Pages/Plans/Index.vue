@@ -324,6 +324,122 @@
         router.delete(`/plans/${template.id}`);
     };
 
+    let selectedBillIdsByPaycheck = ref({});
+    let savingAssignmentsFor = ref(null);
+    let assignmentErrorPaycheckId = ref(null);
+
+    let syncAssignmentSelections = () => {
+        let next = {};
+
+        for (let template of props.paycheck_templates) {
+            next[template.id] = (template.assigned_bill_ids ?? []).map(Number);
+        }
+
+        selectedBillIdsByPaycheck.value = next;
+    };
+
+    watch(
+        () => props.paycheck_templates,
+        syncAssignmentSelections,
+        { immediate: true, deep: true },
+    );
+
+    let selectedBillIds = (paycheck) =>
+        selectedBillIdsByPaycheck.value[paycheck.id] ??
+        paycheck.assigned_bill_ids ??
+        [];
+
+    let isBillSelected = (paycheck, bill) =>
+        selectedBillIds(paycheck).includes(Number(bill.id));
+
+    let otherPaycheckForBill = (paycheck, bill) => {
+        if (!bill.assigned_paycheck) {
+            return null;
+        }
+
+        if (Number(bill.assigned_paycheck.id) === Number(paycheck.id)) {
+            return null;
+        }
+
+        return bill.assigned_paycheck;
+    };
+
+    let assignedBillsTotal = (paycheck) => {
+        let ids = selectedBillIds(paycheck);
+
+        return props.bill_templates
+            .filter((bill) => ids.includes(Number(bill.id)) && bill.is_active)
+            .reduce((sum, bill) => sum + Number(bill.expected_amount), 0);
+    };
+
+    let paycheckLeftover = (paycheck) =>
+        Math.round(
+            (Number(paycheck.expected_amount) - assignedBillsTotal(paycheck)) *
+                100,
+        ) / 100;
+
+    let leftoverClass = (amount) =>
+        amount < 0 ? 'text-red-700' : 'text-emerald-800';
+
+    let unassignedBills = computed(() =>
+        props.bill_templates.filter((bill) => !bill.assigned_paycheck),
+    );
+
+    let assignmentError = computed(
+        () => page.props.errors?.bill_template_ids ?? null,
+    );
+
+    let saveAssignments = (paycheck, nextIds) => {
+        let previous = selectedBillIds(paycheck);
+        selectedBillIdsByPaycheck.value = {
+            ...selectedBillIdsByPaycheck.value,
+            [paycheck.id]: nextIds,
+        };
+        savingAssignmentsFor.value = paycheck.id;
+
+        router.put(
+            `/plans/${paycheck.id}/assignments`,
+            {
+                bill_template_ids: nextIds,
+                month: props.month,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    if (assignmentErrorPaycheckId.value === paycheck.id) {
+                        assignmentErrorPaycheckId.value = null;
+                    }
+                },
+                onError: () => {
+                    assignmentErrorPaycheckId.value = paycheck.id;
+                    selectedBillIdsByPaycheck.value = {
+                        ...selectedBillIdsByPaycheck.value,
+                        [paycheck.id]: previous,
+                    };
+                },
+                onFinish: () => {
+                    if (savingAssignmentsFor.value === paycheck.id) {
+                        savingAssignmentsFor.value = null;
+                    }
+                },
+            },
+        );
+    };
+
+    let toggleBillAssignment = (paycheck, bill) => {
+        if (otherPaycheckForBill(paycheck, bill)) {
+            return;
+        }
+
+        let current = selectedBillIds(paycheck);
+        let billId = Number(bill.id);
+        let next = current.includes(billId)
+            ? current.filter((id) => id !== billId)
+            : [...current, billId];
+
+        saveAssignments(paycheck, next);
+    };
+
     let linkOccurrence = (occurrence) => {
         if (!linkTransactionId.value) {
             return;
@@ -1042,6 +1158,16 @@
         <section class="space-y-3">
             <h2 class="text-lg font-medium">Paycheck plans</h2>
             <p
+                v-if="
+                    paycheck_templates.length > 0 &&
+                    unassignedBills.length > 0
+                "
+                class="text-sm text-neutral-600"
+            >
+                Unassigned bills:
+                {{ unassignedBills.map((bill) => bill.name).join(', ') }}.
+            </p>
+            <p
                 v-if="paycheck_templates.length === 0"
                 class="text-sm text-neutral-600"
             >
@@ -1094,6 +1220,77 @@
                             Delete
                         </button>
                     </div>
+                </div>
+
+                <p class="text-sm tabular-nums">
+                    Paycheck {{ formatMoney(template.expected_amount) }} −
+                    bills {{ formatMoney(assignedBillsTotal(template)) }}
+                    =
+                    <span
+                        class="font-medium"
+                        :class="leftoverClass(paycheckLeftover(template))"
+                    >
+                        leftover {{ formatMoney(paycheckLeftover(template)) }}
+                    </span>
+                </p>
+
+                <div
+                    v-if="bill_templates.length === 0"
+                    class="text-sm text-neutral-600"
+                >
+                    No bill plans to assign.
+                </div>
+                <div v-else class="space-y-2">
+                    <p class="text-sm font-medium">Assigned bills</p>
+                    <p
+                        v-if="
+                            assignmentErrorPaycheckId === template.id &&
+                            assignmentError
+                        "
+                        class="text-sm text-red-600"
+                    >
+                        {{ assignmentError }}
+                    </p>
+                    <label
+                        v-for="bill in bill_templates"
+                        :key="bill.id"
+                        class="flex items-start gap-2 text-sm"
+                        :class="
+                            otherPaycheckForBill(template, bill)
+                                ? 'text-neutral-400'
+                                : ''
+                        "
+                    >
+                        <input
+                            type="checkbox"
+                            class="mt-0.5"
+                            :checked="isBillSelected(template, bill)"
+                            :disabled="
+                                Boolean(otherPaycheckForBill(template, bill)) ||
+                                savingAssignmentsFor === template.id
+                            "
+                            @change="toggleBillAssignment(template, bill)"
+                        />
+                        <span>
+                            {{ bill.name }} · Day {{ bill.expected_day }} ·
+                            {{ formatMoney(bill.expected_amount) }}
+                            <span
+                                v-if="!bill.is_active"
+                                class="text-neutral-500"
+                            >
+                                (Inactive)
+                            </span>
+                            <span
+                                v-if="otherPaycheckForBill(template, bill)"
+                                class="text-neutral-500"
+                            >
+                                · Assigned to
+                                {{
+                                    otherPaycheckForBill(template, bill).name
+                                }}
+                            </span>
+                        </span>
+                    </label>
                 </div>
 
                 <form
@@ -1273,6 +1470,13 @@
                             <span v-if="template.merchant">
                                 · {{ template.merchant.name }}
                             </span>
+                        </p>
+                        <p class="text-sm text-neutral-600">
+                            {{
+                                template.assigned_paycheck
+                                    ? `Assigned to ${template.assigned_paycheck.name}`
+                                    : 'Unassigned'
+                            }}
                         </p>
                     </div>
                     <div class="flex gap-2">

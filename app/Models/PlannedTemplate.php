@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PlannedTemplate extends Model
@@ -94,6 +95,26 @@ class PlannedTemplate extends Model
     public function occurrences(): HasMany
     {
         return $this->hasMany(PlannedOccurrence::class, 'template_id');
+    }
+
+    public function assignedBills(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            self::class,
+            'planned_template_assignments',
+            'paycheck_template_id',
+            'bill_template_id',
+        )->withTimestamps();
+    }
+
+    public function assignedPaycheck(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            self::class,
+            'planned_template_assignments',
+            'bill_template_id',
+            'paycheck_template_id',
+        )->withTimestamps();
     }
 
     /**

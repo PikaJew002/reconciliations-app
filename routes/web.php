@@ -73,6 +73,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/plans', [PlannedTemplateController::class, 'index'])->name('plans.index');
     Route::post('/plans', [PlannedTemplateController::class, 'store'])->name('plans.store');
     Route::patch('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'update'])->name('plans.update');
+    Route::put('/plans/{plannedTemplate}/assignments', [PlannedTemplateController::class, 'updateAssignments'])
+        ->name('plans.assignments.update');
     Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
     Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
         ->name('plans.occurrences.link');

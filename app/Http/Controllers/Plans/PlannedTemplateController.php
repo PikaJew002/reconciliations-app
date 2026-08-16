@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Plans;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Plans\StorePlannedTemplateRequest;
+use App\Http\Requests\Plans\UpdatePlannedTemplateAssignmentsRequest;
 use App\Http\Requests\Plans\UpdatePlannedTemplateRequest;
 use App\Models\BankTransaction;
 use App\Models\Category;
@@ -11,6 +12,7 @@ use App\Models\Merchant;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
+use App\Services\Plans\PaycheckBillAssignmentService;
 use App\Services\Plans\PlannedOccurrenceGenerator;
 use App\Services\Reconciliation\TransactionMatchEvaluator;
 use Carbon\Carbon;
@@ -27,6 +29,7 @@ class PlannedTemplateController extends Controller
     public function index(
         Request $request,
         PlannedOccurrenceGenerator $generator,
+        PaycheckBillAssignmentService $assignments,
     ): Response {
         $userId = $request->user()->id;
         $generator->ensureForUser($userId);
@@ -44,11 +47,16 @@ class PlannedTemplateController extends Controller
 
         $templates = PlannedTemplate::query()
             ->where('user_id', $userId)
-            ->with(['category:id,name,kind', 'merchant:id,name'])
+            ->with([
+                'category:id,name,kind',
+                'merchant:id,name',
+                'assignedBills',
+                'assignedPaycheck',
+            ])
             ->orderBy('expected_day')
             ->orderBy('name')
             ->get()
-            ->map(fn (PlannedTemplate $template) => $this->templatePayload($template));
+            ->map(fn (PlannedTemplate $template) => $this->templatePayload($template, $assignments));
 
         $linkedIds = PlannedOccurrence::query()
             ->where('user_id', $userId)
@@ -175,11 +183,38 @@ class PlannedTemplateController extends Controller
             ->with('success', $label.' deleted.');
     }
 
+    public function updateAssignments(
+        UpdatePlannedTemplateAssignmentsRequest $request,
+        PlannedTemplate $plannedTemplate,
+        PaycheckBillAssignmentService $assignments,
+    ): RedirectResponse {
+        $this->ensureOwned($request, $plannedTemplate);
+
+        if ($plannedTemplate->classification !== BankTransaction::CLASSIFICATION_INCOME) {
+            throw new NotFoundHttpException;
+        }
+
+        $assignments->sync($plannedTemplate, $request->billTemplateIds());
+
+        return redirect()
+            ->route('plans.index', array_filter(['month' => $request->string('month')->toString() ?: null]))
+            ->with('success', 'Bills assigned.');
+    }
+
     /**
      * @return array<string, mixed>
      */
-    protected function templatePayload(PlannedTemplate $template): array
-    {
+    protected function templatePayload(
+        PlannedTemplate $template,
+        PaycheckBillAssignmentService $assignments,
+    ): array {
+        $assignedBills = $template->relationLoaded('assignedBills')
+            ? $template->assignedBills
+            : collect();
+        $assignedPaycheck = $template->relationLoaded('assignedPaycheck')
+            ? $template->assignedPaycheck->first()
+            : null;
+
         return [
             'id' => $template->id,
             'name' => $template->name,
@@ -202,6 +237,19 @@ class PlannedTemplateController extends Controller
             'lookback_days' => (int) $template->lookback_days,
             'lookforward_days' => (int) $template->lookforward_days,
             'is_active' => (bool) $template->is_active,
+            'assigned_bill_ids' => $assignedBills
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->sort()
+                ->values()
+                ->all(),
+            'leftover' => $template->classification === BankTransaction::CLASSIFICATION_INCOME
+                ? $assignments->leftover($template, $assignedBills)
+                : null,
+            'assigned_paycheck' => $assignedPaycheck ? [
+                'id' => (int) $assignedPaycheck->id,
+                'name' => $assignedPaycheck->name,
+            ] : null,
         ];
     }
 
