@@ -1,7 +1,6 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import ColorField from '../../Components/ColorField.vue';
-    import { randomCategoryColor } from '../../Composables/categoryColor.js';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, ref, watch } from 'vue';
 
@@ -51,14 +50,14 @@
 
     let createForm = useForm({
         starts_on: '',
-        color: '#336699',
+        color: '',
         label: '',
         make_current: true,
     });
 
     let editForm = useForm({
         label: props.budget_year?.label ?? '',
-        color: props.budget_year?.color ?? '#336699',
+        color: props.budget_year?.color ?? '',
         starts_on: props.budget_year
             ? props.budget_year.starts_on.slice(0, 7)
             : '',
@@ -82,7 +81,7 @@
             form.clearErrors();
 
             editForm.label = props.budget_year?.label ?? '';
-            editForm.color = props.budget_year?.color ?? '#336699';
+            editForm.color = props.budget_year?.color ?? '';
             editForm.starts_on = props.budget_year
                 ? props.budget_year.starts_on.slice(0, 7)
                 : '';
@@ -149,14 +148,6 @@
             borderColor: color,
             backgroundColor: `${color}22`,
         };
-    };
-
-    let generateCreateColor = () => {
-        createForm.color = randomCategoryColor();
-    };
-
-    let generateEditColor = () => {
-        editForm.color = randomCategoryColor();
     };
 
     let categoryById = computed(() => {
@@ -283,7 +274,6 @@
             onSuccess: () => {
                 showCreate.value = false;
                 createForm.reset();
-                createForm.color = '#336699';
                 createForm.make_current = true;
             },
         });
@@ -353,7 +343,7 @@
             class="space-y-3 rounded border px-4 py-3"
         >
             <p class="text-sm font-medium">Create budget year</p>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid gap-3 sm:grid-cols-2">
                 <label class="block text-sm">
                     <span class="text-neutral-600">Starts</span>
                     <input
@@ -364,20 +354,11 @@
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Color</span>
-                    <div class="mt-1 flex flex-wrap items-center gap-3">
-                        <ColorField
-                            id="create-color"
-                            v-model="createForm.color"
-                            class="min-w-0 flex-1"
-                        />
-                        <button
-                            type="button"
-                            class="btn rounded border px-3 text-sm hover:bg-neutral-100"
-                            @click="generateCreateColor"
-                        >
-                            Generate a color
-                        </button>
-                    </div>
+                    <ColorField
+                        id="create-color"
+                        v-model="createForm.color"
+                        class="mt-1"
+                    />
                 </label>
                 <label class="block text-sm sm:col-span-2">
                     <span class="text-neutral-600">Label (optional)</span>
@@ -497,20 +478,11 @@
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Color</span>
-                    <div class="mt-1 flex flex-wrap items-center gap-3">
-                        <ColorField
-                            id="edit-color"
-                            v-model="editForm.color"
-                            class="min-w-0 flex-1"
-                        />
-                        <button
-                            type="button"
-                            class="btn rounded border px-3 text-sm hover:bg-white/60"
-                            @click="generateEditColor"
-                        >
-                            Generate a color
-                        </button>
-                    </div>
+                    <ColorField
+                        id="edit-color"
+                        v-model="editForm.color"
+                        class="mt-1"
+                    />
                 </label>
                 <div class="sm:col-span-3">
                     <button

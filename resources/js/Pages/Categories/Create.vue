@@ -1,10 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import ColorField from '../../Components/ColorField.vue';
-    import {
-        randomCategoryColor,
-        stripColorHash,
-    } from '../../Composables/categoryColor.js';
+    import { stripColorHash } from '../../Composables/categoryColor.js';
     import { Link, useForm } from '@inertiajs/vue3';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -34,10 +31,6 @@
                 income: 'Income',
             }[kind] ?? kind
         );
-    };
-
-    let generateColor = () => {
-        form.color = randomCategoryColor();
     };
 
     let submit = () => {
@@ -99,20 +92,7 @@
                     >Color
                     <span class="text-neutral-500">(optional)</span></label
                 >
-                <div class="flex flex-wrap items-center gap-3">
-                    <ColorField
-                        id="color"
-                        v-model="form.color"
-                        class="min-w-0 flex-1"
-                    />
-                    <button
-                        type="button"
-                        class="btn rounded border px-3 text-sm text-neutral-700 hover:bg-neutral-100"
-                        @click="generateColor"
-                    >
-                        Generate a color
-                    </button>
-                </div>
+                <ColorField id="color" v-model="form.color" />
                 <p v-if="form.errors.color" class="mt-1 text-sm text-red-600">
                     {{ form.errors.color }}
                 </p>
