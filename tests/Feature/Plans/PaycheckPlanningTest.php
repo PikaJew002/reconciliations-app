@@ -405,6 +405,51 @@ class PaycheckPlanningTest extends TestCase
                 ->has('bill_templates', 0));
     }
 
+    public function test_future_month_beyond_horizon_is_flagged_when_covered_by_a_budget_year(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-01')->create();
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-11')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where('month', '2026-11')
+                ->where('month_in_budget_year', true)
+                ->where('month_beyond_occurrence_horizon', true)
+                ->has('paycheck_occurrences', 0)
+                ->has('bill_occurrences', 0));
+    }
+
+    public function test_future_month_beyond_horizon_without_a_budget_year_keeps_the_add_plan_empty_state(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-11')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where('month', '2026-11')
+                ->where('month_in_budget_year', false)
+                ->where('month_beyond_occurrence_horizon', true));
+    }
+
+    public function test_current_horizon_month_is_not_beyond_occurrence_horizon(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-01')->create();
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-03')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where('month_in_budget_year', true)
+                ->where('month_beyond_occurrence_horizon', false));
+    }
+
     public function test_create_form_includes_category_source_transactions_and_matching_rule(): void
     {
         $user = User::factory()->create();

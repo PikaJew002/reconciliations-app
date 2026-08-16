@@ -91,6 +91,17 @@ class PlannedOccurrenceGenerator
             });
     }
 
+    public static function horizonLastMonth(): CarbonInterface
+    {
+        return Carbon::now()->startOfMonth()->addMonths(self::MONTHS_AHEAD);
+    }
+
+    public static function isBeyondHorizon(CarbonInterface $month): bool
+    {
+        return $month->copy()->startOfMonth()->startOfDay()
+            ->gt(self::horizonLastMonth());
+    }
+
     /**
      * Last month through two months ahead. Future months stay ungenerated
      * so the template can change mid-year before those records exist.
@@ -100,7 +111,7 @@ class PlannedOccurrenceGenerator
     protected function monthsInHorizon(): array
     {
         $start = Carbon::now()->startOfMonth()->subMonth()->startOfDay();
-        $end = Carbon::now()->startOfMonth()->addMonths(self::MONTHS_AHEAD + 1);
+        $end = self::horizonLastMonth()->copy()->addMonth();
 
         $months = [];
         $cursor = $start->copy();

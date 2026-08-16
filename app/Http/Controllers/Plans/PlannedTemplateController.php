@@ -8,6 +8,7 @@ use App\Http\Requests\Plans\UpdatePlannedTemplateAssignmentsRequest;
 use App\Http\Requests\Plans\UpdatePlannedTemplateRequest;
 use App\Jobs\MatchPlannedOccurrences;
 use App\Models\BankTransaction;
+use App\Models\BudgetYear;
 use App\Models\Category;
 use App\Models\Merchant;
 use App\Models\PlannedOccurrence;
@@ -137,6 +138,8 @@ class PlannedTemplateController extends Controller
             'bill_match_modes' => PlannedTemplate::billMatchModes(),
             'source_transactions' => $this->sourceTransactions($userId),
             'active_match_runs' => $this->activeMatchRunsPayload($userId),
+            'month_in_budget_year' => $this->monthInBudgetYear($userId, $monthStart),
+            'month_beyond_occurrence_horizon' => PlannedOccurrenceGenerator::isBeyondHorizon($monthStart),
         ]);
     }
 
@@ -471,6 +474,14 @@ class PlannedTemplateController extends Controller
                 'id' => $category->id,
                 'name' => $category->name,
             ]);
+    }
+
+    protected function monthInBudgetYear(int $userId, Carbon $monthStart): bool
+    {
+        return BudgetYear::query()
+            ->where('user_id', $userId)
+            ->get()
+            ->contains(fn (BudgetYear $year) => $year->containsMonth($monthStart));
     }
 
     private function dispatchMatchJob(PlannedTemplate $template): void

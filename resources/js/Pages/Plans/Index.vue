@@ -63,6 +63,14 @@
             type: Array,
             default: () => [],
         },
+        month_in_budget_year: {
+            type: Boolean,
+            default: false,
+        },
+        month_beyond_occurrence_horizon: {
+            type: Boolean,
+            default: false,
+        },
     });
 
     let page = usePage();
@@ -571,6 +579,20 @@
 
     let leftoverClass = (amount) =>
         amount < 0 ? 'text-red-700' : 'text-emerald-800';
+
+    let occurrencesPendingThisMonth = computed(
+        () =>
+            props.month_in_budget_year &&
+            props.month_beyond_occurrence_horizon,
+    );
+
+    let pendingOccurrencesCopy = (kind) =>
+        `No ${kind} occurrences for this month yet. Occurrences are generated from last month through two months ahead, so this month will appear when it gets closer.`;
+
+    let emptyOccurrencesCopy = (kind) =>
+        occurrencesPendingThisMonth.value
+            ? pendingOccurrencesCopy(kind)
+            : `No ${kind} occurrences this month. Add a plan to project them.`;
 
     let unassignedBills = computed(() =>
         props.bill_templates.filter((bill) => !bill.assigned_paycheck),
@@ -1112,8 +1134,7 @@
                     v-if="paycheck_occurrences.length === 0"
                     class="text-sm text-neutral-600"
                 >
-                    No paycheck occurrences this month. Add a plan to project
-                    them.
+                    {{ emptyOccurrencesCopy('paycheck') }}
                 </p>
                 <div
                     v-else
@@ -1232,7 +1253,7 @@
                     v-if="bill_occurrences.length === 0"
                     class="text-sm text-neutral-600"
                 >
-                    No bill occurrences this month. Add a plan to project them.
+                    {{ emptyOccurrencesCopy('bill') }}
                 </p>
                 <div
                     v-else
