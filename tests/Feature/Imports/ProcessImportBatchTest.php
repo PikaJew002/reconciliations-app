@@ -118,6 +118,57 @@ CSV);
         $this->assertSame('2525', $transactions[1]->card_last_four);
     }
 
+    public function test_job_imports_cumberland_valley_tab_separated_txt_exports(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'institution_name' => CumberlandValleyNationalBankTransactionImporter::INSTITUTION_NAME,
+        ]);
+        $path = 'imports/cvnb-transactions.txt';
+
+        $tsv = implode("\n", [
+            implode("\t", ['"Account Name"', '"Processed Date"', '"Description"', '"Check Number"', '"Credit or Debit"', '"Amount"']),
+            implode("\t", ['"Joint Account 1"', '2026-08-14', '"TRANSFER FROM X1758 TO X6218  LEFTOVER 8-14-26"', '', '"Debit"', '502.59']),
+            implode("\t", ['"Joint Account 1"', '2026-08-14', '"POS DEB 1942 08/13/26 00469841 WENDYS 706 104 PRINCE ROYAL D BEREA         KY C#0975"', '', '"Debit"', '2.61']),
+            implode("\t", ['"Joint Account 1"', '2026-08-14', '"PAYROLL    KCTCS DIR DEP PPD"', '', '"Credit"', '2253.76']),
+            implode("\t", ['"Joint Account 1"', '2026-07-23', '"CHECK 654"', '654', '"Debit"', '260.00']),
+        ])."\n";
+
+        Storage::disk('local')->put($path, $tsv);
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'storage_path' => $path,
+            'status' => 'pending',
+            'record_count' => 0,
+            'started_at' => null,
+            'completed_at' => null,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $batch->refresh();
+        $transactions = BankTransaction::query()->orderBy('id')->get();
+
+        $this->assertSame('completed', $batch->status);
+        $this->assertSame(4, $batch->record_count);
+        $this->assertSame('2026-08-14', $transactions[0]->posted_at->toDateString());
+        $this->assertSame('-502.59', $transactions[0]->amount);
+        $this->assertSame('2026-08-14', $transactions[1]->posted_at->toDateString());
+        $this->assertSame('2026-08-13', $transactions[1]->transaction_date->toDateString());
+        $this->assertSame('-2.61', $transactions[1]->amount);
+        $this->assertSame('0975', $transactions[1]->card_last_four);
+        $this->assertSame('2253.76', $transactions[2]->amount);
+        $this->assertSame('CHECK 654', $transactions[3]->description);
+        $this->assertSame('-260.00', $transactions[3]->amount);
+    }
+
     public function test_job_imports_capital_one_credit_card_transactions(): void
     {
         Storage::fake('local');

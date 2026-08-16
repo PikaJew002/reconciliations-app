@@ -28,7 +28,16 @@ trait ReadsCsv
         }
 
         try {
-            $headers = fgetcsv($handle);
+            $firstLine = fgets($handle);
+
+            if ($firstLine === false) {
+                return;
+            }
+
+            $delimiter = $this->detectDelimiter($firstLine);
+            rewind($handle);
+
+            $headers = fgetcsv($handle, null, $delimiter);
 
             if ($headers === false || $headers === [null]) {
                 return;
@@ -45,7 +54,7 @@ trait ReadsCsv
                 return trim($header);
             }, $headers);
 
-            while (($values = fgetcsv($handle)) !== false) {
+            while (($values = fgetcsv($handle, null, $delimiter)) !== false) {
                 if ($values === [null] || $this->rowIsEmpty($values)) {
                     continue;
                 }
@@ -57,6 +66,19 @@ trait ReadsCsv
         } finally {
             fclose($handle);
         }
+    }
+
+    /**
+     * Detect comma vs tab from the header line so CSV and bank TXT exports both parse.
+     */
+    protected function detectDelimiter(string $line): string
+    {
+        $line = preg_replace('/^\xEF\xBB\xBF/', '', $line) ?? $line;
+
+        $tabs = substr_count($line, "\t");
+        $commas = substr_count($line, ',');
+
+        return $tabs > $commas ? "\t" : ',';
     }
 
     /**

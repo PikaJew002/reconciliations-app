@@ -8,9 +8,9 @@ export function importBankTour(page) {
             {
                 element: '[data-tour="import-bank-file"]',
                 popover: {
-                    title: 'Upload your bank CSV',
+                    title: 'Upload your bank export',
                     description:
-                        'Export a CSV from this bank and upload about six weeks of history. That is enough to see a full cycle of spend.',
+                        'Export a CSV or TXT from this bank and upload about six weeks of history. That is enough to see a full cycle of spend.',
                     side: 'bottom',
                 },
             },
