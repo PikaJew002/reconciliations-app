@@ -20,14 +20,14 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <h2 class="text-sm font-semibold">Getting started</h2>
-                <p class="text-sm text-neutral-600">
+                <p class="text-sm text-mute">
                     Import recent bank activity, then optionally add Amazon or
                     Walmart orders.
                 </p>
             </div>
             <button
                 type="button"
-                class="rounded border px-3 py-1.5 text-sm"
+                class="rounded border px-3 py-1.5 text-sm hover:bg-brand-wash"
                 @click="emit('hide')"
             >
                 Hide setup
@@ -61,20 +61,20 @@
                 >
                     <Link
                         :href="stepHref(step)"
-                        class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white"
                     >
                         {{ step.cta }}
                     </Link>
                     <button
                         v-if="step.skippable"
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm"
+                        class="rounded border px-3 py-1.5 text-sm hover:bg-brand-wash"
                         @click="emit('skip', step)"
                     >
                         Skip
                     </button>
                 </div>
-                <p v-else class="shrink-0 text-sm text-neutral-500">Done</p>
+                <p v-else class="shrink-0 text-sm font-medium text-brand">Done</p>
             </li>
         </ol>
     </section>

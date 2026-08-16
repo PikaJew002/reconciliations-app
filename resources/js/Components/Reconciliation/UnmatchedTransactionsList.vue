@@ -430,7 +430,7 @@
                     class="rounded px-3 py-1.5 text-sm"
                     :class="
                         unmatchedTransactionAccountFilter === filter.id
-                            ? 'bg-neutral-900 text-white'
+                            ? 'bg-brand hover:bg-brand-hover text-white'
                             : 'border text-neutral-700 hover:bg-neutral-100'
                     "
                     @click="unmatchedTransactionAccountFilter = filter.id"
@@ -447,7 +447,7 @@
                     class="rounded px-3 py-1.5 text-sm"
                     :class="
                         unmatchedTransactionFilter === filter.id
-                            ? 'bg-neutral-900 text-white'
+                            ? 'bg-brand hover:bg-brand-hover text-white'
                             : 'border text-neutral-700 hover:bg-neutral-100'
                     "
                     @click="unmatchedTransactionFilter = filter.id"
@@ -589,7 +589,7 @@
                     <div class="flex items-end">
                         <button
                             type="submit"
-                            class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                            class="w-full rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
                             :disabled="
                                 categorizingTransactionId === transaction.id ||
                                 !canSubmitCategorize(transaction)

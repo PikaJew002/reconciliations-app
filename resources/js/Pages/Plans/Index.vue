@@ -950,7 +950,7 @@
             </div>
             <button
                 type="submit"
-                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
                 :disabled="createPaycheckForm.processing"
             >
                 Create plan
@@ -1128,7 +1128,7 @@
             </div>
             <button
                 type="submit"
-                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
                 :disabled="createBillForm.processing"
             >
                 Create plan
@@ -1671,7 +1671,7 @@
                     <div class="sm:col-span-2 lg:col-span-3">
                         <button
                             type="submit"
-                            class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                            class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
                             :disabled="editForm.processing"
                         >
                             Save plan
@@ -1861,7 +1861,7 @@
                     <div class="sm:col-span-2 lg:col-span-3">
                         <button
                             type="submit"
-                            class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                            class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
                             :disabled="editForm.processing"
                         >
                             Save plan

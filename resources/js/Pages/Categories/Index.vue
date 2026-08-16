@@ -87,7 +87,7 @@
                             ? `/categories/create?kind=${filters.kind}`
                             : '/categories/create'
                     "
-                    class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
+                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white"
                 >
                     Add category
                 </Link>
@@ -113,7 +113,7 @@
                 class="rounded border px-3 py-1.5"
                 :class="
                     !filters.kind
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        ? 'border-brand bg-brand text-white'
                         : ''
                 "
                 @click="setKindFilter(null)"
@@ -127,7 +127,7 @@
                 class="rounded border px-3 py-1.5"
                 :class="
                     filters.kind === kind
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        ? 'border-brand bg-brand text-white'
                         : ''
                 "
                 @click="setKindFilter(kind)"

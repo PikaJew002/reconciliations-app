@@ -64,7 +64,7 @@
             <div class="flex flex-wrap gap-2">
                 <Link
                     href="/accounts/create"
-                    class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
+                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white"
                 >
                     Add account
                 </Link>

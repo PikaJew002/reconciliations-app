@@ -50,8 +50,8 @@
 </script>
 
 <template>
-    <div class="min-h-screen">
-        <header class="border-b">
+    <div class="min-h-screen bg-paper text-ink">
+        <header class="border-b border-rule bg-white">
             <div
                 class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-8 py-4"
             >
@@ -60,11 +60,11 @@
                         v-for="item in navItems"
                         :key="item.href"
                         :href="item.href"
-                        class="rounded px-1 py-0.5"
+                        class="rounded px-1.5 py-0.5"
                         :class="
                             isActive(item)
-                                ? 'font-semibold text-neutral-900'
-                                : 'text-neutral-600 hover:text-neutral-900'
+                                ? 'bg-brand-wash font-semibold text-brand'
+                                : 'text-mute hover:bg-brand-wash hover:text-ink'
                         "
                     >
                         {{ item.label }}
@@ -75,7 +75,7 @@
                     <button
                         v-if="isPresent"
                         type="button"
-                        class="rounded border px-3 py-1.5"
+                        class="rounded border px-3 py-1.5 hover:bg-brand-wash"
                         :aria-expanded="isVisible && panelOpen"
                         :aria-controls="
                             isVisible ? 'onboarding-checklist' : undefined
@@ -84,12 +84,12 @@
                     >
                         {{ headerLabel }}
                     </button>
-                    <span class="text-neutral-600">{{ user?.email }}</span>
+                    <span class="text-mute">{{ user?.email }}</span>
                     <Link
                         href="/logout"
                         method="post"
                         as="button"
-                        class="rounded border px-3 py-1.5"
+                        class="rounded border px-3 py-1.5 hover:bg-brand-wash"
                     >
                         Log out
                     </Link>

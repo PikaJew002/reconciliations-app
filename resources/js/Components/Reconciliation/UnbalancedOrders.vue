@@ -336,7 +336,7 @@
                     <div class="sm:col-span-4">
                         <button
                             type="submit"
-                            class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                            class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
                             :disabled="savingOrderId === order.id"
                         >
                             {{

@@ -343,7 +343,7 @@
 
             <button
                 type="button"
-                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
                 :disabled="runForm.processing || isRunInProgress"
                 @click="runReconciliation"
             >
@@ -448,7 +448,7 @@
                     class="rounded px-3 py-1.5 text-sm"
                     :class="
                         activeTab === tab.id
-                            ? 'bg-neutral-900 text-white'
+                            ? 'bg-brand hover:bg-brand-hover text-white'
                             : 'text-neutral-700 hover:bg-neutral-100'
                     "
                 >

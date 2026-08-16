@@ -140,7 +140,7 @@
                     <div class="flex flex-wrap gap-2">
                         <button
                             type="button"
-                            class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                            class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
                             :disabled="actionKey !== null"
                             @click="confirmMatch(activity)"
                         >
@@ -235,7 +235,7 @@
                         </label>
                         <button
                             type="submit"
-                            class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                            class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
                             :disabled="actionKey !== null"
                         >
                             {{

@@ -6,8 +6,74 @@
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    --color-brand: #0f766e;
+    --color-brand-hover: #115e59;
+    --color-brand-wash: #f0fdfa;
+    --color-paper: #f7f5f2;
+    --color-ink: #171717;
+    --color-mute: #525252;
+    --color-rule: #e5e5e5;
+
+    --default-border-color: #e5e5e5;
+}
+
+@layer base {
+    html,
+    body {
+        background-color: var(--color-paper);
+        color: var(--color-ink);
+    }
+
+    ::selection {
+        background-color: var(--color-brand);
+        color: #fff;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--color-brand);
+        outline-offset: 2px;
+    }
+
+    input[type='checkbox'],
+    input[type='radio'] {
+        accent-color: var(--color-brand);
+    }
+
+    input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='color']):not(
+            [type='range']
+        ):not([type='hidden']),
+    select,
+    textarea {
+        background-color: #fff;
+    }
+
+    [class~='rounded'][class~='border'] {
+        background-color: #fff;
+    }
+
+    a.underline {
+        color: var(--color-brand);
+    }
+
+    a.underline:hover {
+        color: var(--color-brand-hover);
+    }
 }
 
 .onboarding-driver-popover {
     font-family: var(--font-sans);
+    --driver-popover-font-family: var(--font-sans);
+}
+
+.onboarding-driver-popover .driver-popover-navigation-btns button:last-child {
+    background-color: var(--color-brand);
+    border-color: var(--color-brand);
+    color: #fff;
+}
+
+.onboarding-driver-popover .driver-popover-navigation-btns button:last-child:hover,
+.onboarding-driver-popover .driver-popover-navigation-btns button:last-child:focus {
+    background-color: var(--color-brand-hover);
+    color: #fff;
 }

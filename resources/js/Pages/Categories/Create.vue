@@ -150,7 +150,7 @@
             <div class="flex flex-wrap gap-2">
                 <button
                     type="submit"
-                    class="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
+                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-white disabled:opacity-50"
                     :disabled="form.processing"
                 >
                     Create category

@@ -218,7 +218,7 @@
                     class="rounded border px-3 py-1.5 text-sm"
                     :class="
                         view === 'month'
-                            ? 'border-neutral-900 bg-neutral-900 text-white'
+                            ? 'border-brand bg-brand text-white'
                             : 'hover:bg-neutral-50'
                     "
                     @click="setView('month')"
@@ -230,7 +230,7 @@
                     class="rounded border px-3 py-1.5 text-sm"
                     :class="
                         view === 'ytm'
-                            ? 'border-neutral-900 bg-neutral-900 text-white'
+                            ? 'border-brand bg-brand text-white'
                             : 'hover:bg-neutral-50'
                     "
                     @click="setView('ytm')"

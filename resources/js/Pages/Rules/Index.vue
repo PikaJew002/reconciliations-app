@@ -136,7 +136,7 @@
                 class="rounded border px-3 py-1.5 text-sm"
                 :class="
                     activeTab === item.id
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        ? 'border-brand bg-brand text-white'
                         : 'text-neutral-700'
                 "
             >

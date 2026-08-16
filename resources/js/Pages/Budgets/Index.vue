@@ -322,7 +322,7 @@
                 <button
                     v-if="budget_year"
                     type="button"
-                    class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                    class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-sm text-white disabled:opacity-50"
                     :disabled="form.processing"
                     @click="save"
                 >
@@ -377,7 +377,7 @@
             <div class="flex gap-2">
                 <button
                     type="button"
-                    class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                    class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
                     :disabled="createForm.processing"
                     @click="createYear"
                 >
@@ -487,7 +487,7 @@
                 <div class="sm:col-span-3">
                     <button
                         type="button"
-                        class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
                         :disabled="editForm.processing"
                         @click="saveYearMeta"
                     >

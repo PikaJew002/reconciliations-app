@@ -49,7 +49,7 @@ let submit = () => {
 
             <button
                 type="submit"
-                class="rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
+                class="rounded bg-brand hover:bg-brand-hover px-4 py-2 text-white disabled:opacity-50"
                 :disabled="form.processing"
             >
                 Log in

@@ -145,7 +145,7 @@
                     </label>
                     <button
                         type="submit"
-                        class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                        class="rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-sm text-white disabled:opacity-50"
                         :disabled="
                             !categorySelections[product.id] ||
                             savingProductId === product.id

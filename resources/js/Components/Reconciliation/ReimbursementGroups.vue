@@ -391,7 +391,7 @@
                         <div class="flex items-end">
                             <button
                                 type="button"
-                                class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                                class="w-full rounded bg-brand hover:bg-brand-hover px-3 py-1.5 text-white disabled:opacity-50"
                                 :disabled="
                                     reimbursementActionKey !== null ||
                                     (reimbursementNetState(group.net) ===
