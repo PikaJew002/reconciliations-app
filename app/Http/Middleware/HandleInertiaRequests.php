@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Onboarding\OnboardingPayload;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -44,6 +45,9 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            'onboarding' => fn () => $request->user()
+                ? app(OnboardingPayload::class)->for($request->user())
+                : null,
         ];
     }
 }

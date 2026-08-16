@@ -11,6 +11,7 @@ use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Merchants\MerchantController;
+use App\Http\Controllers\Onboarding\OnboardingController;
 use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
@@ -44,6 +45,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::post('/onboarding/hide', [OnboardingController::class, 'hide'])->name('onboarding.hide');
+    Route::post('/onboarding/show', [OnboardingController::class, 'show'])->name('onboarding.show');
+    Route::post('/onboarding/skip', [OnboardingController::class, 'skip'])->name('onboarding.skip');
+    Route::post('/onboarding/tours/{key}', [OnboardingController::class, 'updateTour'])
+        ->name('onboarding.tours.update');
 
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
     Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');

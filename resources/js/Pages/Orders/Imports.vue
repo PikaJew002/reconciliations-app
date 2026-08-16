@@ -80,6 +80,7 @@
         <form
             v-if="isAmazon"
             class="space-y-4"
+            data-tour="import-amazon-form"
             @submit.prevent="submitAmazon"
         >
             <div>
@@ -131,7 +132,12 @@
             </button>
         </form>
 
-        <form v-else class="space-y-4" @submit.prevent="submitWalmart">
+        <form
+            v-else
+            class="space-y-4"
+            data-tour="import-walmart-form"
+            @submit.prevent="submitWalmart"
+        >
             <div>
                 <label class="mb-1 block text-sm" for="file">JSON file</label>
                 <input

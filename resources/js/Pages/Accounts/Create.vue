@@ -52,7 +52,11 @@
             </p>
         </div>
 
-        <form class="space-y-4" @submit.prevent="submit">
+        <form
+            class="space-y-4"
+            data-tour="add-account-form"
+            @submit.prevent="submit"
+        >
             <div>
                 <label class="mb-1 block text-sm" for="name">Name</label>
                 <input

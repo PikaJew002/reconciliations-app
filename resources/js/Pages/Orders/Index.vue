@@ -88,7 +88,7 @@
             No bank transactions imported yet.
         </p>
 
-        <section class="space-y-3">
+        <section class="space-y-3" data-tour="import-orders-retailers">
             <div>
                 <h2 class="text-lg font-semibold">Retailers</h2>
                 <p class="text-sm text-neutral-600">
@@ -131,6 +131,7 @@
                     <Link
                         :href="`/orders/${retailer.normalized_name}/imports`"
                         class="shrink-0 self-center px-4 py-3 text-sm text-neutral-700 underline hover:text-neutral-900"
+                        data-tour="import-orders-imports-link"
                     >
                         Imports
                     </Link>

@@ -1,10 +1,26 @@
 <script setup>
+    import OnboardingChecklist from '../Components/Onboarding/OnboardingChecklist.vue';
+    import { useDriverTour } from '../Composables/useDriverTour';
+    import { useOnboarding } from '../Composables/useOnboarding';
     import { Link, usePage } from '@inertiajs/vue3';
     import { computed } from 'vue';
 
     let page = usePage();
     let user = computed(() => page.props.auth.user);
     let currentUrl = computed(() => page.url.split('?')[0]);
+    let {
+        isPresent,
+        isVisible,
+        steps,
+        panelOpen,
+        headerLabel,
+        hide,
+        skip,
+        togglePanel,
+        stepHref,
+    } = useOnboarding();
+
+    useDriverTour();
 
     let navItems = [
         { label: 'Home', href: '/' },
@@ -56,6 +72,18 @@
                 </nav>
 
                 <div class="flex items-center gap-3 text-sm">
+                    <button
+                        v-if="isPresent"
+                        type="button"
+                        class="rounded border px-3 py-1.5"
+                        :aria-expanded="isVisible && panelOpen"
+                        :aria-controls="
+                            isVisible ? 'onboarding-checklist' : undefined
+                        "
+                        @click="togglePanel"
+                    >
+                        {{ headerLabel }}
+                    </button>
                     <span class="text-neutral-600">{{ user?.email }}</span>
                     <Link
                         href="/logout"
@@ -70,6 +98,17 @@
         </header>
 
         <main class="mx-auto max-w-6xl space-y-6 p-8">
+            <div
+                v-if="isVisible && panelOpen"
+                id="onboarding-checklist"
+            >
+                <OnboardingChecklist
+                    :steps="steps"
+                    :step-href="stepHref"
+                    @hide="hide"
+                    @skip="skip"
+                />
+            </div>
             <slot />
         </main>
     </div>
