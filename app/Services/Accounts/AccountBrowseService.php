@@ -108,6 +108,7 @@ class AccountBrowseService
         $transactionsQuery = BankTransaction::with([
             'merchant:id,name,normalized_name',
             'category:id,name,kind',
+            'venmoActivities.cashedOutPayments',
         ])
             ->where('user_id', $userId)
             ->where('account_id', $account->id)
@@ -115,7 +116,19 @@ class AccountBrowseService
                 $query->where(function (Builder $builder) use ($q): void {
                     $builder
                         ->where('description', 'like', "%{$q}%")
-                        ->orWhere('amount', 'like', "%{$q}%");
+                        ->orWhere('amount', 'like', "%{$q}%")
+                        ->orWhereHas('venmoActivities', function (Builder $venmo) use ($q): void {
+                            $venmo
+                                ->where('note', 'like', "%{$q}%")
+                                ->orWhere('from_name', 'like', "%{$q}%")
+                                ->orWhere('to_name', 'like', "%{$q}%")
+                                ->orWhereHas('cashedOutPayments', function (Builder $payment) use ($q): void {
+                                    $payment
+                                        ->where('note', 'like', "%{$q}%")
+                                        ->orWhere('from_name', 'like', "%{$q}%")
+                                        ->orWhere('to_name', 'like', "%{$q}%");
+                                });
+                        });
                 });
             })
             ->orderByDesc('posted_at')
@@ -158,6 +171,7 @@ class AccountBrowseService
                     'name' => $transaction->category->name,
                     'kind' => $transaction->category->kind,
                 ] : null,
+                'venmo_summary' => $transaction->venmoSummary(),
             ])->values()->all(),
             'transactionsTruncated' => $totalMatching > $this->listLimit,
             'filters' => [

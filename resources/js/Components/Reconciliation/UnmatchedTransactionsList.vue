@@ -4,7 +4,7 @@
         formatMoney,
     } from '../../Composables/useReconciliationFormatting.js';
     import { router } from '@inertiajs/vue3';
-    import { computed, reactive, ref, watch } from 'vue';
+    import { computed, nextTick, reactive, ref, watch } from 'vue';
 
     let props = defineProps({
         unmatchedTransactions: {
@@ -31,6 +31,8 @@
     let unmatchedTransactionAccountFilter = ref('all');
     let categorizeForms = reactive({});
     let categorizingTransactionId = ref(null);
+    let createCategoryOption = '__create__';
+    let categoryFieldEls = {};
 
     let billCategories = computed(() =>
         props.categories.filter((category) => category.kind === 'bill'),
@@ -99,6 +101,10 @@
     }
 
     function unmatchedTransactionTitle(transaction) {
+        if (transaction.venmo_summary) {
+            return transaction.venmo_summary;
+        }
+
         if (transaction.merchant) {
             return transaction.merchant;
         }
@@ -338,6 +344,9 @@
         categorizeForms[transaction.id] = {
             classification: defaultClassification,
             category_id: '',
+            category_name: '',
+            creating_category:
+                categoriesForClassification(defaultClassification).length === 0,
             match_mode: 'once',
             normalized_pattern: '',
         };
@@ -348,6 +357,9 @@
     function onCategorizeClassificationChange(transaction) {
         let form = ensureCategorizeForm(transaction);
         form.category_id = '';
+        form.category_name = '';
+        form.creating_category =
+            categoriesForClassification(form.classification).length === 0;
         let availableModes = matchModesForClassification(
             form.classification,
             transaction,
@@ -355,6 +367,69 @@
         if (!availableModes.includes(form.match_mode)) {
             form.match_mode = 'once';
         }
+    }
+
+    function hasCategoriesFor(transaction) {
+        return (
+            categoriesForClassification(
+                ensureCategorizeForm(transaction).classification,
+            ).length > 0
+        );
+    }
+
+    function showsMatchPrefix(transaction) {
+        return (
+            ensureCategorizeForm(transaction).match_mode ===
+            'description_prefix_and_amount'
+        );
+    }
+
+    function setCategoryFieldEl(transactionId, el) {
+        if (el) {
+            categoryFieldEls[transactionId] = el;
+            return;
+        }
+
+        delete categoryFieldEls[transactionId];
+    }
+
+    function focusCategoryField(transaction) {
+        nextTick(() => {
+            categoryFieldEls[transaction.id]?.focus();
+        });
+    }
+
+    function onCategoryIdChange(transaction) {
+        let form = ensureCategorizeForm(transaction);
+
+        if (form.category_id !== createCategoryOption) {
+            return;
+        }
+
+        form.category_id = '';
+        form.category_name = '';
+        form.creating_category = true;
+        focusCategoryField(transaction);
+    }
+
+    function pickExistingCategory(transaction) {
+        let form = ensureCategorizeForm(transaction);
+        form.creating_category = false;
+        form.category_name = '';
+        form.category_id = '';
+        focusCategoryField(transaction);
+    }
+
+    function categoryNamePlaceholder(classification) {
+        if (classification === 'income') {
+            return 'e.g. Paycheck';
+        }
+
+        if (classification === 'bill') {
+            return 'e.g. Electric';
+        }
+
+        return 'e.g. Groceries';
     }
 
     function onCategorizeMatchModeChange(transaction) {
@@ -372,10 +447,12 @@
 
     function canSubmitCategorize(transaction) {
         let form = ensureCategorizeForm(transaction);
+        let hasCategory = form.creating_category
+            ? Boolean(form.category_name.trim())
+            : Boolean(form.category_id);
 
         return (
-            Boolean(form.category_id) &&
-            categoriesForClassification(form.classification).length > 0 &&
+            hasCategory &&
             !(
                 form.match_mode === 'description_prefix_and_amount' &&
                 !form.normalized_pattern
@@ -385,8 +462,13 @@
 
     function categorizeTransaction(transaction) {
         let form = ensureCategorizeForm(transaction);
+        let categoryName = form.category_name.trim();
 
-        if (!form.category_id) {
+        if (form.creating_category) {
+            if (!categoryName) {
+                return;
+            }
+        } else if (!form.category_id) {
             return;
         }
 
@@ -394,9 +476,14 @@
 
         let payload = {
             classification: form.classification,
-            category_id: form.category_id,
             match_mode: form.match_mode,
         };
+
+        if (form.creating_category) {
+            payload.category_name = categoryName;
+        } else {
+            payload.category_id = form.category_id;
+        }
 
         if (form.match_mode === 'description_prefix_and_amount') {
             payload.normalized_pattern = form.normalized_pattern;
@@ -426,7 +513,7 @@
                     class="rounded px-3 py-1.5 text-sm"
                     :class="
                         unmatchedTransactionAccountFilter === filter.id
-                            ? 'bg-neutral-900 text-white'
+                            ? 'bg-brand hover:bg-brand-hover text-white'
                             : 'border text-neutral-700 hover:bg-neutral-100'
                     "
                     @click="unmatchedTransactionAccountFilter = filter.id"
@@ -443,7 +530,7 @@
                     class="rounded px-3 py-1.5 text-sm"
                     :class="
                         unmatchedTransactionFilter === filter.id
-                            ? 'bg-neutral-900 text-white'
+                            ? 'bg-brand hover:bg-brand-hover text-white'
                             : 'border text-neutral-700 hover:bg-neutral-100'
                     "
                     @click="unmatchedTransactionFilter = filter.id"
@@ -514,16 +601,25 @@
 
                 <form
                     v-if="transaction.can_categorize"
-                    class="grid gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-4"
+                    class="grid items-end gap-2 rounded border bg-neutral-50 px-3 py-2 sm:grid-cols-2"
+                    :class="
+                        showsMatchPrefix(transaction)
+                            ? 'lg:grid-cols-3'
+                            : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]'
+                    "
                     @submit.prevent="categorizeTransaction(transaction)"
                 >
-                    <label class="block space-y-1">
-                        <span class="text-neutral-600">Type</span>
+                    <label class="block min-w-0 space-y-1">
+                        <span
+                            class="flex h-5 items-center whitespace-nowrap text-neutral-600"
+                            >Type</span
+                        >
                         <select
                             v-model="
                                 ensureCategorizeForm(transaction).classification
                             "
-                            class="w-full rounded border px-2 py-1.5"
+                            data-tour="categorize-type"
+                            class="w-full rounded border px-2"
                             :disabled="isCreditTransaction(transaction)"
                             @change="
                                 onCategorizeClassificationChange(transaction)
@@ -538,35 +634,91 @@
                             </template>
                         </select>
                     </label>
-                    <label class="block space-y-1">
-                        <span class="text-neutral-600">Category</span>
-                        <select
-                            v-model="
-                                ensureCategorizeForm(transaction).category_id
-                            "
-                            class="w-full rounded border px-2 py-1.5"
-                            required
+                    <label class="block min-w-0 space-y-1">
+                        <span
+                            class="flex h-5 items-center justify-between gap-2 text-neutral-600"
                         >
-                            <option disabled value="">Select</option>
-                            <option
-                                v-for="category in categoriesForClassification(
+                            <span class="whitespace-nowrap">Category</span>
+                            <button
+                                v-if="
                                     ensureCategorizeForm(transaction)
-                                        .classification,
-                                )"
-                                :key="category.id"
-                                :value="category.id"
+                                        .creating_category &&
+                                    hasCategoriesFor(transaction)
+                                "
+                                type="button"
+                                class="shrink-0 text-xs text-brand underline"
+                                @click="pickExistingCategory(transaction)"
                             >
-                                {{ category.name }}
-                            </option>
-                        </select>
+                                Pick one
+                            </button>
+                        </span>
+                        <div data-tour="categorize-category">
+                            <select
+                                v-if="
+                                    !ensureCategorizeForm(transaction)
+                                        .creating_category
+                                "
+                                :ref="
+                                    (el) =>
+                                        setCategoryFieldEl(transaction.id, el)
+                                "
+                                v-model="
+                                    ensureCategorizeForm(transaction)
+                                        .category_id
+                                "
+                                class="w-full rounded border px-2"
+                                required
+                                @change="onCategoryIdChange(transaction)"
+                            >
+                                <option disabled value="">Select</option>
+                                <option
+                                    v-for="category in categoriesForClassification(
+                                        ensureCategorizeForm(transaction)
+                                            .classification,
+                                    )"
+                                    :key="category.id"
+                                    :value="category.id"
+                                >
+                                    {{ category.name }}
+                                </option>
+                                <option :value="createCategoryOption">
+                                    Create a category…
+                                </option>
+                            </select>
+                            <input
+                                v-else
+                                :ref="
+                                    (el) =>
+                                        setCategoryFieldEl(transaction.id, el)
+                                "
+                                v-model="
+                                    ensureCategorizeForm(transaction)
+                                        .category_name
+                                "
+                                type="text"
+                                class="w-full rounded border px-2"
+                                :placeholder="
+                                    categoryNamePlaceholder(
+                                        ensureCategorizeForm(transaction)
+                                            .classification,
+                                    )
+                                "
+                                autocomplete="off"
+                                required
+                            />
+                        </div>
                     </label>
-                    <label class="block space-y-1">
-                        <span class="text-neutral-600">Future match</span>
+                    <label class="block min-w-0 space-y-1">
+                        <span
+                            class="flex h-5 items-center whitespace-nowrap text-neutral-600"
+                            >Future match</span
+                        >
                         <select
                             v-model="
                                 ensureCategorizeForm(transaction).match_mode
                             "
-                            class="w-full rounded border px-2 py-1.5"
+                            data-tour="categorize-match"
+                            class="w-full rounded border px-2"
                             @change="onCategorizeMatchModeChange(transaction)"
                         >
                             <option
@@ -582,10 +734,45 @@
                             </option>
                         </select>
                     </label>
-                    <div class="flex items-end">
+                    <label
+                        v-if="showsMatchPrefix(transaction)"
+                        class="block min-w-0 space-y-1 lg:col-span-2"
+                    >
+                        <span
+                            class="flex h-5 items-center whitespace-nowrap text-neutral-600"
+                            >Match prefix</span
+                        >
+                        <input
+                            v-model="
+                                ensureCategorizeForm(transaction)
+                                    .normalized_pattern
+                            "
+                            type="text"
+                            class="w-full rounded border px-2"
+                            placeholder="e.g. toyota financial"
+                            required
+                        />
+                    </label>
+                    <div
+                        class="space-y-1"
+                        :class="
+                            showsMatchPrefix(transaction)
+                                ? 'sm:col-span-2 lg:col-span-1'
+                                : ''
+                        "
+                    >
+                        <span
+                            class="hidden h-5"
+                            :class="
+                                showsMatchPrefix(transaction)
+                                    ? 'lg:block'
+                                    : 'sm:block'
+                            "
+                            aria-hidden="true"
+                        />
                         <button
                             type="submit"
-                            class="w-full rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                            class="btn w-full rounded border border-brand bg-brand px-3 text-white hover:border-brand-hover hover:bg-brand-hover disabled:opacity-50"
                             :disabled="
                                 categorizingTransactionId === transaction.id ||
                                 !canSubmitCategorize(transaction)
@@ -598,43 +785,12 @@
                             }}
                         </button>
                     </div>
-                    <label
-                        v-if="
-                            ensureCategorizeForm(transaction).match_mode ===
-                            'description_prefix_and_amount'
-                        "
-                        class="block space-y-1 sm:col-span-4"
-                    >
-                        <span class="text-neutral-600">Match prefix</span>
-                        <input
-                            v-model="
-                                ensureCategorizeForm(transaction)
-                                    .normalized_pattern
-                            "
-                            type="text"
-                            class="w-full rounded border px-2 py-1.5"
-                            placeholder="e.g. toyota financial"
-                            required
-                        />
-                        <span class="text-xs text-neutral-500">
-                            Matches other bills that start with this text and
-                            have the same amount.
-                        </span>
-                    </label>
                     <p
-                        v-if="
-                            categoriesForClassification(
-                                ensureCategorizeForm(transaction)
-                                    .classification,
-                            ).length === 0
-                        "
-                        class="text-xs text-amber-800 sm:col-span-4"
+                        v-if="showsMatchPrefix(transaction)"
+                        class="text-xs text-neutral-500 sm:col-span-2 lg:col-span-3"
                     >
-                        Add a
-                        {{
-                            ensureCategorizeForm(transaction).classification
-                        }}
-                        category first.
+                        Matches other bills that start with this text and have
+                        the same amount.
                     </p>
                 </form>
                 <p

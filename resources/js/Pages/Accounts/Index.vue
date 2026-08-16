@@ -61,12 +61,20 @@
                     Bank accounts and their posted-date coverage.
                 </p>
             </div>
-            <Link
-                href="/accounts/create"
-                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white"
-            >
-                Add account
-            </Link>
+            <div class="flex flex-wrap gap-2">
+                <Link
+                    href="/accounts/create"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white"
+                >
+                    Add account
+                </Link>
+                <Link
+                    href="/venmo/imports"
+                    class="btn rounded border px-4 text-sm"
+                >
+                    Import Venmo statement
+                </Link>
+            </div>
         </div>
 
         <p
@@ -96,9 +104,9 @@
                 v-model="search"
                 type="search"
                 placeholder="Search name, institution, or last four"
-                class="min-w-64 flex-1 rounded border px-3 py-2 text-sm"
+                class="min-w-64 flex-1 rounded border px-3 text-sm"
             />
-            <button type="submit" class="rounded border px-4 py-2 text-sm">
+            <button type="submit" class="btn rounded border px-4 text-sm">
                 Search
             </button>
         </form>

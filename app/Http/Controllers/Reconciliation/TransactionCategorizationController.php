@@ -32,13 +32,13 @@ class TransactionCategorizationController extends Controller
                     BankTransaction::CLASSIFICATION_INCOME,
                 ]),
             ],
-            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'category_id' => ['required_without:category_name', 'nullable', 'integer', 'exists:categories,id'],
+            'category_name' => ['required_without:category_id', 'nullable', 'string', 'max:255'],
             'match_mode' => ['required', 'string'],
             'normalized_pattern' => ['nullable', 'string', 'max:255'],
         ]);
 
         $isIncome = $validated['classification'] === BankTransaction::CLASSIFICATION_INCOME;
-        $categoryId = $validated['category_id'];
 
         if ($isIncome) {
             abort_unless((float) $transaction->amount > 0, 422, 'Only credits can be categorized as income.');
@@ -56,9 +56,6 @@ class TransactionCategorizationController extends Controller
             );
         }
 
-        $category = Category::query()->findOrFail($categoryId);
-        abort_unless($category->user_id === $request->user()->id, 403);
-
         $expectedKind = match ($validated['classification']) {
             BankTransaction::CLASSIFICATION_BILL => Category::KIND_BILL,
             BankTransaction::CLASSIFICATION_EXPENSE => Category::KIND_EXPENSE,
@@ -66,7 +63,15 @@ class TransactionCategorizationController extends Controller
             default => null,
         };
 
-        abort_unless($expectedKind !== null && $category->kind === $expectedKind, 422, 'Category kind must match classification.');
+        abort_unless($expectedKind !== null, 422, 'Invalid classification.');
+
+        $category = $this->resolveCategory(
+            $request->user()->id,
+            $expectedKind,
+            $validated,
+        );
+
+        abort_unless($category->kind === $expectedKind, 422, 'Category kind must match classification.');
 
         $transaction->loadMissing('merchant');
 
@@ -116,5 +121,22 @@ class TransactionCategorizationController extends Controller
         return redirect()
             ->back(fallback: route('reconciliation.unmatched-transactions'))
             ->with('success', 'Transaction categorized. Applying rule to similar transactions…');
+    }
+
+    /**
+     * @param  array{category_id?: int|null, category_name?: string|null}  $validated
+     */
+    protected function resolveCategory(int $userId, string $expectedKind, array $validated): Category
+    {
+        $name = trim((string) ($validated['category_name'] ?? ''));
+
+        if ($name !== '') {
+            return Category::findOrCreateForUser($userId, $expectedKind, $name);
+        }
+
+        $category = Category::query()->findOrFail($validated['category_id'] ?? 0);
+        abort_unless($category->user_id === $userId, 403);
+
+        return $category;
     }
 }

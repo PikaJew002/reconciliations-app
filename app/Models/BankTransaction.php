@@ -115,6 +115,25 @@ class BankTransaction extends Model
         ], true) && $this->status === 'ignored';
     }
 
+    public function plannedOccurrence()
+    {
+        return $this->hasOne(PlannedOccurrence::class);
+    }
+
+    public function venmoActivities()
+    {
+        return $this->hasMany(VenmoActivity::class);
+    }
+
+    public function venmoSummary(): ?string
+    {
+        $activities = $this->relationLoaded('venmoActivities')
+            ? $this->venmoActivities
+            : $this->venmoActivities()->with('cashedOutPayments')->get();
+
+        return VenmoActivity::summarize($activities);
+    }
+
     public function reimbursementGroupLeg()
     {
         return $this->hasOne(ReimbursementGroupTransaction::class);

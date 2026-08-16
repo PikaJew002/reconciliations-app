@@ -1,5 +1,6 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
+    import ColorField from '../../Components/ColorField.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, ref, watch } from 'vue';
 
@@ -49,14 +50,14 @@
 
     let createForm = useForm({
         starts_on: '',
-        color: '#336699',
+        color: '',
         label: '',
         make_current: true,
     });
 
     let editForm = useForm({
         label: props.budget_year?.label ?? '',
-        color: props.budget_year?.color ?? '#336699',
+        color: props.budget_year?.color ?? '',
         starts_on: props.budget_year
             ? props.budget_year.starts_on.slice(0, 7)
             : '',
@@ -80,7 +81,7 @@
             form.clearErrors();
 
             editForm.label = props.budget_year?.label ?? '';
-            editForm.color = props.budget_year?.color ?? '#336699';
+            editForm.color = props.budget_year?.color ?? '';
             editForm.starts_on = props.budget_year
                 ? props.budget_year.starts_on.slice(0, 7)
                 : '';
@@ -184,27 +185,57 @@
         }, 0);
     };
 
+    let sortCategoriesByAmount = (categories) => {
+        return [...categories].sort((a, b) => {
+            let aHasAmount =
+                a.monthly_budget !== null && a.monthly_budget !== undefined;
+            let bHasAmount =
+                b.monthly_budget !== null && b.monthly_budget !== undefined;
+
+            if (aHasAmount && bHasAmount) {
+                let amountDiff =
+                    Number(b.monthly_budget) - Number(a.monthly_budget);
+
+                if (amountDiff !== 0) {
+                    return amountDiff;
+                }
+
+                return a.name.localeCompare(b.name);
+            }
+
+            if (aHasAmount) {
+                return -1;
+            }
+
+            if (bHasAmount) {
+                return 1;
+            }
+
+            return a.name.localeCompare(b.name);
+        });
+    };
+
     let budgetSections = computed(() => [
         {
             key: 'income',
             title: 'Income',
             empty: 'No income categories yet.',
             createHref: '/categories/create?kind=income',
-            categories: props.sections.income ?? [],
+            categories: sortCategoriesByAmount(props.sections.income ?? []),
         },
         {
             key: 'bills',
             title: 'Bills',
             empty: 'No bill categories yet.',
             createHref: '/categories/create?kind=bill',
-            categories: props.sections.bills ?? [],
+            categories: sortCategoriesByAmount(props.sections.bills ?? []),
         },
         {
             key: 'expenses',
             title: 'Expenses',
             empty: 'No expense categories yet.',
             createHref: '/categories/create?kind=expense',
-            categories: props.sections.expenses ?? [],
+            categories: sortCategoriesByAmount(props.sections.expenses ?? []),
         },
     ]);
 
@@ -243,7 +274,6 @@
             onSuccess: () => {
                 showCreate.value = false;
                 createForm.reset();
-                createForm.color = '#336699';
                 createForm.make_current = true;
             },
         });
@@ -284,7 +314,7 @@
             <div class="flex flex-wrap gap-2">
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="showCreate = !showCreate"
                 >
                     New budget year
@@ -292,7 +322,7 @@
                 <button
                     v-if="budget_year"
                     type="button"
-                    class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                     :disabled="form.processing"
                     @click="save"
                 >
@@ -313,21 +343,21 @@
             class="space-y-3 rounded border px-4 py-3"
         >
             <p class="text-sm font-medium">Create budget year</p>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid gap-3 sm:grid-cols-2">
                 <label class="block text-sm">
                     <span class="text-neutral-600">Starts</span>
                     <input
                         v-model="createForm.starts_on"
                         type="month"
-                        class="mt-1 block w-full rounded border px-2 py-1.5"
+                        class="mt-1 block w-full rounded border px-2"
                     />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Color</span>
-                    <input
+                    <ColorField
+                        id="create-color"
                         v-model="createForm.color"
-                        type="color"
-                        class="mt-1 block h-10 w-full rounded border px-1 py-1"
+                        class="mt-1"
                     />
                 </label>
                 <label class="block text-sm sm:col-span-2">
@@ -335,7 +365,7 @@
                     <input
                         v-model="createForm.label"
                         type="text"
-                        class="mt-1 block w-full rounded border px-2 py-1.5"
+                        class="mt-1 block w-full rounded border px-2"
                         placeholder="Auto from start month"
                     />
                 </label>
@@ -347,7 +377,7 @@
             <div class="flex gap-2">
                 <button
                     type="button"
-                    class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                     :disabled="createForm.processing"
                     @click="createYear"
                 >
@@ -356,7 +386,7 @@
                 <button
                     v-if="budget_years.length > 0"
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm"
+                    class="btn rounded border px-3 text-sm"
                     @click="showCreate = false"
                 >
                     Cancel
@@ -414,14 +444,14 @@
                     <button
                         v-if="!budget_year.is_current"
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-white/60"
+                        class="btn rounded border px-3 text-sm hover:bg-white/60"
                         @click="makeCurrent"
                     >
                         Set as current
                     </button>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-sm hover:bg-white/60"
+                        class="btn rounded border px-3 text-sm hover:bg-white/60"
                         @click="showEdit = !showEdit"
                     >
                         Edit year
@@ -435,7 +465,7 @@
                     <input
                         v-model="editForm.label"
                         type="text"
-                        class="mt-1 block w-full rounded border bg-white px-2 py-1.5"
+                        class="mt-1 block w-full rounded border bg-white px-2"
                     />
                 </label>
                 <label class="block text-sm">
@@ -443,21 +473,21 @@
                     <input
                         v-model="editForm.starts_on"
                         type="month"
-                        class="mt-1 block w-full rounded border bg-white px-2 py-1.5"
+                        class="mt-1 block w-full rounded border bg-white px-2"
                     />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Color</span>
-                    <input
+                    <ColorField
+                        id="edit-color"
                         v-model="editForm.color"
-                        type="color"
-                        class="mt-1 block h-10 w-full rounded border bg-white px-1 py-1"
+                        class="mt-1"
                     />
                 </label>
                 <div class="sm:col-span-3">
                     <button
                         type="button"
-                        class="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                        class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                         :disabled="editForm.processing"
                         @click="saveYearMeta"
                     >
@@ -551,7 +581,7 @@
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                class="mt-1 block w-full rounded border px-2 py-1.5"
+                                class="mt-1 block w-full rounded border px-2"
                                 placeholder="None"
                             />
                         </label>

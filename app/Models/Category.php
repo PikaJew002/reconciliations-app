@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\CategoryColor;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -86,6 +87,11 @@ class Category extends Model
         return $this->hasMany(TransactionCategorizationRule::class);
     }
 
+    public function plannedTemplates(): HasMany
+    {
+        return $this->hasMany(PlannedTemplate::class);
+    }
+
     public function isBill(): bool
     {
         return $this->kind === self::KIND_BILL;
@@ -106,7 +112,34 @@ class Category extends Model
         return $this->products()->exists()
             || $this->orderComponents()->exists()
             || $this->bankTransactions()->exists()
-            || $this->categorizationRules()->exists();
+            || $this->categorizationRules()->exists()
+            || $this->plannedTemplates()->exists();
+    }
+
+    public static function findOrCreateForUser(int $userId, string $kind, string $name): self
+    {
+        $name = trim($name);
+
+        $existing = self::query()
+            ->where('user_id', $userId)
+            ->where('kind', $kind)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        return self::query()->create([
+            'user_id' => $userId,
+            'kind' => $kind,
+            'name' => $name,
+            'slug' => self::uniqueSlugFor($userId, $kind, $name),
+            'color' => CategoryColor::fromName($name),
+            'is_active' => true,
+            'is_system' => false,
+            'sort_order' => 0,
+        ]);
     }
 
     public static function uniqueSlugFor(int $userId, string $kind, string $name, ?int $ignoreId = null): string

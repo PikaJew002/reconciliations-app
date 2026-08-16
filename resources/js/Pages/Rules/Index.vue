@@ -136,7 +136,7 @@
                 class="rounded border px-3 py-1.5 text-sm"
                 :class="
                     activeTab === item.id
-                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        ? 'border-brand bg-brand text-white'
                         : 'text-neutral-700'
                 "
             >
@@ -153,7 +153,7 @@
                 <button
                     v-if="descriptionOnlyConfirmedCount > 0"
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm text-red-700"
+                    class="btn rounded border px-3 text-sm text-red-700"
                     @click="deleteDescriptionOnlyIncomeRules"
                 >
                     Delete description-only ({{
@@ -201,14 +201,14 @@
                         <div class="flex flex-wrap gap-2 text-sm">
                             <button
                                 type="button"
-                                class="rounded border px-3 py-1.5"
+                                class="btn rounded border px-3"
                                 @click="toggleIncomeActive(rule)"
                             >
                                 {{ rule.is_active ? 'Disable' : 'Enable' }}
                             </button>
                             <button
                                 type="button"
-                                class="rounded border px-3 py-1.5 text-red-700"
+                                class="btn rounded border px-3 text-red-700"
                                 @click="deleteIncomeRule(rule)"
                             >
                                 Delete
@@ -286,14 +286,14 @@
                         <div class="flex flex-wrap gap-2 text-sm">
                             <button
                                 type="button"
-                                class="rounded border px-3 py-1.5"
+                                class="btn rounded border px-3"
                                 @click="toggleExpenseActive(rule)"
                             >
                                 {{ rule.is_active ? 'Disable' : 'Enable' }}
                             </button>
                             <button
                                 type="button"
-                                class="rounded border px-3 py-1.5 text-red-700"
+                                class="btn rounded border px-3 text-red-700"
                                 @click="deleteExpenseRule(rule)"
                             >
                                 Delete

@@ -89,7 +89,7 @@
                 <div class="flex flex-wrap gap-2">
                     <button
                         type="button"
-                        class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                        class="btn rounded bg-brand hover:bg-brand-hover px-3 text-white disabled:opacity-50"
                         :disabled="transferActionId !== null"
                         @click="confirmTransfer(link)"
                     >
@@ -101,7 +101,7 @@
                     </button>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                        class="btn rounded border px-3 text-neutral-700 disabled:opacity-50"
                         :disabled="transferActionId !== null"
                         @click="rejectTransfer(link)"
                     >

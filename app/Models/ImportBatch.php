@@ -46,6 +46,11 @@ class ImportBatch extends Model
         return $this->hasMany(Order::class);
     }
 
+    public function venmoActivities(): HasMany
+    {
+        return $this->hasMany(VenmoActivity::class);
+    }
+
     public function markProcessing(): void
     {
         $this->update([

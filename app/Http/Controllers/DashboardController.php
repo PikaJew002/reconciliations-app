@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Services\Budgets\BudgetProgressService;
+use App\Services\Plans\PaycheckBillAssignmentService;
+use App\Services\Plans\PlannedOccurrenceGenerator;
 use App\Services\Reporting\CategorySpendQuery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -16,6 +18,8 @@ class DashboardController extends Controller
         Request $request,
         CategorySpendQuery $categorySpendQuery,
         BudgetProgressService $budgetProgress,
+        PlannedOccurrenceGenerator $generator,
+        PaycheckBillAssignmentService $assignments,
     ): Response {
         $userId = $request->user()->id;
 
@@ -38,6 +42,16 @@ class DashboardController extends Controller
         $to = $resolved['to'];
         $progress = $budgetProgress->build($userId, $view, $month, $selectedYear?->id);
         $monthsElapsed = $progress['period']['months_elapsed'];
+
+        $generator->ensureForUser($userId);
+        $paycheckPlans = $view === 'month'
+            ? $assignments->monthCards($userId, $from)
+            : [
+                'paychecks' => [],
+                'income' => 0.0,
+                'bills' => 0.0,
+                'leftover' => 0.0,
+            ];
 
         $spendTotals = $categorySpendQuery->categoryTotalsForUser($userId, $from, $to);
 
@@ -140,6 +154,7 @@ class DashboardController extends Controller
                 ],
             ],
             'months_elapsed' => $monthsElapsed,
+            'paycheck_plans' => $paycheckPlans,
         ]);
     }
 

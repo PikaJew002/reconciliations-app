@@ -49,8 +49,14 @@ class ProcessImportBatch implements ShouldQueue
             ...$jobs,
             new GenerateOrderComponents($batch),
             new MatchMerchants($batch->user_id),
-            new RunReconciliation($batch->user_id),
+            new MatchVenmoActivities($batch->user_id),
         ];
+
+        if ($batch->source === 'bank' && $batch->type === 'transactions') {
+            $jobs[] = new MatchPlannedOccurrences($batch->user_id);
+        }
+
+        $jobs[] = new RunReconciliation($batch->user_id);
 
         Bus::chain($jobs)->dispatch();
     }

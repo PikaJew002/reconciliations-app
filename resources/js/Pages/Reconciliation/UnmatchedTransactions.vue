@@ -3,12 +3,12 @@
     import UnmatchedTransactionsList from '../../Components/Reconciliation/UnmatchedTransactionsList.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
-    import { router } from '@inertiajs/vue3';
-    import { ref } from 'vue';
+    import { Link, router } from '@inertiajs/vue3';
+    import { computed, ref } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
-    defineProps({
+    let props = defineProps({
         summary: {
             type: Object,
             required: true,
@@ -47,6 +47,16 @@
     let selectedTransactionIds = ref([]);
     let reimbursementActionKey = ref(null);
     let targetOpenGroupId = ref('');
+
+    let unlabeledVenmoCount = computed(
+        () =>
+            props.unmatchedTransactions.filter(
+                (transaction) =>
+                    String(transaction.description || '')
+                        .toLowerCase()
+                        .includes('venmo') && !transaction.venmo_summary,
+            ).length,
+    );
 
     function isTransactionSelected(transactionId) {
         return selectedTransactionIds.value.includes(transactionId);
@@ -130,13 +140,26 @@
         active-tab="unmatched-transactions"
         :reload-only="unmatchedTransactionsReloadOnly"
     >
-        <UnmatchedTransactionsList
-            :unmatched-transactions="unmatchedTransactions"
-            :categories="categories"
-            :match-modes="matchModes"
-            :selected-transaction-ids="selectedTransactionIds"
-            @toggle-selection="toggleTransactionSelection"
-        >
+        <div class="space-y-4">
+            <p
+                v-if="unlabeledVenmoCount > 0"
+                class="rounded border px-3 py-2 text-sm text-neutral-700"
+            >
+                {{ unlabeledVenmoCount }} unmatched
+                {{ unlabeledVenmoCount === 1 ? 'line looks' : 'lines look' }}
+                like Venmo with no statement details.
+                <Link href="/venmo/imports" class="underline">
+                    Import a Venmo statement
+                </Link>
+                to label who and why.
+            </p>
+            <UnmatchedTransactionsList
+                :unmatched-transactions="unmatchedTransactions"
+                :categories="categories"
+                :match-modes="matchModes"
+                :selected-transaction-ids="selectedTransactionIds"
+                @toggle-selection="toggleTransactionSelection"
+            >
             <div
                 v-if="selectedTransactionIds.length > 0"
                 class="flex flex-wrap items-center gap-2 rounded border bg-neutral-50 px-3 py-2 text-sm"
@@ -146,7 +169,7 @@
                 </span>
                 <button
                     type="button"
-                    class="rounded bg-neutral-900 px-3 py-1.5 text-white disabled:opacity-50"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-white disabled:opacity-50"
                     :disabled="reimbursementActionKey !== null"
                     @click="createReimbursementGroup()"
                 >
@@ -159,7 +182,7 @@
                 <template v-if="openReimbursementGroups.length > 0">
                     <select
                         v-model="targetOpenGroupId"
-                        class="rounded border px-2 py-1.5"
+                        class="rounded border px-2"
                     >
                         <option value="">Add to open group…</option>
                         <option
@@ -173,7 +196,7 @@
                     </select>
                     <button
                         type="button"
-                        class="rounded border px-3 py-1.5 text-neutral-700 disabled:opacity-50"
+                        class="btn rounded border px-3 text-neutral-700 disabled:opacity-50"
                         :disabled="
                             reimbursementActionKey !== null ||
                             !targetOpenGroupId
@@ -185,12 +208,13 @@
                 </template>
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-neutral-700"
+                    class="btn rounded border px-3 text-neutral-700"
                     @click="clearTransactionSelection"
                 >
                     Clear
                 </button>
             </div>
         </UnmatchedTransactionsList>
+        </div>
     </ReconciliationShell>
 </template>

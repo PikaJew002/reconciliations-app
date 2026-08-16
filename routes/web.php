@@ -11,10 +11,13 @@ use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Merchants\MerchantController;
+use App\Http\Controllers\Onboarding\OnboardingController;
 use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
+use App\Http\Controllers\Plans\PlannedOccurrenceController;
+use App\Http\Controllers\Plans\PlannedTemplateController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
@@ -24,8 +27,10 @@ use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
+use App\Http\Controllers\Reconciliation\VenmoMatchController;
 use App\Http\Controllers\Rules\IncomeClassificationRuleController;
 use App\Http\Controllers\Rules\RuleController;
+use App\Http\Controllers\Venmo\VenmoImportController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -41,6 +46,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
+    Route::post('/onboarding/hide', [OnboardingController::class, 'hide'])->name('onboarding.hide');
+    Route::post('/onboarding/show', [OnboardingController::class, 'show'])->name('onboarding.show');
+    Route::post('/onboarding/skip', [OnboardingController::class, 'skip'])->name('onboarding.skip');
+    Route::post('/onboarding/tours/{key}', [OnboardingController::class, 'updateTour'])
+        ->name('onboarding.tours.update');
+
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
     Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');
     Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
@@ -53,6 +64,13 @@ Route::middleware('auth')->group(function () {
     Route::get('/accounts/{account}/imports/{importBatch}', [ImportBatchController::class, 'showForAccount'])
         ->name('accounts.imports.show');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
+
+    Route::get('/venmo/imports', [VenmoImportController::class, 'index'])
+        ->name('venmo.imports.index');
+    Route::post('/venmo/imports', [VenmoImportController::class, 'store'])
+        ->name('venmo.imports.store');
+    Route::get('/venmo/imports/{importBatch}', [ImportBatchController::class, 'showForVenmo'])
+        ->name('venmo.imports.show');
 
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
     Route::get('/categories/create', [CategoryController::class, 'create'])->name('categories.create');
@@ -67,6 +85,15 @@ Route::middleware('auth')->group(function () {
     Route::patch('/budgets/years/{budgetYear}', [BudgetYearController::class, 'update'])->name('budgets.years.update');
     Route::post('/budgets/years/{budgetYear}/current', [BudgetYearController::class, 'makeCurrent'])
         ->name('budgets.years.current');
+
+    Route::get('/plans', [PlannedTemplateController::class, 'index'])->name('plans.index');
+    Route::post('/plans', [PlannedTemplateController::class, 'store'])->name('plans.store');
+    Route::patch('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'update'])->name('plans.update');
+    Route::put('/plans/{plannedTemplate}/assignments', [PlannedTemplateController::class, 'updateAssignments'])
+        ->name('plans.assignments.update');
+    Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
+    Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
+        ->name('plans.occurrences.link');
 
     Route::get('/rules', [RuleController::class, 'index'])->name('rules.index');
     Route::delete('/rules/income/description-only', [IncomeClassificationRuleController::class, 'destroyDescriptionOnly'])
@@ -132,6 +159,12 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.transfers.confirm');
     Route::post('/reconciliation/transfers/{transferLink}/reject', [TransferLinkController::class, 'reject'])
         ->name('reconciliation.transfers.reject');
+    Route::post('/reconciliation/venmo/{venmoActivity}/confirm', [VenmoMatchController::class, 'confirm'])
+        ->name('reconciliation.venmo.confirm');
+    Route::post('/reconciliation/venmo/{venmoActivity}/reject', [VenmoMatchController::class, 'reject'])
+        ->name('reconciliation.venmo.reject');
+    Route::post('/reconciliation/venmo/{venmoActivity}/assign', [VenmoMatchController::class, 'assign'])
+        ->name('reconciliation.venmo.assign');
     Route::post('/reconciliation/transactions/{transaction}/categorize', [TransactionCategorizationController::class, 'store'])
         ->name('reconciliation.transactions.categorize');
     Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])

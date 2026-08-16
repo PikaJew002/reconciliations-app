@@ -343,7 +343,7 @@
 
             <button
                 type="button"
-                class="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                 :disabled="runForm.processing || isRunInProgress"
                 @click="runReconciliation"
             >
@@ -379,6 +379,8 @@
             {{ activeRun.metadata?.transactions_categorized ?? 0 }}
             transactions, matched
             {{ activeRun.metadata?.merchants_matched ?? 0 }} merchants,
+            {{ activeRun.metadata?.planned_occurrences_matched ?? 0 }} planned
+            occurrences,
             {{ activeRun.metadata?.transactions_matched ?? 0 }} order
             transactions, and
             {{ activeRun.metadata?.synthetic_matched ?? 0 }} synthetic bank
@@ -395,43 +397,34 @@
         </p>
 
         <p class="text-sm text-neutral-600">
-            Re-runs merchant matching, Walmart order matching, and synthetic
-            bank-spend reconciliation on data you have already imported.
+            Re-runs merchant matching, Walmart order matching, planned
+            paycheck/bill matching, and synthetic bank-spend reconciliation on
+            data you have already imported.
         </p>
 
-        <dl class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            <div class="rounded border px-3 py-2">
+        <dl class="grid grid-cols-2 items-stretch gap-3 text-sm sm:grid-cols-4">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Needs review</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.needs_review ?? 0 }}
                 </dd>
             </div>
-            <div class="rounded border px-3 py-2">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Unmatched orders</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.unmatched_orders }}
                 </dd>
             </div>
-            <div class="rounded border px-3 py-2">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Reconciled orders</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.reconciled_orders }}
                 </dd>
             </div>
-            <div class="rounded border px-3 py-2">
-                <dt class="text-neutral-600">Matched pairs</dt>
-                <dd class="text-lg font-medium">{{ summary.matched_pairs }}</dd>
-            </div>
-            <div class="rounded border px-3 py-2">
+            <div class="flex flex-col rounded border px-3 py-2">
                 <dt class="text-neutral-600">Unmatched transactions</dt>
-                <dd class="text-lg font-medium">
+                <dd class="mt-auto text-lg font-medium">
                     {{ summary.unmatched_transactions }}
-                </dd>
-            </div>
-            <div class="rounded border px-3 py-2">
-                <dt class="text-neutral-600">Partial transactions</dt>
-                <dd class="text-lg font-medium">
-                    {{ summary.partial_transactions }}
                 </dd>
             </div>
         </dl>
@@ -445,7 +438,7 @@
                     class="rounded px-3 py-1.5 text-sm"
                     :class="
                         activeTab === tab.id
-                            ? 'bg-neutral-900 text-white'
+                            ? 'bg-brand hover:bg-brand-hover text-white'
                             : 'text-neutral-700 hover:bg-neutral-100'
                     "
                 >

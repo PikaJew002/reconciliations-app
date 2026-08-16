@@ -16,6 +16,7 @@ use App\Models\Product;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
 use App\Services\Reconciliation\TransactionCategorizationService;
+use App\Support\CategoryColor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -68,6 +69,72 @@ class TransactionCategorizationTest extends TestCase
         $this->assertNotNull($run);
         $this->assertSame('pending', $run->status);
         Queue::assertPushed(ApplyCategorizationRun::class, fn (ApplyCategorizationRun $job) => $job->categorizationRunId === $run->id);
+    }
+
+    public function test_user_can_create_category_while_categorizing(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'supports_order_import' => false,
+        ]);
+        $transaction = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -42.0,
+            'description' => 'KROGER 100',
+            'normalized_description' => 'kroger 100',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $transaction), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_name' => 'Groceries',
+                'match_mode' => TransactionCategorizationRule::MATCH_ONCE,
+            ])
+            ->assertRedirect(route('reconciliation.unmatched-transactions'))
+            ->assertSessionHas('success');
+
+        $category = Category::query()
+            ->where('user_id', $user->id)
+            ->where('kind', Category::KIND_EXPENSE)
+            ->where('name', 'Groceries')
+            ->first();
+
+        $this->assertNotNull($category);
+        $this->assertSame(CategoryColor::fromName('Groceries'), $category->color);
+
+        $transaction->refresh();
+        $this->assertSame($category->id, $transaction->category_id);
+        $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $transaction->classification);
+        $this->assertDatabaseCount('transaction_categorization_rules', 0);
+    }
+
+    public function test_creating_category_while_categorizing_reuses_same_kind_name(): void
+    {
+        $user = User::factory()->create();
+        $existing = Category::factory()->for($user)->bill()->create([
+            'name' => 'Electric',
+            'color' => '#112233',
+        ]);
+        $transaction = $this->debitTransaction($user, [
+            'amount' => -110.0,
+            'description' => 'POWER COMPANY',
+            'normalized_description' => 'power company',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $transaction), [
+                'classification' => BankTransaction::CLASSIFICATION_BILL,
+                'category_name' => 'electric',
+                'match_mode' => TransactionCategorizationRule::MATCH_ONCE,
+            ])
+            ->assertRedirect(route('reconciliation.unmatched-transactions'));
+
+        $this->assertDatabaseCount('categories', 1);
+        $this->assertSame($existing->id, $transaction->fresh()->category_id);
+        $this->assertSame('#112233', $existing->fresh()->color);
     }
 
     public function test_once_match_mode_does_not_create_rule_or_apply_run(): void

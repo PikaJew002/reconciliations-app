@@ -41,6 +41,18 @@ class ImportBatchController extends Controller
         ]);
     }
 
+    public function showForVenmo(ImportBatch $importBatch): Response
+    {
+        $this->authorize('view', $importBatch);
+        $this->ensureVenmoBatch($importBatch);
+
+        return $this->renderShow($importBatch, [
+            ['label' => 'Accounts', 'href' => route('accounts.index')],
+            ['label' => 'Venmo', 'href' => route('venmo.imports.index')],
+            ['label' => 'Import batch'],
+        ]);
+    }
+
     /**
      * @param  list<array{label: string, href?: string}>  $breadcrumbs
      */
@@ -73,7 +85,7 @@ class ImportBatchController extends Controller
             || $importBatch->type !== 'transactions'
             || (string) $accountId !== (string) $account->id
         ) {
-            throw new NotFoundHttpException();
+            throw new NotFoundHttpException;
         }
     }
 
@@ -83,7 +95,14 @@ class ImportBatchController extends Controller
             $importBatch->source !== $merchant
             || $importBatch->type !== 'orders'
         ) {
-            throw new NotFoundHttpException();
+            throw new NotFoundHttpException;
+        }
+    }
+
+    protected function ensureVenmoBatch(ImportBatch $importBatch): void
+    {
+        if ($importBatch->source !== 'venmo' || $importBatch->type !== 'activity') {
+            throw new NotFoundHttpException;
         }
     }
 
@@ -98,6 +117,6 @@ class ImportBatchController extends Controller
             }
         }
 
-        throw new NotFoundHttpException();
+        throw new NotFoundHttpException;
     }
 }

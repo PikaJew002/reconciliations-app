@@ -46,6 +46,15 @@
             type: Number,
             required: true,
         },
+        paycheck_plans: {
+            type: Object,
+            default: () => ({
+                paychecks: [],
+                income: 0,
+                bills: 0,
+                leftover: 0,
+            }),
+        },
     });
 
     let queryBase = () => {
@@ -184,6 +193,12 @@
     let isEmpty = computed(
         () => !hasIncomeContent.value && !hasSpendingContent.value,
     );
+
+    let hasPaycheckPlans = computed(
+        () =>
+            props.view === 'month' &&
+            (props.paycheck_plans?.paychecks?.length ?? 0) > 0,
+    );
 </script>
 
 <template>
@@ -203,7 +218,7 @@
                     class="rounded border px-3 py-1.5 text-sm"
                     :class="
                         view === 'month'
-                            ? 'border-neutral-900 bg-neutral-900 text-white'
+                            ? 'border-brand bg-brand text-white'
                             : 'hover:bg-neutral-50'
                     "
                     @click="setView('month')"
@@ -215,7 +230,7 @@
                     class="rounded border px-3 py-1.5 text-sm"
                     :class="
                         view === 'ytm'
-                            ? 'border-neutral-900 bg-neutral-900 text-white'
+                            ? 'border-brand bg-brand text-white'
                             : 'hover:bg-neutral-50'
                     "
                     @click="setView('ytm')"
@@ -274,14 +289,14 @@
             <div v-if="view === 'month'" class="flex gap-2">
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="shiftMonth(-1)"
                 >
                     Previous
                 </button>
                 <button
                     type="button"
-                    class="rounded border px-3 py-1.5 text-sm hover:bg-neutral-50"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
                     @click="shiftMonth(1)"
                 >
                     Next
@@ -295,6 +310,11 @@
                     <p class="text-sm text-neutral-600">Income</p>
                     <p class="text-xl font-semibold tabular-nums">
                         {{ formatMoney(summary.income) }}
+                    </p>
+                    <p class="mt-1 text-xs text-neutral-600">
+                        Received {{ formatMoney(summary.income_received) }}
+                        · {{ formatMoney(summary.income_planned) }} still
+                        planned
                     </p>
                 </div>
                 <div>
@@ -386,9 +406,81 @@
 
             <p class="text-sm text-neutral-600">
                 Set monthly budgets on
-                <Link href="/budgets" class="underline">Budgets</Link>.
+                <Link href="/budgets" class="underline">Budgets</Link>. Plan
+                paychecks on
+                <Link href="/plans" class="underline">Plans</Link>.
             </p>
         </div>
+
+        <section v-if="hasPaycheckPlans" class="space-y-4">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 class="text-lg font-semibold">
+                    Upcoming Paychecks / Bills
+                </h2>
+                <p
+                    class="text-sm font-medium tabular-nums"
+                    :class="differenceClass(paycheck_plans.leftover)"
+                >
+                    Leftover {{ formatMoney(paycheck_plans.leftover) }}
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1 sm:gap-2">
+                <div
+                    v-for="paycheck in paycheck_plans.paychecks"
+                    :key="paycheck.id"
+                    class="rounded border px-4 py-3"
+                >
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="font-medium">{{ paycheck.name }}</p>
+                            <p class="text-sm text-neutral-600">
+                                {{ paycheck.expected_date }}
+                            </p>
+                        </div>
+                        <p class="font-semibold tabular-nums">
+                            {{ formatMoney(paycheck.amount) }}
+                        </p>
+                    </div>
+
+                    <ul class="mt-3 space-y-1 text-sm">
+                        <li
+                            v-if="paycheck.bills.length === 0"
+                            class="text-neutral-500"
+                        >
+                            No bills assigned
+                        </li>
+                        <li
+                            v-for="bill in paycheck.bills"
+                            :key="bill.id"
+                            class="flex items-baseline justify-between gap-3 text-neutral-700"
+                        >
+                            <span>
+                                {{ bill.name }}
+                                <span class="text-neutral-500">
+                                    {{ bill.expected_date }}
+                                </span>
+                            </span>
+                            <span class="tabular-nums">
+                                {{ formatMoney(bill.amount) }}
+                            </span>
+                        </li>
+                    </ul>
+
+                    <p
+                        class="mt-3 flex items-baseline justify-between gap-3 border-t pt-2 text-sm font-medium"
+                    >
+                        <span>Leftover</span>
+                        <span
+                            class="tabular-nums"
+                            :class="differenceClass(paycheck.leftover)"
+                        >
+                            {{ formatMoney(paycheck.leftover) }}
+                        </span>
+                    </p>
+                </div>
+            </div>
+        </section>
 
         <div v-if="isEmpty" class="text-sm text-neutral-600">
             No income or spending in this period. Import bank transactions and

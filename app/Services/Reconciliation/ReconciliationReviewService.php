@@ -5,15 +5,15 @@ namespace App\Services\Reconciliation;
 use App\Models\BankTransaction;
 use App\Models\Order;
 use App\Models\ReimbursementGroup;
-use App\Models\TransactionAllocation;
 use App\Models\TransactionTransferLink;
-use Illuminate\Support\Facades\DB;
+use App\Models\VenmoActivity;
 
 class ReconciliationReviewService
 {
     public function __construct(
         protected OrderPaymentResolutionService $paymentResolution,
         protected ReimbursementGroupService $reimbursementGroups,
+        protected VenmoActivityMatcher $venmoMatcher,
         protected int $listLimit = 50,
         protected int $unmatchedTransactionsLimit = 250,
     ) {}
@@ -45,6 +45,18 @@ class ReconciliationReviewService
                 ->where('status', ReimbursementGroup::STATUS_OPEN)
                 ->count();
 
+        $suggestedVenmoCount = isset($needsReviewPayload['suggestedVenmoMatches'])
+            ? count($needsReviewPayload['suggestedVenmoMatches'])
+            : $this->bankFacingVenmoQuery($userId)
+                ->where('match_status', VenmoActivity::STATUS_SUGGESTED)
+                ->count();
+
+        $unmatchedVenmoCount = isset($needsReviewPayload['unmatchedVenmoActivities'])
+            ? count($needsReviewPayload['unmatchedVenmoActivities'])
+            : $this->bankFacingVenmoQuery($userId)
+                ->where('match_status', VenmoActivity::STATUS_UNMATCHED)
+                ->count();
+
         $orderReviewCount = collect($unbalancedOrders)
             ->pluck('id')
             ->merge(collect($paymentReviewOrders)->pluck('id'))
@@ -61,18 +73,17 @@ class ReconciliationReviewService
                 ->where('status', 'reconciled')
                 ->count(),
             'unmatched_transactions' => $this->unmatchedTransactionsQuery($userId)->count(),
-            'partial_transactions' => BankTransaction::query()
-                ->where('user_id', $userId)
-                ->where('status', 'partial')
-                ->count(),
-            'matched_pairs' => $this->matchedPairCount($userId),
             'unbalanced_orders' => count($unbalancedOrders),
             'payment_review_orders' => count($paymentReviewOrders),
             'suggested_transfers' => $suggestedTransfersCount,
             'open_reimbursement_groups' => $openReimbursementGroupsCount,
+            'suggested_venmo_matches' => $suggestedVenmoCount,
+            'unmatched_venmo_activities' => $unmatchedVenmoCount,
             'needs_review' => $orderReviewCount
                 + $suggestedTransfersCount
-                + $openReimbursementGroupsCount,
+                + $openReimbursementGroupsCount
+                + $suggestedVenmoCount
+                + $unmatchedVenmoCount,
         ];
     }
 
@@ -83,7 +94,9 @@ class ReconciliationReviewService
      *     suggestedTransfers: list<array<string, mixed>>,
      *     openReimbursementGroups: list<array<string, mixed>>,
      *     closedReimbursementGroups: list<array<string, mixed>>,
-     *     reimbursementEligibleTransactions: list<array<string, mixed>>
+     *     reimbursementEligibleTransactions: list<array<string, mixed>>,
+     *     suggestedVenmoMatches: list<array<string, mixed>>,
+     *     unmatchedVenmoActivities: list<array<string, mixed>>
      * }
      */
     public function needsReviewForUser(int $userId): array
@@ -95,6 +108,8 @@ class ReconciliationReviewService
             'openReimbursementGroups' => $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_OPEN),
             'closedReimbursementGroups' => $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_CLOSED),
             'reimbursementEligibleTransactions' => $this->reimbursementEligibleTransactions($userId),
+            'suggestedVenmoMatches' => $this->venmoActivitiesPayload($userId, VenmoActivity::STATUS_SUGGESTED),
+            'unmatchedVenmoActivities' => $this->venmoActivitiesPayload($userId, VenmoActivity::STATUS_UNMATCHED),
         ];
     }
 
@@ -178,13 +193,6 @@ class ReconciliationReviewService
                 'classification' => $transaction->classification,
             ])
             ->all();
-    }
-
-    protected function matchedPairCount(int $userId): int
-    {
-        return (int) DB::query()
-            ->fromSub($this->matchedPairsQuery($userId), 'pairs')
-            ->count();
     }
 
     /**
@@ -309,6 +317,7 @@ class ReconciliationReviewService
             ->with([
                 'merchant:id,name,normalized_name,supports_order_import',
                 'account:id,name,last_four,account_type,default_classification',
+                'venmoActivities.cashedOutPayments',
             ])
             ->orderByDesc('posted_at')
             ->orderByDesc('id')
@@ -346,6 +355,71 @@ class ReconciliationReviewService
             ->all();
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function venmoActivitiesPayload(int $userId, string $matchStatus): array
+    {
+        return $this->bankFacingVenmoQuery($userId)
+            ->where('match_status', $matchStatus)
+            ->with([
+                'bankTransaction.account:id,name,last_four,account_type',
+                'cashedOutPayments',
+            ])
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->limit($this->listLimit)
+            ->get()
+            ->map(function (VenmoActivity $activity) use ($matchStatus): array {
+                $candidates = $this->venmoMatcher->reviewCandidatesFor($activity);
+
+                return [
+                    'id' => $activity->id,
+                    'occurred_at' => $activity->occurred_at?->toDateTimeString(),
+                    'type' => $activity->type,
+                    'note' => $activity->note,
+                    'from_name' => $activity->from_name,
+                    'to_name' => $activity->to_name,
+                    'amount' => (float) $activity->amount,
+                    'funding_last_four' => $activity->funding_last_four,
+                    'destination_last_four' => $activity->destination_last_four,
+                    'match_status' => $activity->match_status,
+                    'label' => VenmoActivity::summarize(collect([$activity])),
+                    'suggested_transaction' => $activity->bankTransaction
+                        ? $this->transactionPayload($activity->bankTransaction, includeAccount: true)
+                        : null,
+                    'candidates' => $candidates
+                        ->map(fn (BankTransaction $transaction): array => $this->transactionPayload($transaction, includeAccount: true))
+                        ->values()
+                        ->all(),
+                    'can_confirm' => $matchStatus === VenmoActivity::STATUS_SUGGESTED
+                        && $activity->bank_transaction_id !== null,
+                ];
+            })
+            ->all();
+    }
+
+    protected function bankFacingVenmoQuery(int $userId)
+    {
+        return VenmoActivity::query()
+            ->where('user_id', $userId)
+            ->where(function ($query): void {
+                $query
+                    ->where(function ($payment): void {
+                        $payment
+                            ->where('type', VenmoActivity::TYPE_PAYMENT)
+                            ->where('amount', '<', 0)
+                            ->whereNotNull('funding_last_four');
+                    })
+                    ->orWhere(function ($transfer): void {
+                        $transfer
+                            ->where('type', 'like', '%transfer%')
+                            ->where('amount', '<', 0)
+                            ->whereNotNull('destination_last_four');
+                    });
+            });
+    }
+
     protected function unmatchedTransactionsQuery(int $userId)
     {
         return BankTransaction::query()
@@ -377,6 +451,7 @@ class ReconciliationReviewService
                 $isCredit
                 || ($isDebit && ! (bool) ($transaction->merchant?->supports_order_import))
             ),
+            'venmo_summary' => $transaction->venmoSummary(),
         ];
 
         if ($includeAccount) {
@@ -390,24 +465,5 @@ class ReconciliationReviewService
         }
 
         return $payload;
-    }
-
-    protected function matchedPairsQuery(int $userId)
-    {
-        return TransactionAllocation::query()
-            ->join('bank_transactions', 'bank_transactions.id', '=', 'transaction_allocations.bank_transaction_id')
-            ->join('order_components', 'order_components.id', '=', 'transaction_allocations.order_component_id')
-            ->join('orders', 'orders.id', '=', 'order_components.order_id')
-            ->where('bank_transactions.user_id', $userId)
-            ->groupBy(
-                'transaction_allocations.bank_transaction_id',
-                'order_components.order_id',
-            )
-            ->select([
-                'transaction_allocations.bank_transaction_id',
-                'order_components.order_id',
-                DB::raw('SUM(transaction_allocations.allocated_amount) as allocated_amount'),
-                DB::raw('MAX(transaction_allocations.created_at) as matched_at'),
-            ]);
     }
 }

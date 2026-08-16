@@ -66,7 +66,7 @@
                 </div>
                 <Link
                     href="/orders/categorize"
-                    class="rounded border px-4 py-2 text-sm"
+                    class="btn rounded border px-4 text-sm"
                 >
                     Categorize order lines
                 </Link>
@@ -88,7 +88,7 @@
             No bank transactions imported yet.
         </p>
 
-        <section class="space-y-3">
+        <section class="space-y-3" data-tour="import-orders-retailers">
             <div>
                 <h2 class="text-lg font-semibold">Retailers</h2>
                 <p class="text-sm text-neutral-600">
@@ -131,6 +131,7 @@
                     <Link
                         :href="`/orders/${retailer.normalized_name}/imports`"
                         class="shrink-0 self-center px-4 py-3 text-sm text-neutral-700 underline hover:text-neutral-900"
+                        data-tour="import-orders-imports-link"
                     >
                         Imports
                     </Link>
@@ -152,9 +153,9 @@
                     v-model="search"
                     type="search"
                     placeholder="Search merchant name or type"
-                    class="min-w-64 flex-1 rounded border px-3 py-2 text-sm"
+                    class="min-w-64 flex-1 rounded border px-3 text-sm"
                 />
-                <button type="submit" class="rounded border px-4 py-2 text-sm">
+                <button type="submit" class="btn rounded border px-4 text-sm">
                     Search
                 </button>
             </form>

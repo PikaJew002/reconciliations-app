@@ -147,8 +147,6 @@ class ReconciliationReviewTest extends TestCase
                 ->where('summary.unmatched_orders', 2)
                 ->where('summary.reconciled_orders', 1)
                 ->where('summary.unmatched_transactions', 1)
-                ->where('summary.partial_transactions', 1)
-                ->where('summary.matched_pairs', 1)
                 ->where('summary.unbalanced_orders', 1)
                 ->where('summary.payment_review_orders', 0)
                 ->where('summary.needs_review', 1)

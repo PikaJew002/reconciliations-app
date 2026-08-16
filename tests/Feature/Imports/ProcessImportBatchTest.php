@@ -9,6 +9,7 @@ use App\Models\ImportBatch;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
+use App\Models\VenmoActivity;
 use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyCreditCardTransactionImporter;
 use App\Services\Imports\Banks\CumberlandValleyNationalBankTransactionImporter;
@@ -650,5 +651,70 @@ CSV;
 
         $this->assertSame(5, OrderItem::query()->count());
         $this->assertDatabaseMissing('orders', ['order_number' => '114-5762287-6399462']);
+    }
+
+    public function test_job_imports_venmo_statement_rows_and_skips_header_footer(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $path = 'imports/venmo.csv';
+
+        Storage::disk('local')->put($path, <<<'CSV'
+Account Statement - (@Aaron-Eisenberg-7) ,,,,,,,,,,,,,,,,,,,,,
+Account Activity,,,,,,,,,,,,,,,,,,,,,
+,ID,Datetime,Type,Status,Note,From,To,Amount (total),Amount (tip),Amount (tax),Amount (fee),Tax Rate,Tax Exempt,Funding Source,Destination,Beginning Balance,Ending Balance,Statement Period Venmo Fees,Terminal Location,Year to Date Venmo Fees,Disclaimer
+,,,,,,,,,,,,,,,,$0.00,,,,,
+,4613052433140029613,2026-06-05T19:11:43,Payment,Complete,Extreme,Aaron Eisenberg,Tyler Adams,- $250.00,,0,,0,,Mastercard *2195,,,,,Venmo,,
+,4623166044005742467,2026-06-19T18:05:39,Payment,Complete,Car clean,Aaron Eisenberg,Tyler Adams,- $200.00,,0,,0,,Mastercard *2195,,,,,Venmo,,
+,4624827257965278613,2026-06-22T01:06:11,Payment,Complete,Excess,Rod Eisenberg,Aaron Eisenberg,+ $10.00,,0,,0,,,Venmo balance,,,,Venmo,,
+,4625394649679197582,2026-06-22T19:53:30,Standard Transfer,Issued,,,,- $10.00,,,,,,,Cumberland Valley National Bank & Trust Company *6218,,,,Venmo,,
+,4628182544206353397,2026-06-26T16:12:33,Payment,Complete,Tshirt,Maureen Rockhill,Aaron Eisenberg,+ $25.00,,0,,0,,,Venmo balance,,,,Venmo,,
+,4628228449571787214,2026-06-26T17:43:45,Standard Transfer,Issued,,,,- $25.00,,,,,,,Cumberland Valley National Bank & Trust Company *6218,,,,Venmo,,
+,,,,,,,,,,,,,,,,,$0.00,$0.00,,$0.00,"In case of errors or questions about your
+        electronic transfers:
+        Contact us as soon as you can."
+CSV);
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'venmo',
+            'type' => 'activity',
+            'storage_path' => $path,
+            'status' => 'pending',
+            'record_count' => 0,
+            'started_at' => null,
+            'completed_at' => null,
+            'metadata' => [],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $batch->refresh();
+
+        $this->assertSame('completed', $batch->status);
+        $this->assertSame(6, $batch->record_count);
+
+        $activities = VenmoActivity::query()->orderBy('occurred_at')->get();
+
+        $this->assertCount(6, $activities);
+        $this->assertSame('4613052433140029613', $activities[0]->external_id);
+        $this->assertSame('payment', $activities[0]->type);
+        $this->assertSame('-250.00', $activities[0]->amount);
+        $this->assertSame('2195', $activities[0]->funding_last_four);
+        $this->assertSame('Extreme', $activities[0]->note);
+        $this->assertSame('Tyler Adams', $activities[0]->to_name);
+
+        $this->assertSame('standard_transfer', $activities[3]->type);
+        $this->assertSame('-10.00', $activities[3]->amount);
+        $this->assertSame('6218', $activities[3]->destination_last_four);
+        $this->assertSame($activities[3]->id, $activities[2]->cashed_out_by_activity_id);
+
+        $this->assertSame('standard_transfer', $activities[5]->type);
+        $this->assertSame($activities[5]->id, $activities[4]->cashed_out_by_activity_id);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $this->assertSame(6, VenmoActivity::query()->count());
     }
 }

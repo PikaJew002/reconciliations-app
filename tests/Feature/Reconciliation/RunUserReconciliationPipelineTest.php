@@ -11,10 +11,13 @@ use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
+use App\Models\PlannedOccurrence;
+use App\Models\PlannedTemplate;
 use App\Models\Product;
 use App\Models\ReconciliationRun;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
+use App\Services\Plans\PlannedOccurrenceMatcher;
 use App\Services\Reconciliation\CreditCardPaymentPairingService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
@@ -23,6 +26,8 @@ use App\Services\Reconciliation\ProductMatchingService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Services\Reconciliation\TransferPairingService;
+use App\Services\Reconciliation\VenmoActivityMatcher;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -72,16 +77,7 @@ class RunUserReconciliationPipelineTest extends TestCase
             'status' => 'unmatched',
         ]);
 
-        (new RunUserReconciliationPipeline($run->id))->handle(
-            app(CreditCardPaymentPairingService::class),
-            app(TransferPairingService::class),
-            app(TransactionCategorizationService::class),
-            app(ProductMatchingService::class),
-            app(OrderComponentGenerator::class),
-            app(MerchantMatcher::class),
-            app(OrderPaymentResolutionService::class),
-            app(ReconciliationService::class),
-        );
+        $this->runPipeline($run);
 
         $run->refresh();
         $transaction = BankTransaction::query()->first();
@@ -141,16 +137,7 @@ class RunUserReconciliationPipelineTest extends TestCase
             'status' => 'pending',
         ]);
 
-        (new RunUserReconciliationPipeline($run->id))->handle(
-            app(CreditCardPaymentPairingService::class),
-            app(TransferPairingService::class),
-            app(TransactionCategorizationService::class),
-            app(ProductMatchingService::class),
-            app(OrderComponentGenerator::class),
-            app(MerchantMatcher::class),
-            app(OrderPaymentResolutionService::class),
-            app(ReconciliationService::class),
-        );
+        $this->runPipeline($run);
 
         $run->refresh();
         $item->refresh();
@@ -167,5 +154,75 @@ class RunUserReconciliationPipelineTest extends TestCase
 
         $this->assertNotNull($component);
         $this->assertSame($category->id, $component->category_id);
+    }
+
+    public function test_pipeline_links_planned_occurrences_to_matching_transactions(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-15 12:00:00'));
+
+        $user = User::factory()->create();
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+        $template = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'expected_day' => 15,
+            'lookback_days' => 7,
+            'lookforward_days' => 3,
+        ]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -140.0,
+            'classification' => null,
+            'category_id' => null,
+            'posted_at' => '2026-08-16',
+            'description' => 'DUKE ENERGY 8821',
+            'normalized_description' => 'duke energy 8821',
+            'status' => 'unmatched',
+        ]);
+
+        $run = ReconciliationRun::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'pending',
+        ]);
+
+        try {
+            $this->runPipeline($run);
+
+            $run->refresh();
+            $transaction->refresh();
+
+            $this->assertSame('completed', $run->status);
+            $this->assertSame(1, $run->metadata['planned_occurrences_matched']);
+            $this->assertDatabaseHas('planned_occurrences', [
+                'template_id' => $template->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+                'bank_transaction_id' => $transaction->id,
+            ]);
+            $this->assertSame(BankTransaction::CLASSIFICATION_BILL, $transaction->classification);
+            $this->assertSame($utilities->id, $transaction->category_id);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    protected function runPipeline(ReconciliationRun $run): void
+    {
+        (new RunUserReconciliationPipeline($run->id))->handle(
+            app(CreditCardPaymentPairingService::class),
+            app(TransferPairingService::class),
+            app(TransactionCategorizationService::class),
+            app(ProductMatchingService::class),
+            app(OrderComponentGenerator::class),
+            app(MerchantMatcher::class),
+            app(PlannedOccurrenceMatcher::class),
+            app(OrderPaymentResolutionService::class),
+            app(ReconciliationService::class),
+            app(VenmoActivityMatcher::class),
+        );
     }
 }

@@ -271,36 +271,11 @@ class TransactionCategorizationService
      */
     protected function matchingRules(BankTransaction $transaction, Collection $rules): Collection
     {
-        $normalized = $this->normalizedDescription($transaction);
-        $amount = round(abs((float) $transaction->amount), 2);
+        $evaluator = app(TransactionMatchEvaluator::class);
 
-        return $rules->filter(function (TransactionCategorizationRule $rule) use ($transaction, $normalized, $amount) {
-            return match ($rule->match_mode) {
-                TransactionCategorizationRule::MATCH_EXACT_DESCRIPTION_AND_AMOUNT => $normalized !== ''
-                    && $rule->normalized_pattern === $normalized
-                    && $rule->amount !== null
-                    && abs((float) $rule->amount - $amount) < 0.01,
-                TransactionCategorizationRule::MATCH_AMOUNT_AND_MERCHANT => $transaction->merchant_id !== null
-                    && $rule->merchant_id === $transaction->merchant_id
-                    && $rule->amount !== null
-                    && abs((float) $rule->amount - $amount) < 0.01,
-                TransactionCategorizationRule::MATCH_MERCHANT => $transaction->merchant_id !== null
-                    && $rule->merchant_id === $transaction->merchant_id,
-                TransactionCategorizationRule::MATCH_DESCRIPTION => $normalized !== ''
-                    && $rule->normalized_pattern === $normalized,
-                TransactionCategorizationRule::MATCH_CHECK_AND_AMOUNT => $rule->classification === BankTransaction::CLASSIFICATION_BILL
-                    && $this->isCheckDescription($normalized)
-                    && $rule->amount !== null
-                    && abs((float) $rule->amount - $amount) < 0.01,
-                TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT => $rule->classification === BankTransaction::CLASSIFICATION_BILL
-                    && is_string($rule->normalized_pattern)
-                    && $rule->normalized_pattern !== ''
-                    && $this->descriptionMatchesPrefix($normalized, $rule->normalized_pattern)
-                    && $rule->amount !== null
-                    && abs((float) $rule->amount - $amount) < 0.01,
-                default => false,
-            };
-        })->values();
+        return $rules
+            ->filter(fn (TransactionCategorizationRule $rule): bool => $evaluator->matchesRule($transaction, $rule))
+            ->values();
     }
 
     protected function applyRule(
@@ -419,13 +394,7 @@ class TransactionCategorizationService
 
     protected function descriptionMatchesPrefix(string $normalized, string $prefix): bool
     {
-        $prefix = Str::of($prefix)->lower()->squish()->toString();
-
-        if ($prefix === '' || $normalized === '') {
-            return false;
-        }
-
-        return $normalized === $prefix || str_starts_with($normalized, $prefix.' ');
+        return app(TransactionMatchEvaluator::class)->descriptionMatchesPrefix($normalized, $prefix);
     }
 
     protected function looksLikeConfirmationToken(string $token): bool
@@ -443,14 +412,11 @@ class TransactionCategorizationService
 
     protected function normalizedDescription(BankTransaction $transaction): string
     {
-        $value = $transaction->normalized_description ?: $transaction->description;
-
-        return Str::of((string) $value)->lower()->squish()->toString();
+        return app(TransactionMatchEvaluator::class)->normalizedDescription($transaction);
     }
 
     protected function isCheckDescription(string $normalized): bool
     {
-        return $normalized !== ''
-            && str_starts_with($normalized, TransactionCategorizationRule::CHECK_DESCRIPTION_PREFIX);
+        return app(TransactionMatchEvaluator::class)->isCheckDescription($normalized);
     }
 }
