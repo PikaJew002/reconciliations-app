@@ -1,0 +1,386 @@
+{
+    "scrapedAt": "2026-08-17T03:29:22.995Z",
+    "summary": {
+        "page": "summary",
+        "url": "https://www.amazon.com/gp/css/order-history?ref_=nav_orders_first",
+        "scrapedAt": "2026-08-17T03:28:44.071Z",
+        "orderCount": 10,
+        "orders": [
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 46.62,
+                "status": "Delivered August 11",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000001-0000001&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 7.39,
+                "status": "Delivered August 8",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000002-0000002&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 42.3,
+                "status": "Delivered August 8",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000003-0000003&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 82.62,
+                "status": "Delivered August 7",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000004-0000004&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 26.63,
+                "status": "Delivered August 3",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=112-0000005-0000005&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 15.84,
+                "status": "Delivered July 22",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000006-0000006&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 41.37,
+                "status": "Delivered July 22",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000007-0000007&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": 42.28,
+                "status": "Delivered July 22",
+                "detailUrl": "https://www.amazon.com/your-orders/order-details?orderID=111-0000008-0000008&ref=ppx_yo2ov_dt_b_fed_order_details"
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": null,
+                "status": "Cancelled",
+                "detailUrl": null
+            },
+            {
+                "orderNumber": null,
+                "orderDate": null,
+                "total": null,
+                "status": "Cancelled",
+                "detailUrl": null
+            }
+        ]
+    },
+    "details": [
+        {
+            "success": true,
+            "orderNumber": "111-0000001-0000001",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000001-0000001&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000001-0000001&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:28:51.780Z",
+                "orderNumber": "111-0000001-0000001",
+                "orderDate": "August 9, 2026",
+                "paymentMethod": "Mastercardending in 1111",
+                "summary": {
+                    "items_subtotal": 43.98,
+                    "shipping__handling": 0,
+                    "total_before_tax": 43.98,
+                    "estimated_tax_to_be_collected": 2.64,
+                    "grand_total": 46.62
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered August 11",
+                        "items": [
+                            {
+                                "title": "REDUCE GoGo's Kids 5-Pack 12oz Tumbler Cups with Lids & Spill-Proof Straws",
+                                "asin": "B0FNR9K6HS",
+                                "url": "https://www.amazon.com/dp/B0FNR9K6HS?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 2,
+                                "unitPrice": 21.99,
+                                "seller": "Sold by: Reduce Every Day",
+                                "returnEligibility": "Return or replace items: Eligible through September 10, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "111-0000002-0000002",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000002-0000002&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000002-0000002&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:28:55.780Z",
+                "orderNumber": "111-0000002-0000002",
+                "orderDate": "August 7, 2026",
+                "paymentMethod": "Mastercardending in 1111",
+                "summary": {
+                    "items_subtotal": 6.97,
+                    "shipping__handling": 0,
+                    "total_before_tax": 6.97,
+                    "estimated_tax_to_be_collected": 0.42,
+                    "grand_total": 7.39
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered August 8",
+                        "items": [
+                            {
+                                "title": "LESHIRY Large Carabiners Keychain 3\" Aluminum D Shape Premium Durable D-Ring Carabiner Clip Hook Camping Accessories Snap Link Key Chain Durable Improved Design(2pack Black)",
+                                "asin": "B0B6R34RD4",
+                                "url": "https://www.amazon.com/dp/B0B6R34RD4?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 1,
+                                "unitPrice": 6.97,
+                                "seller": "Sold by: Leshiry Fashion",
+                                "returnEligibility": "Return or replace items: Eligible through September 7, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "111-0000003-0000003",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000003-0000003&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000003-0000003&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:29:00.579Z",
+                "orderNumber": "111-0000003-0000003",
+                "orderDate": "August 7, 2026",
+                "paymentMethod": "Mastercardending in 1111",
+                "summary": {
+                    "items_subtotal": 39.9,
+                    "shipping__handling": 2.99,
+                    "free_shipping": -2.99,
+                    "total_before_tax": 39.9,
+                    "estimated_tax_to_be_collected": 2.4,
+                    "grand_total": 42.3
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered August 8",
+                        "items": [
+                            {
+                                "title": "Tiny Twinkle Mess Proof Wet Bags | 2-Pack Reusable Waterproof Wet Bags for Swimsuits | Baby Clothes | Travel & Diaper Bag (Blue, Black Checkers)",
+                                "asin": "B0CR41LZLF",
+                                "url": "https://www.amazon.com/dp/B0CR41LZLF?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 1,
+                                "unitPrice": 19.95,
+                                "seller": "Sold by: Tiny Twinkle Shop",
+                                "returnEligibility": "Return or replace items: Eligible through November 6, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "111-0000004-0000004",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000004-0000004&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000004-0000004&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:29:04.880Z",
+                "orderNumber": "111-0000004-0000004",
+                "orderDate": "August 5, 2026",
+                "paymentMethod": "Mastercardending in 2222",
+                "summary": {
+                    "items_subtotal": 77.94,
+                    "shipping__handling": 0,
+                    "total_before_tax": 77.94,
+                    "estimated_tax_to_be_collected": 4.68,
+                    "grand_total": 82.62
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered August 7",
+                        "items": [
+                            {
+                                "title": "Eletorot Teacher Appreciation Gifts for Women, Spa Relaxation Basket Set",
+                                "asin": "B0FKMYKH3H",
+                                "url": "https://www.amazon.com/dp/B0FKMYKH3H?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 6,
+                                "unitPrice": 12.99,
+                                "seller": "Sold by: AOTMANN",
+                                "returnEligibility": "Return or replace items: Eligible through September 6, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "112-0000005-0000005",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=112-0000005-0000005&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=112-0000005-0000005&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:29:08.986Z",
+                "orderNumber": "112-0000005-0000005",
+                "orderDate": "August 1, 2026",
+                "paymentMethod": "Mastercardending in 3333",
+                "summary": {
+                    "items_subtotal": 25.12,
+                    "shipping__handling": 0,
+                    "total_before_tax": 25.12,
+                    "estimated_tax_to_be_collected": 1.51,
+                    "grand_total": 26.63
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered August 3",
+                        "items": [
+                            {
+                                "title": "Suave Kids Coconut 3-in-1 Shampoo Conditioner Body Wash, 16.5 fl oz, 4-Pack",
+                                "asin": "B0CNL1JL8C",
+                                "url": "https://www.amazon.com/dp/B0CNL1JL8C?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 1,
+                                "unitPrice": 25.12,
+                                "seller": "Sold by: Amazon.com",
+                                "returnEligibility": "Return or replace items: Eligible through September 2, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "111-0000006-0000006",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000006-0000006&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000006-0000006&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:29:13.128Z",
+                "orderNumber": "111-0000006-0000006",
+                "orderDate": "July 21, 2026",
+                "paymentMethod": "Visaending in 4444",
+                "summary": {
+                    "items_subtotal": 14.94,
+                    "shipping__handling": 0,
+                    "total_before_tax": 14.94,
+                    "estimated_tax_to_be_collected": 0.9,
+                    "gift_card_amount": -15.84,
+                    "grand_total": 0
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered July 22",
+                        "items": [
+                            {
+                                "title": "Tonies Cinderella Audio Toy Figurine from Disney",
+                                "asin": "B08FCYMXTD",
+                                "url": "https://www.amazon.com/dp/B08FCYMXTD?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 1,
+                                "unitPrice": 14.94,
+                                "seller": "Sold by: Tonies US",
+                                "returnEligibility": "Return or replace items: Eligible through August 21, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "111-0000007-0000007",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000007-0000007&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000007-0000007&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:29:18.379Z",
+                "orderNumber": "111-0000007-0000007",
+                "orderDate": "July 21, 2026",
+                "paymentMethod": "Visaending in 4444",
+                "summary": {
+                    "items_subtotal": 39.78,
+                    "shipping__handling": 2.99,
+                    "free_shipping": -2.99,
+                    "amazon_discount": -0.8,
+                    "total_before_tax": 38.98,
+                    "estimated_tax_to_be_collected": 2.39,
+                    "gift_card_amount": -34.16,
+                    "grand_total": 7.21
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered July 22",
+                        "items": [
+                            {
+                                "title": "Tonies SuperKitties: Ginny Audio Toy Figurine from Disney",
+                                "asin": "B0GYGNZN9D",
+                                "url": "https://www.amazon.com/dp/B0GYGNZN9D?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 1,
+                                "unitPrice": 19.99,
+                                "seller": "Sold by: Tonies US",
+                                "returnEligibility": "Return or replace items: Eligible through August 21, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "success": true,
+            "orderNumber": "111-0000008-0000008",
+            "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000008-0000008&ref=ppx_yo2ov_dt_b_fed_order_details",
+            "data": {
+                "page": "details",
+                "url": "https://www.amazon.com/your-orders/order-details?orderID=111-0000008-0000008&ref=ppx_yo2ov_dt_b_fed_order_details",
+                "scrapedAt": "2026-08-17T03:29:22.993Z",
+                "orderNumber": "111-0000008-0000008",
+                "orderDate": "July 21, 2026",
+                "paymentMethod": "Mastercardending in 3333",
+                "summary": {
+                    "items_subtotal": 39.88,
+                    "shipping__handling": 2.99,
+                    "free_shipping": -2.99,
+                    "total_before_tax": 39.88,
+                    "estimated_tax_to_be_collected": 2.4,
+                    "grand_total": 42.28
+                },
+                "shipments": [
+                    {
+                        "status": "Delivered July 22",
+                        "items": [
+                            {
+                                "title": "Tonies Chase Audio Toy Figurine from Paw Patrol",
+                                "asin": "B093TRRT6D",
+                                "url": "https://www.amazon.com/dp/B093TRRT6D?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0",
+                                "quantity": 1,
+                                "unitPrice": 19.94,
+                                "seller": "Sold by: Tonies US",
+                                "returnEligibility": "Return or replace items: Eligible through August 21, 2026"
+                            },
+                            {
+                                "title": "Tonies Laurie Berkner Audio Toy Figurine",
+                                "asin": "B0B4TBGFLV",
+                                "url": "https://www.amazon.com/dp/B0B4TBGFLV?ref_=ppx_hzod_title_dt_b_fed_asin_title_1_0",
+                                "quantity": 1,
+                                "unitPrice": 19.94,
+                                "seller": "Sold by: Tonies US",
+                                "returnEligibility": "Return or replace items: Eligible through August 21, 2026"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}

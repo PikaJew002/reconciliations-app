@@ -23,6 +23,10 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        if ($request->session()->has('extension_redirect')) {
+            return redirect()->route('extension.auth.callback');
+        }
+
         return redirect()->intended('/');
     }
 
