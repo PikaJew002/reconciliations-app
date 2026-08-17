@@ -30,6 +30,10 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
+        if ($request->session()->has('extension_redirect')) {
+            return redirect()->route('extension.auth.callback');
+        }
+
         return redirect('/');
     }
 }

@@ -9,6 +9,7 @@
         "php": "^8.5",
         "inertiajs/inertia-laravel": "^3.2",
         "laravel/framework": "^13.8",
+        "laravel/sanctum": "^4.3",
         "laravel/tinker": "^3.0"
     },
     "require-dev": {

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Accounts\AccountImportController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\ExtensionAuthController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Budgets\BudgetController;
 use App\Http\Controllers\Budgets\BudgetYearController;
@@ -33,6 +34,9 @@ use App\Http\Controllers\Rules\RuleController;
 use App\Http\Controllers\Venmo\VenmoImportController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('/extension/auth', [ExtensionAuthController::class, 'start'])
+    ->name('extension.auth');
+
 Route::middleware('guest')->group(function () {
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
     Route::post('/register', [RegisteredUserController::class, 'store']);
@@ -42,6 +46,10 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
+
+    Route::get('/extension/auth/callback', [ExtensionAuthController::class, 'callback'])
+        ->name('extension.auth.callback');
+
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
