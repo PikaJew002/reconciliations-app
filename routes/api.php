@@ -8,6 +8,9 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-Route::post('/amazon/import', [AmazonImportController::class, 'store'])
-    ->middleware(['auth:sanctum', 'abilities:amazon:import'])
-    ->name('api.amazon.import');
+Route::middleware(['auth:sanctum', 'abilities:amazon:import'])->group(function () {
+    Route::post('/amazon/import', [AmazonImportController::class, 'store'])
+        ->name('api.amazon.import');
+    Route::post('/amazon/orders/status', [AmazonImportController::class, 'status'])
+        ->name('api.amazon.orders.status');
+});
