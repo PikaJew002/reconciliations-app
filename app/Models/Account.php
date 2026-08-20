@@ -15,8 +15,11 @@ class Account extends Model
     use SoftDeletes;
 
     public const CHECKING = 'checking';
+
     public const SAVINGS = 'savings';
+
     public const CREDIT_CARD = 'credit_card';
+
     public const CASH = 'cash';
 
     protected $fillable = [
@@ -44,6 +47,11 @@ class Account extends Model
     public function bankTransactions()
     {
         return $this->hasMany(BankTransaction::class);
+    }
+
+    public function pendingSpends()
+    {
+        return $this->hasMany(PendingSpend::class);
     }
 
     public function validationRules(): array

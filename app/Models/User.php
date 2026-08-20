@@ -44,4 +44,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Account::class);
     }
+
+    public function pendingSpends()
+    {
+        return $this->hasMany(PendingSpend::class);
+    }
 }

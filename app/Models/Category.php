@@ -92,6 +92,11 @@ class Category extends Model
         return $this->hasMany(PlannedTemplate::class);
     }
 
+    public function pendingSpends(): HasMany
+    {
+        return $this->hasMany(PendingSpend::class);
+    }
+
     public function isBill(): bool
     {
         return $this->kind === self::KIND_BILL;
@@ -113,7 +118,8 @@ class Category extends Model
             || $this->orderComponents()->exists()
             || $this->bankTransactions()->exists()
             || $this->categorizationRules()->exists()
-            || $this->plannedTemplates()->exists();
+            || $this->plannedTemplates()->exists()
+            || $this->pendingSpends()->exists();
     }
 
     public static function findOrCreateForUser(int $userId, string $kind, string $name): self

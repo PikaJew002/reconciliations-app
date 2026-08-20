@@ -11,11 +11,17 @@ class Merchant extends Model
     use HasFactory;
 
     public const RETAILER = 'retailer';
+
     public const RESTAURANT = 'restaurant';
+
     public const SERVICE = 'service';
+
     public const UTILITY = 'utility';
+
     public const FINANCIAL = 'financial';
+
     public const GOVERNMENT = 'government';
+
     public const OTHER = 'other';
 
     protected $fillable = [
@@ -50,6 +56,11 @@ class Merchant extends Model
         return $this->hasMany(BankTransaction::class);
     }
 
+    public function pendingSpends()
+    {
+        return $this->hasMany(PendingSpend::class);
+    }
+
     public function canImportOrders(): bool
     {
         return $this->supports_order_import;
@@ -76,7 +87,7 @@ class Merchant extends Model
                     self::FINANCIAL,
                     self::GOVERNMENT,
                     self::OTHER,
-                ])
+                ]),
             ],
         ];
     }

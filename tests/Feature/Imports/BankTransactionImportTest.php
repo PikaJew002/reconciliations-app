@@ -5,6 +5,7 @@ namespace Tests\Feature\Imports;
 use App\Jobs\CategorizeTransactions;
 use App\Jobs\GenerateOrderComponents;
 use App\Jobs\MatchMerchants;
+use App\Jobs\MatchPendingSpends;
 use App\Jobs\MatchPlannedOccurrences;
 use App\Jobs\MatchVenmoActivities;
 use App\Jobs\PairCreditCardPayments;
@@ -271,6 +272,7 @@ CSV);
             MatchMerchants::class,
             MatchVenmoActivities::class,
             MatchPlannedOccurrences::class,
+            MatchPendingSpends::class,
             RunReconciliation::class,
         ]);
     }

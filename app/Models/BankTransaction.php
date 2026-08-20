@@ -120,6 +120,11 @@ class BankTransaction extends Model
         return $this->hasOne(PlannedOccurrence::class);
     }
 
+    public function pendingSpend()
+    {
+        return $this->hasOne(PendingSpend::class);
+    }
+
     public function venmoActivities()
     {
         return $this->hasMany(VenmoActivity::class);

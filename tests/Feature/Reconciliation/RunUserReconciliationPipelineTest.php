@@ -22,6 +22,7 @@ use App\Services\Reconciliation\CreditCardPaymentPairingService;
 use App\Services\Reconciliation\MerchantMatcher;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
+use App\Services\Reconciliation\PendingSpendMatcher;
 use App\Services\Reconciliation\ProductMatchingService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reconciliation\TransactionCategorizationService;
@@ -223,6 +224,7 @@ class RunUserReconciliationPipelineTest extends TestCase
             app(OrderPaymentResolutionService::class),
             app(ReconciliationService::class),
             app(VenmoActivityMatcher::class),
+            app(PendingSpendMatcher::class),
         );
     }
 }
