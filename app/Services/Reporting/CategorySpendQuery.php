@@ -315,6 +315,146 @@ class CategorySpendQuery
         return Carbon::parse($value)->toDateString();
     }
 
+    /**
+     * Dated spend events for leftover window bucketing. Same sources as
+     * category totals, including unmatched pending spend, with a date on each
+     * row so callers can split one query across paycheck windows.
+     *
+     * @return list<array{
+     *     date: string,
+     *     amount: float,
+     *     classification: string,
+     *     source: string,
+     *     bank_transaction_id: ?int,
+     *     name: ?string,
+     *     category_id: ?int
+     * }>
+     */
+    public function spendEventsForUser(
+        int $userId,
+        ?CarbonInterface $from = null,
+        ?CarbonInterface $to = null,
+    ): array {
+        $groupedTransactionIds = $this->groupedTransactionIds($userId);
+        $events = [];
+
+        $spend = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->whereIn('classification', [
+                BankTransaction::CLASSIFICATION_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE,
+            ])
+            ->when(
+                $groupedTransactionIds !== [],
+                fn ($query) => $query->whereNotIn('id', $groupedTransactionIds),
+            )
+            ->tap(fn (Builder $query) => $this->applyPostedAtRange($query, $from, $to))
+            ->get(['id', 'posted_at', 'amount', 'classification', 'description', 'category_id']);
+
+        foreach ($spend as $transaction) {
+            if ($transaction->posted_at === null) {
+                continue;
+            }
+
+            $events[] = [
+                'date' => $transaction->posted_at->toDateString(),
+                'amount' => abs((float) $transaction->amount),
+                'classification' => $transaction->classification,
+                'source' => 'bank',
+                'bank_transaction_id' => (int) $transaction->id,
+                'name' => $transaction->description,
+                'category_id' => $transaction->category_id !== null ? (int) $transaction->category_id : null,
+            ];
+        }
+
+        foreach ($this->unmatchedPendingSpendsForUser($userId, $from, $to) as $pending) {
+            if ($pending->spent_at === null) {
+                continue;
+            }
+
+            if (! in_array($pending->classification, [
+                BankTransaction::CLASSIFICATION_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE,
+            ], true)) {
+                continue;
+            }
+
+            $events[] = [
+                'date' => $pending->spent_at->toDateString(),
+                'amount' => round((float) $pending->amount, 2),
+                'classification' => $pending->classification,
+                'source' => 'pending',
+                'bank_transaction_id' => null,
+                'name' => $pending->notes,
+                'category_id' => $pending->category_id !== null ? (int) $pending->category_id : null,
+            ];
+        }
+
+        $orders = Order::query()
+            ->where('user_id', $userId)
+            ->tap(fn (Builder $query) => $this->applyOrderedAtRange($query, $from, $to))
+            ->with(['components:id,order_id,amount,category_id'])
+            ->get(['id', 'ordered_at']);
+
+        foreach ($orders as $order) {
+            if ($order->ordered_at === null) {
+                continue;
+            }
+
+            foreach ($order->components as $component) {
+                $events[] = [
+                    'date' => $order->ordered_at->toDateString(),
+                    'amount' => round((float) $component->amount, 2),
+                    'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                    'source' => 'order_component',
+                    'bank_transaction_id' => null,
+                    'name' => null,
+                    'category_id' => $component->category_id !== null ? (int) $component->category_id : null,
+                ];
+            }
+        }
+
+        $closedGroups = ReimbursementGroup::query()
+            ->where('user_id', $userId)
+            ->where('status', ReimbursementGroup::STATUS_CLOSED)
+            ->tap(fn (Builder $query) => $this->applyClosedAtRange($query, $from, $to))
+            ->with('legs')
+            ->get();
+
+        foreach ($closedGroups as $group) {
+            $net = $group->net();
+
+            if ($net < 0.01) {
+                continue;
+            }
+
+            if (! in_array($group->remainder_classification, [
+                BankTransaction::CLASSIFICATION_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE,
+            ], true)) {
+                continue;
+            }
+
+            if ($group->closed_at === null) {
+                continue;
+            }
+
+            $events[] = [
+                'date' => $group->closed_at->toDateString(),
+                'amount' => round($net, 2),
+                'classification' => $group->remainder_classification,
+                'source' => 'reimbursement',
+                'bank_transaction_id' => null,
+                'name' => $group->name,
+                'category_id' => $group->remainder_category_id !== null
+                    ? (int) $group->remainder_category_id
+                    : null,
+            ];
+        }
+
+        return $events;
+    }
+
     public function awaitingReimbursementBalance(int $userId): float
     {
         return round(

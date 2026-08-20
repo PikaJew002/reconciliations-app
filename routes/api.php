@@ -17,6 +17,8 @@ Route::middleware(['auth:sanctum', 'abilities:amazon:import'])->group(function (
 });
 
 Route::middleware(['auth:sanctum', 'abilities:pending-spend:create'])->group(function () {
+    Route::get('/pending-spends/options', [PendingSpendController::class, 'options'])
+        ->name('api.pending-spends.options');
     Route::post('/pending-spends', [PendingSpendController::class, 'store'])
         ->name('api.pending-spends.store');
 });

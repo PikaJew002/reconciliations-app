@@ -4,12 +4,43 @@ namespace App\Http\Controllers\PendingSpends;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PendingSpends\StorePendingSpendRequest;
+use App\Models\Category;
+use App\Models\Merchant;
 use App\Services\Reconciliation\PendingSpendService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use InvalidArgumentException;
 
 class PendingSpendController extends Controller
 {
+    public function options(Request $request): JsonResponse
+    {
+        $userId = $request->user()->id;
+
+        $categories = Category::query()
+            ->where('user_id', $userId)
+            ->where('kind', Category::KIND_EXPENSE)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (Category $category): array => [
+                $category->name => $category->id,
+            ]);
+
+        $merchants = Merchant::query()
+            ->where('user_id', $userId)
+            ->where('supports_order_import', false)
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (Merchant $merchant): array => [
+                $merchant->name => $merchant->id,
+            ]);
+
+        return response()->json([
+            'categories' => (object) $categories->all(),
+            'merchants' => (object) $merchants->all(),
+        ]);
+    }
+
     public function store(StorePendingSpendRequest $request, PendingSpendService $service): JsonResponse
     {
         try {

@@ -221,7 +221,11 @@
         <section class="space-y-3">
             <h2 class="text-lg font-semibold">Shortcut request</h2>
             <p class="text-sm text-neutral-600">
+                <code>GET {{ endpoint }}/options</code>
+                returns expense categories and merchants as
+                <code>name → id</code>. Then
                 <code>POST {{ endpoint }}</code>
+                to create.
             </p>
             <pre
                 class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"

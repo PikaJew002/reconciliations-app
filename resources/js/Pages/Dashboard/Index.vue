@@ -55,6 +55,10 @@
                 leftover: 0,
             }),
         },
+        paycheck_leftover: {
+            type: Object,
+            default: null,
+        },
     });
 
     let queryBase = () => {
@@ -107,6 +111,30 @@
         }
 
         return `${Number(value).toFixed(1)}%`;
+    };
+
+    let formatDay = (date) => {
+        if (!date) {
+            return '—';
+        }
+
+        return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+        });
+    };
+
+    let unassignedBillsAmount = computed(() => {
+        return roundMoney(
+            (props.paycheck_leftover?.unassigned_bills ?? []).reduce(
+                (total, bill) => total + Number(bill.amount ?? 0),
+                0,
+            ),
+        );
+    });
+
+    let roundMoney = (amount) => {
+        return Math.round(Number(amount) * 100) / 100;
     };
 
     let differenceClass = (value) => {
@@ -303,6 +331,55 @@
                 </button>
             </div>
         </div>
+
+        <section
+            v-if="paycheck_leftover"
+            class="space-y-2 rounded border px-4 py-3"
+        >
+            <p class="text-sm text-neutral-600">Leftover until next paycheck</p>
+            <p
+                v-if="paycheck_leftover.remaining >= 0"
+                class="text-2xl font-semibold tabular-nums"
+                :class="differenceClass(paycheck_leftover.remaining)"
+            >
+                {{ formatMoney(paycheck_leftover.remaining) }} remaining
+            </p>
+            <p
+                v-else
+                class="text-2xl font-semibold tabular-nums text-red-700"
+            >
+                {{ formatMoney(-paycheck_leftover.remaining) }} into the next
+                paycheck
+            </p>
+            <p class="text-sm text-neutral-600">
+                Brought forward
+                {{ formatMoney(paycheck_leftover.brought_forward) }}
+                + {{ paycheck_leftover.paycheck.name }} leftover
+                {{ formatMoney(paycheck_leftover.planned_leftover) }}
+                − spent {{ formatMoney(paycheck_leftover.spent) }}
+            </p>
+            <p
+                v-if="paycheck_leftover.next_paycheck"
+                class="text-sm text-neutral-600"
+            >
+                Until
+                {{ formatDay(paycheck_leftover.next_paycheck.date) }}
+                paycheck
+                <span v-if="paycheck_leftover.days_remaining !== null">
+                    ({{ paycheck_leftover.days_remaining }}
+                    {{
+                        paycheck_leftover.days_remaining === 1 ? 'day' : 'days'
+                    }})
+                </span>
+            </p>
+            <p
+                v-if="unassignedBillsAmount > 0"
+                class="text-sm text-amber-800"
+            >
+                {{ formatMoney(unassignedBillsAmount) }} of unplanned bills in
+                this window
+            </p>
+        </section>
 
         <div class="space-y-3 rounded border px-4 py-3">
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

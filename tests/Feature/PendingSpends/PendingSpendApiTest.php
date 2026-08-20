@@ -150,6 +150,71 @@ class PendingSpendApiTest extends TestCase
         $this->assertSame(0, PendingSpend::query()->count());
     }
 
+    public function test_unauthenticated_options_requests_are_rejected(): void
+    {
+        $this->getJson(route('api.pending-spends.options'))
+            ->assertUnauthorized();
+    }
+
+    public function test_tokens_without_create_ability_cannot_list_options(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['amazon:import']);
+
+        $this->getJson(route('api.pending-spends.options'))
+            ->assertForbidden();
+    }
+
+    public function test_options_lists_expense_categories_and_merchants_as_name_to_id(): void
+    {
+        $context = $this->context();
+        $groceries = Category::factory()->for($context['user'])->expense()->create([
+            'name' => 'Groceries',
+        ]);
+        Category::factory()->for($context['user'])->bill()->create(['name' => 'Electric']);
+        Category::factory()->for($context['user'])->income()->create(['name' => 'Paycheck']);
+        Category::factory()->expense()->create(['name' => 'Someone else dining']);
+
+        Merchant::factory()->create([
+            'user_id' => $context['user']->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+            'supports_order_import' => true,
+        ]);
+        Merchant::factory()->create([
+            'name' => 'Other merchant',
+            'supports_order_import' => false,
+        ]);
+        $zebra = Merchant::factory()->create([
+            'user_id' => $context['user']->id,
+            'name' => 'Zebra Cafe',
+            'supports_order_import' => false,
+        ]);
+
+        Sanctum::actingAs($context['user'], ['pending-spend:create']);
+
+        $this->getJson(route('api.pending-spends.options'))
+            ->assertOk()
+            ->assertExactJson([
+                'categories' => [
+                    'Dining' => $context['category']->id,
+                    'Groceries' => $groceries->id,
+                ],
+                'merchants' => [
+                    "Buc-ee's" => $context['merchant']->id,
+                    'Zebra Cafe' => $zebra->id,
+                ],
+            ]);
+    }
+
+    public function test_options_return_empty_objects_when_nothing_is_eligible(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['pending-spend:create']);
+
+        $this->getJson(route('api.pending-spends.options'))
+            ->assertOk()
+            ->assertContent('{"categories":{},"merchants":{}}');
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -18,6 +18,7 @@ use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
+use App\Http\Controllers\Plans\LeftoverController;
 use App\Http\Controllers\Plans\PlannedOccurrenceController;
 use App\Http\Controllers\Plans\PlannedTemplateController;
 use App\Http\Controllers\Products\ProductController;
@@ -54,6 +55,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/api/leftover/current', [LeftoverController::class, 'current'])
+        ->name('api.leftover.current');
+    Route::get('/api/leftover', [LeftoverController::class, 'index'])
+        ->name('api.leftover.index');
 
     Route::get('/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
     Route::post('/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
