@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Accounts\AccountController;
 use App\Http\Controllers\Accounts\AccountImportController;
+use App\Http\Controllers\ApiTokens\ApiTokenController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ExtensionAuthController;
 use App\Http\Controllers\Auth\RegisteredUserController;
@@ -53,6 +54,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
+    Route::post('/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
+    Route::delete('/api-tokens/{token}', [ApiTokenController::class, 'destroy'])
+        ->whereNumber('token')
+        ->name('api-tokens.destroy');
 
     Route::post('/onboarding/hide', [OnboardingController::class, 'hide'])->name('onboarding.hide');
     Route::post('/onboarding/show', [OnboardingController::class, 'show'])->name('onboarding.show');
