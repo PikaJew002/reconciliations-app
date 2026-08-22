@@ -116,6 +116,30 @@ class MerchantMatcher
         return $this->findMerchantByExtractedNameRule($userId, $extracted['normalized_name']);
     }
 
+    public function proposedRuleMatches(
+        BankTransaction $transaction,
+        string $matchMode,
+        string $pattern,
+    ): bool {
+        $pattern = MerchantMatchingRule::normalizePattern($pattern);
+
+        if ($pattern === '') {
+            return false;
+        }
+
+        if ($matchMode === MerchantMatchingRule::MATCH_CONTAINS) {
+            return str_contains($this->normalizedDescription($transaction), $pattern);
+        }
+
+        if ($matchMode === MerchantMatchingRule::MATCH_EXTRACTED_NAME) {
+            $extracted = $this->extractName($transaction);
+
+            return $extracted !== null && $extracted['normalized_name'] === $pattern;
+        }
+
+        return false;
+    }
+
     public function extractedNameMatchesMerchant(Merchant $merchant, string $extractedNormalizedName): bool
     {
         if ($merchant->normalized_name === $extractedNormalizedName) {

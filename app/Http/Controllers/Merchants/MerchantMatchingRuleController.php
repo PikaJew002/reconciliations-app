@@ -3,18 +3,36 @@
 namespace App\Http\Controllers\Merchants;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Merchants\CheckMerchantMatchingRuleRequest;
 use App\Http\Requests\Merchants\StoreMerchantMatchingRuleRequest;
 use App\Http\Requests\Merchants\UpdateMerchantMatchingRuleRequest;
 use App\Models\Merchant;
 use App\Models\MerchantMatchingRule;
 use App\Services\Merchants\MerchantBrowseService;
+use App\Services\Merchants\MerchantMatchingRulePreviewService;
 use App\Services\Reconciliation\MerchantMatcher;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class MerchantMatchingRuleController extends Controller
 {
+    public function check(
+        CheckMerchantMatchingRuleRequest $request,
+        Merchant $merchant,
+        MerchantMatchingRulePreviewService $preview,
+    ): JsonResponse {
+        $validated = $request->validated();
+
+        return response()->json($preview->preview(
+            $request->user()->id,
+            $merchant,
+            $validated['match_mode'],
+            $validated['pattern'],
+        ));
+    }
+
     public function store(
         StoreMerchantMatchingRuleRequest $request,
         Merchant $merchant,

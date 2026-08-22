@@ -1,6 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+    import axios from 'axios';
     import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -42,6 +43,10 @@
         pattern: '',
     });
 
+    let checkProcessing = ref(false);
+    let checkResult = ref(null);
+    let checkError = ref('');
+
     watch(
         () => props.filters.q,
         (value) => {
@@ -53,6 +58,14 @@
         () => props.merchant.name,
         (value) => {
             nameForm.name = value;
+        },
+    );
+
+    watch(
+        () => [ruleForm.match_mode, ruleForm.pattern],
+        () => {
+            checkResult.value = null;
+            checkError.value = '';
         },
     );
 
@@ -73,8 +86,41 @@
 
     let submitRule = () => {
         ruleForm.post(`/merchants/${props.merchant.id}/rules`, {
-            onSuccess: () => ruleForm.reset('pattern'),
+            onSuccess: () => {
+                ruleForm.reset('pattern');
+                checkResult.value = null;
+                checkError.value = '';
+            },
         });
+    };
+
+    let checkRule = async () => {
+        if (checkProcessing.value || !ruleForm.pattern.trim()) {
+            return;
+        }
+
+        checkProcessing.value = true;
+        checkError.value = '';
+
+        try {
+            let { data } = await axios.post(
+                `/merchants/${props.merchant.id}/rules/check`,
+                {
+                    match_mode: ruleForm.match_mode,
+                    pattern: ruleForm.pattern,
+                },
+            );
+            checkResult.value = data;
+        } catch (error) {
+            checkResult.value = null;
+            checkError.value =
+                error.response?.data?.errors?.pattern?.[0] ||
+                error.response?.data?.errors?.match_mode?.[0] ||
+                error.response?.data?.message ||
+                'Could not check this rule.';
+        } finally {
+            checkProcessing.value = false;
+        }
     };
 
     let toggleRule = (rule) => {
@@ -251,6 +297,18 @@
                     />
                 </div>
                 <button
+                    type="button"
+                    class="btn inline-flex items-center gap-2 rounded border px-4 text-sm"
+                    :disabled="checkProcessing || !ruleForm.pattern.trim()"
+                    @click="checkRule"
+                >
+                    <span
+                        v-if="checkProcessing"
+                        class="inline-block size-3 animate-spin rounded-full border border-neutral-400 border-t-transparent"
+                    />
+                    {{ checkProcessing ? 'Checking…' : 'Check rule' }}
+                </button>
+                <button
                     type="submit"
                     class="btn rounded border px-4 text-sm"
                     :disabled="ruleForm.processing"
@@ -263,7 +321,160 @@
                 >
                     {{ ruleForm.errors.pattern || ruleForm.errors.match_mode }}
                 </p>
+                <p v-if="checkError" class="w-full text-sm text-red-600">
+                    {{ checkError }}
+                </p>
             </form>
+
+            <div
+                v-if="checkResult"
+                class="space-y-3 rounded border px-4 py-3 text-sm"
+            >
+                <p
+                    v-if="checkResult.duplicate_rule"
+                    class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900"
+                >
+                    This pattern is already used by
+                    {{ checkResult.duplicate_rule.merchant_name }}. Adding the
+                    rule will be rejected.
+                </p>
+                <p class="text-neutral-600">
+                    Saving this rule will not reassign transactions that already
+                    have a merchant.
+                </p>
+
+                <div
+                    class="rounded border px-3 py-2"
+                    :class="
+                        checkResult.conflict_count > 0
+                            ? 'border-amber-200 bg-amber-50'
+                            : 'border-neutral-200'
+                    "
+                >
+                    <p class="font-medium">
+                        {{ checkResult.conflict_count }}
+                        {{
+                            checkResult.conflict_count === 1
+                                ? 'transaction assigned to another merchant would match'
+                                : 'transactions assigned to other merchants would match'
+                        }}
+                    </p>
+                    <ul
+                        v-if="checkResult.conflicts.length"
+                        class="mt-2 divide-y"
+                    >
+                        <li
+                            v-for="transaction in checkResult.conflicts"
+                            :key="transaction.id"
+                            class="flex items-start justify-between gap-4 py-2"
+                        >
+                            <div class="min-w-0">
+                                <p class="font-medium">
+                                    {{ transaction.description }}
+                                </p>
+                                <p class="text-neutral-600">
+                                    {{ formatDate(transaction.posted_at) }}
+                                    <template v-if="transaction.merchant_name">
+                                        · {{ transaction.merchant_name }}
+                                    </template>
+                                    <template v-if="transaction.account">
+                                        · {{ transaction.account.name }}
+                                    </template>
+                                </p>
+                            </div>
+                            <p class="shrink-0 font-medium">
+                                {{ formatMoney(transaction.amount) }}
+                            </p>
+                        </li>
+                    </ul>
+                    <p
+                        v-if="checkResult.truncated?.conflicts"
+                        class="mt-2 text-neutral-600"
+                    >
+                        Showing the newest 50 matching transactions.
+                    </p>
+                </div>
+
+                <div class="rounded border border-neutral-200 px-3 py-2">
+                    <p class="font-medium">
+                        {{ checkResult.missed_count }}
+                        of this merchant's transactions would not match
+                    </p>
+                    <ul
+                        v-if="checkResult.missed.length"
+                        class="mt-2 divide-y"
+                    >
+                        <li
+                            v-for="transaction in checkResult.missed"
+                            :key="transaction.id"
+                            class="flex items-start justify-between gap-4 py-2"
+                        >
+                            <div class="min-w-0">
+                                <p class="font-medium">
+                                    {{ transaction.description }}
+                                </p>
+                                <p class="text-neutral-600">
+                                    {{ formatDate(transaction.posted_at) }}
+                                    <template v-if="transaction.account">
+                                        · {{ transaction.account.name }}
+                                    </template>
+                                </p>
+                            </div>
+                            <p class="shrink-0 font-medium">
+                                {{ formatMoney(transaction.amount) }}
+                            </p>
+                        </li>
+                    </ul>
+                    <p
+                        v-if="checkResult.truncated?.missed"
+                        class="mt-2 text-neutral-600"
+                    >
+                        Showing the newest 50 matching transactions.
+                    </p>
+                </div>
+
+                <div class="rounded border border-neutral-200 px-3 py-2">
+                    <p class="font-medium">
+                        {{ checkResult.unassigned_count }}
+                        {{
+                            checkResult.unassigned_count === 1
+                                ? 'unassigned transaction would match'
+                                : 'unassigned transactions would match'
+                        }}
+                    </p>
+                    <ul
+                        v-if="checkResult.unassigned.length"
+                        class="mt-2 divide-y"
+                    >
+                        <li
+                            v-for="transaction in checkResult.unassigned"
+                            :key="transaction.id"
+                            class="flex items-start justify-between gap-4 py-2"
+                        >
+                            <div class="min-w-0">
+                                <p class="font-medium">
+                                    {{ transaction.description }}
+                                </p>
+                                <p class="text-neutral-600">
+                                    {{ formatDate(transaction.posted_at) }}
+                                    <template v-if="transaction.account">
+                                        · {{ transaction.account.name }}
+                                    </template>
+                                </p>
+                            </div>
+                            <p class="shrink-0 font-medium">
+                                {{ formatMoney(transaction.amount) }}
+                            </p>
+                        </li>
+                    </ul>
+                    <p
+                        v-if="checkResult.truncated?.unassigned"
+                        class="mt-2 text-neutral-600"
+                    >
+                        Showing the newest 50 matching transactions.
+                    </p>
+                </div>
+            </div>
 
             <div v-if="rules.length === 0" class="text-sm text-neutral-600">
                 No matching rules yet. Add one above, or from a transaction

@@ -168,6 +168,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/merchants/merge', [MerchantController::class, 'merge'])->name('merchants.merge');
     Route::get('/merchants/{merchant}', [MerchantController::class, 'show'])->name('merchants.show');
     Route::patch('/merchants/{merchant}', [MerchantController::class, 'update'])->name('merchants.update');
+    Route::post('/merchants/{merchant}/rules/check', [MerchantMatchingRuleController::class, 'check'])
+        ->name('merchants.rules.check');
     Route::post('/merchants/{merchant}/rules', [MerchantMatchingRuleController::class, 'store'])
         ->name('merchants.rules.store');
     Route::patch('/merchants/{merchant}/rules/{rule}', [MerchantMatchingRuleController::class, 'update'])
