@@ -165,6 +165,7 @@ Route::middleware('auth')->group(function () {
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.show');
 
+    Route::post('/merchants/merge', [MerchantController::class, 'merge'])->name('merchants.merge');
     Route::get('/merchants/{merchant}', [MerchantController::class, 'show'])->name('merchants.show');
     Route::patch('/merchants/{merchant}', [MerchantController::class, 'update'])->name('merchants.update');
     Route::post('/merchants/{merchant}/rules', [MerchantMatchingRuleController::class, 'store'])

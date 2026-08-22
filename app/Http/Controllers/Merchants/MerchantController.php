@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Merchants;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Merchants\MergeMerchantsRequest;
 use App\Http\Requests\Merchants\UpdateMerchantRequest;
 use App\Models\Merchant;
 use App\Services\Merchants\MerchantBrowseService;
+use App\Services\Merchants\MerchantMergeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -41,5 +43,17 @@ class MerchantController extends Controller
         return redirect()
             ->route('merchants.show', $merchant)
             ->with('success', 'Merchant name updated.');
+    }
+
+    public function merge(MergeMerchantsRequest $request, MerchantMergeService $merge): RedirectResponse
+    {
+        $survivor = $merge->merge(
+            $request->user()->id,
+            $request->validated('merchant_ids'),
+        );
+
+        return redirect()
+            ->route('orders.index')
+            ->with('success', "Merged merchants into {$survivor->name}.");
     }
 }
