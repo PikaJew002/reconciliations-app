@@ -24,6 +24,6 @@ class AccountPolicy
 
     public function update(User $user, Account $account): bool
     {
-        return $user->id === $account->user_id;
+        return $user->id === $account->user_id && ! $account->isOffBook();
     }
 }

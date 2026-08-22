@@ -43,7 +43,7 @@ class AmazonImportController extends Controller
             'user_id' => $request->user()->id,
             'source' => 'amazon',
             'type' => 'orders',
-            'original_filename' => 'amazon-scrape.json',
+            'original_filename' => 'amazon-scrape-'.now()->format('Y-m-d-His').'.json',
             'storage_path' => $storagePath,
             'status' => 'pending',
             'metadata' => $metadata,

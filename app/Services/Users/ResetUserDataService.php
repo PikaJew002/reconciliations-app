@@ -10,7 +10,9 @@ use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
+use App\Models\MerchantMatchingRule;
 use App\Models\Order;
+use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedOccurrenceMatchRun;
 use App\Models\PlannedTemplate;
@@ -22,6 +24,7 @@ use App\Models\TransactionCategorizationRule;
 use App\Models\TransactionTransferLink;
 use App\Models\User;
 use App\Models\VenmoActivity;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -44,6 +47,8 @@ class ResetUserDataService
             $userId = $user->id;
 
             TransactionCategorizationRule::query()->where('user_id', $userId)->delete();
+            MerchantMatchingRule::query()->where('user_id', $userId)->delete();
+            PendingSpend::query()->where('user_id', $userId)->delete();
             PlannedOccurrence::query()->where('user_id', $userId)->delete();
             PlannedTemplate::query()->where('user_id', $userId)->delete();
             PlannedOccurrenceMatchRun::query()->where('user_id', $userId)->delete();
@@ -88,7 +93,7 @@ class ResetUserDataService
     }
 
     /**
-     * @param  \Illuminate\Support\Collection<int, ImportBatch>  $batches
+     * @param  Collection<int, ImportBatch>  $batches
      */
     protected function deleteImportFiles($batches): int
     {

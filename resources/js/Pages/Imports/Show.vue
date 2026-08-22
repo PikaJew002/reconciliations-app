@@ -21,6 +21,20 @@
     );
     let pollId = null;
 
+    let formatImportedAt = (value) => {
+        if (!value) {
+            return '—';
+        }
+
+        let date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleString();
+    };
+
     onMounted(() => {
         if (!isInProgress.value) {
             return;
@@ -76,6 +90,10 @@
         </div>
 
         <dl class="space-y-3 rounded border p-4 text-sm">
+            <div class="flex justify-between gap-4">
+                <dt class="text-neutral-600">Imported</dt>
+                <dd>{{ formatImportedAt(batch.created_at) }}</dd>
+            </div>
             <div class="flex justify-between gap-4">
                 <dt class="text-neutral-600">Source</dt>
                 <dd>{{ batch.source }}</dd>

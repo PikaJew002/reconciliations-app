@@ -173,6 +173,37 @@ class OnboardingPayloadTest extends TestCase
                 ->where('onboarding.steps.3.complete', false));
     }
 
+    public function test_off_book_account_does_not_complete_setup_steps(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->offBook()->create();
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'status' => 'completed',
+            'record_count' => 1,
+        ]);
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'metadata' => [
+                'source' => 'non_bank_tender',
+                'kind' => 'gift_card',
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->get('/')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('onboarding.steps.0.complete', false)
+                ->where('onboarding.steps.0.href', '/accounts/create')
+                ->where('onboarding.steps.1.complete', false)
+                ->where('onboarding.steps.1.href', '/accounts/create'));
+    }
+
     public function test_existing_user_with_bank_orders_and_categories_is_auto_hidden(): void
     {
         $user = User::factory()->create();

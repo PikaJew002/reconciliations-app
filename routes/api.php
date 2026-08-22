@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Orders\AmazonImportController;
+use App\Http\Controllers\PendingSpends\PendingSpendController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -13,4 +14,11 @@ Route::middleware(['auth:sanctum', 'abilities:amazon:import'])->group(function (
         ->name('api.amazon.import');
     Route::post('/amazon/orders/status', [AmazonImportController::class, 'status'])
         ->name('api.amazon.orders.status');
+});
+
+Route::middleware(['auth:sanctum', 'abilities:pending-spend:create'])->group(function () {
+    Route::get('/pending-spends/options', [PendingSpendController::class, 'options'])
+        ->name('api.pending-spends.options');
+    Route::post('/pending-spends', [PendingSpendController::class, 'store'])
+        ->name('api.pending-spends.store');
 });

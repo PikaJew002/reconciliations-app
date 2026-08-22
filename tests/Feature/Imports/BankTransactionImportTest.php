@@ -5,6 +5,7 @@ namespace Tests\Feature\Imports;
 use App\Jobs\CategorizeTransactions;
 use App\Jobs\GenerateOrderComponents;
 use App\Jobs\MatchMerchants;
+use App\Jobs\MatchPendingSpends;
 use App\Jobs\MatchPlannedOccurrences;
 use App\Jobs\MatchVenmoActivities;
 use App\Jobs\PairCreditCardPayments;
@@ -64,6 +65,28 @@ class BankTransactionImportTest extends TestCase
         $user = User::factory()->create();
         $otherUser = User::factory()->create();
         $account = Account::factory()->create(['user_id' => $otherUser->id]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.index', $account))
+            ->assertForbidden();
+
+        $this->actingAs($user)->post(route('accounts.imports.store', $account), [
+            'file' => UploadedFile::fake()->createWithContent(
+                'chase.csv',
+                "Date,Description,Amount\n01/01/2026,WALMART,-12.34\n",
+            ),
+        ])->assertForbidden();
+
+        $this->assertDatabaseCount('import_batches', 0);
+    }
+
+    public function test_authenticated_user_cannot_import_into_off_book_account(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->offBook()->create();
 
         $this->actingAs($user)
             ->get(route('accounts.imports.index', $account))
@@ -271,6 +294,7 @@ CSV);
             MatchMerchants::class,
             MatchVenmoActivities::class,
             MatchPlannedOccurrences::class,
+            MatchPendingSpends::class,
             RunReconciliation::class,
         ]);
     }

@@ -297,7 +297,7 @@ class ReconciliationReviewService
                             'last_four' => $payment['last_four'],
                             'amount' => $payment['amount'],
                             'kind' => $payment['kind'],
-                            'requires_bank_transaction' => in_array($payment['kind'], ['card', 'unknown'], true),
+                            'requires_bank_transaction' => ! OrderPaymentResolutionService::isOffBookKind($payment['kind']),
                             'candidate_transactions' => $componentsBalanced
                                 ? $this->paymentResolution->candidateTransactionsForPayment($order, $payment)
                                 : [],

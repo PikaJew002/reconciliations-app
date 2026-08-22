@@ -19,23 +19,12 @@ class ImporterResolver
         return match ([$batch->source, $batch->type]) {
             ['bank', 'transactions'] => $this->resolveBankTransactionImporter($batch),
             ['walmart', 'orders'] => app(WalmartOrderImporter::class),
-            ['amazon', 'orders'] => $this->resolveAmazonOrderImporter($batch),
+            ['amazon', 'orders'] => app(AmazonScrapeOrderImporter::class),
             ['venmo', 'activity'] => app(VenmoActivityImporter::class),
             default => throw new InvalidArgumentException(
                 "No importer registered for source [{$batch->source}] and type [{$batch->type}].",
             ),
         };
-    }
-
-    protected function resolveAmazonOrderImporter(ImportBatch $batch): Importer
-    {
-        $format = $batch->metadata['format'] ?? null;
-
-        if ($format === 'scrape_json' || str_ends_with((string) $batch->storage_path, '.json')) {
-            return app(AmazonScrapeOrderImporter::class);
-        }
-
-        return app(AmazonOrderImporter::class);
     }
 
     protected function resolveBankTransactionImporter(ImportBatch $batch): Importer

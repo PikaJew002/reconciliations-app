@@ -56,6 +56,7 @@ class ProcessImportBatch implements ShouldQueue
             $jobs[] = new MatchPlannedOccurrences($batch->user_id);
         }
 
+        $jobs[] = new MatchPendingSpends($batch->user_id, $batch->id);
         $jobs[] = new RunReconciliation($batch->user_id);
 
         Bus::chain($jobs)->dispatch();

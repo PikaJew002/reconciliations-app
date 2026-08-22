@@ -207,8 +207,15 @@
                         · •••• {{ account.last_four }}</template
                     >
                 </p>
+                <p
+                    v-if="account.is_off_book"
+                    class="mt-2 max-w-xl text-sm text-neutral-600"
+                >
+                    Gift cards, store balances, and other payments that did not
+                    post to an imported account.
+                </p>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <div v-if="!account.is_off_book" class="flex flex-wrap gap-2">
                 <Link
                     :href="`/accounts/${account.id}/imports`"
                     class="btn rounded border px-4 text-sm text-neutral-700 hover:bg-neutral-100"
@@ -236,7 +243,7 @@
             <p class="mt-1 text-neutral-600">
                 {{ account.transaction_count }} transactions
             </p>
-            <p v-if="nearRecentEdge" class="mt-2 text-amber-800">
+            <p v-if="nearRecentEdge && !account.is_off_book" class="mt-2 text-amber-800">
                 Coverage ends near today. Import newer bank history if recent
                 multi-transaction matches are being skipped.
             </p>

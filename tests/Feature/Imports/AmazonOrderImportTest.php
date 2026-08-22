@@ -2,13 +2,10 @@
 
 namespace Tests\Feature\Imports;
 
-use App\Jobs\ProcessImportBatch;
 use App\Models\ImportBatch;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -36,47 +33,40 @@ class AmazonOrderImportTest extends TestCase
                 ->has('batches', 0));
     }
 
-    public function test_authenticated_user_can_queue_an_amazon_import(): void
+    public function test_amazon_imports_lists_created_at(): void
     {
-        Storage::fake('local');
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'original_filename' => 'amazon-scrape-2026-08-21-223841.json',
+            'created_at' => '2026-08-21 22:38:41',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.index', 'amazon'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Imports')
+                ->has('batches', 1)
+                ->where('batches.0.id', $batch->id)
+                ->where('batches.0.original_filename', 'amazon-scrape-2026-08-21-223841.json')
+                ->where('batches.0.created_at', $batch->created_at->toJSON()));
+    }
+
+    public function test_amazon_csv_upload_route_is_gone(): void
+    {
         Queue::fake();
 
         $user = User::factory()->create();
 
-        $summary = UploadedFile::fake()->createWithContent(
-            'amazon_order_history_order_summary.csv',
-            "order id,date,total,shipping,gift,tax,payments\n".
-            "114-0885735-8288246,8/7/26,7.39,0,,0.42,Mastercard ending in 2525: 2026-08-07: \$7.39;\n",
-        );
+        $this->actingAs($user)
+            ->post('/orders/amazon/imports')
+            ->assertNotFound();
 
-        $items = UploadedFile::fake()->createWithContent(
-            'amazon_order_history_item_details.csv',
-            "order id,quantity,description,price,ASIN\n".
-            "114-0885735-8288246,1,Carabiner,\$6.97 ,B0B6R34RD4\n",
-        );
-
-        $response = $this->actingAs($user)->post(route('orders.imports.store', 'amazon'), [
-            'summary_file' => $summary,
-            'items_file' => $items,
-        ]);
-
-        $batch = ImportBatch::query()->first();
-
-        $this->assertNotNull($batch);
-        $this->assertSame($user->id, $batch->user_id);
-        $this->assertSame('amazon', $batch->source);
-        $this->assertSame('orders', $batch->type);
-        $this->assertSame('pending', $batch->status);
-        $this->assertStringEndsWith('/summary.csv', $batch->storage_path);
-        $this->assertStringEndsWith('/items.csv', $batch->metadata['items_path']);
-        Storage::disk('local')->assertExists($batch->storage_path);
-        Storage::disk('local')->assertExists($batch->metadata['items_path']);
-
-        Queue::assertPushed(ProcessImportBatch::class, function (ProcessImportBatch $job) use ($batch) {
-            return $job->importBatch->is($batch);
-        });
-
-        $response->assertRedirect(route('orders.imports.show', ['amazon', $batch]));
+        $this->assertSame(0, ImportBatch::query()->count());
+        Queue::assertNothingPushed();
     }
 
     public function test_authenticated_user_can_view_amazon_import_batch(): void
@@ -86,7 +76,7 @@ class AmazonOrderImportTest extends TestCase
             'user_id' => $user->id,
             'source' => 'amazon',
             'type' => 'orders',
-            'original_filename' => 'amazon.csv',
+            'original_filename' => 'amazon-scrape-2026-08-21-223841.json',
         ]);
 
         $this->actingAs($user)
@@ -95,6 +85,8 @@ class AmazonOrderImportTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Imports/Show')
                 ->where('batch.id', $batch->id)
+                ->where('batch.original_filename', 'amazon-scrape-2026-08-21-223841.json')
+                ->where('batch.created_at', $batch->created_at->toJSON())
                 ->where('breadcrumbs.0.label', 'Orders')
                 ->where('breadcrumbs.1.label', 'Amazon')
                 ->where('breadcrumbs.1.href', route('orders.show', 'amazon'))
@@ -115,25 +107,5 @@ class AmazonOrderImportTest extends TestCase
         $this->actingAs($user)
             ->get(route('orders.imports.show', ['amazon', $batch]))
             ->assertNotFound();
-    }
-
-    public function test_both_csv_files_are_required(): void
-    {
-        Storage::fake('local');
-        Queue::fake();
-
-        $user = User::factory()->create();
-
-        $summary = UploadedFile::fake()->createWithContent(
-            'summary.csv',
-            "order id,date,total,gift,tax,payments\n",
-        );
-
-        $this->actingAs($user)->post(route('orders.imports.store', 'amazon'), [
-            'summary_file' => $summary,
-        ])->assertSessionHasErrors('items_file');
-
-        $this->assertSame(0, ImportBatch::query()->count());
-        Queue::assertNothingPushed();
     }
 }

@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\User;
 use App\Services\Imports\ImporterResolver;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +18,13 @@ use Tests\TestCase;
 class AmazonScrapeImportTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
+    }
 
     public function test_unauthenticated_requests_are_rejected(): void
     {
@@ -36,6 +44,7 @@ class AmazonScrapeImportTest extends TestCase
     {
         Storage::fake('local');
         Queue::fake();
+        Carbon::setTestNow(Carbon::parse('2026-08-21 22:38:41'));
 
         $user = User::factory()->create();
         Sanctum::actingAs($user, ['amazon:import']);
@@ -51,7 +60,7 @@ class AmazonScrapeImportTest extends TestCase
         $this->assertSame('amazon', $batch->source);
         $this->assertSame('orders', $batch->type);
         $this->assertSame('pending', $batch->status);
-        $this->assertSame('amazon-scrape.json', $batch->original_filename);
+        $this->assertSame('amazon-scrape-2026-08-21-223841.json', $batch->original_filename);
         $this->assertSame('scrape_json', $batch->metadata['format']);
         $this->assertSame('2026-08-17T03:29:22.995Z', $batch->metadata['scraped_at']);
         $this->assertStringEndsWith('.json', $batch->storage_path);

@@ -2,9 +2,9 @@
 
 namespace App\Services\Reconciliation;
 
-use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\Order;
+use App\Services\Accounts\OffBookAccountService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -12,8 +12,54 @@ use RuntimeException;
 
 class OrderPaymentResolutionService
 {
+    public const KIND_CARD = 'card';
+
+    public const KIND_GIFT_CARD = 'gift_card';
+
+    public const KIND_CASH = 'cash';
+
+    public const KIND_OTHER = 'other';
+
+    public const KIND_WALMART_BALANCE = 'walmart_balance';
+
+    public const KIND_UNKNOWN = 'unknown';
+
+    /**
+     * @return list<string>
+     */
+    public static function paymentKinds(): array
+    {
+        return [
+            self::KIND_CARD,
+            self::KIND_GIFT_CARD,
+            self::KIND_CASH,
+            self::KIND_OTHER,
+            self::KIND_WALMART_BALANCE,
+            self::KIND_UNKNOWN,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function offBookKinds(): array
+    {
+        return [
+            self::KIND_GIFT_CARD,
+            self::KIND_CASH,
+            self::KIND_OTHER,
+            self::KIND_WALMART_BALANCE,
+        ];
+    }
+
+    public static function isOffBookKind(string $kind): bool
+    {
+        return in_array($kind, self::offBookKinds(), true);
+    }
+
     public function __construct(
         protected ReconciliationService $reconciliation,
+        protected OffBookAccountService $offBookAccounts,
         protected int $dateWindowDays = 7,
     ) {}
 
@@ -92,7 +138,7 @@ class OrderPaymentResolutionService
 
                 $kind = $resolution['kind'] ?? $payment['kind'];
                 $payment = [...$payment, 'kind' => $kind];
-                $requiresBankTx = in_array($kind, ['card', 'unknown'], true);
+                $requiresBankTx = ! self::isOffBookKind($kind);
 
                 if ($requiresBankTx) {
                     $transactionId = $resolution['bank_transaction_id'];
@@ -327,10 +373,8 @@ class OrderPaymentResolutionService
             return false;
         }
 
-        $nonBankKinds = ['gift_card', 'walmart_balance'];
-
         foreach ($payments as $payment) {
-            if (! in_array($payment['kind'], $nonBankKinds, true)) {
+            if (! self::isOffBookKind($payment['kind'])) {
                 return false;
             }
 
@@ -364,7 +408,7 @@ class OrderPaymentResolutionService
      */
     public function candidateTransactionsForPayment(Order $order, array $payment): array
     {
-        if (! in_array($payment['kind'], ['card', 'unknown'], true)) {
+        if (self::isOffBookKind($payment['kind'])) {
             return [];
         }
 
@@ -412,7 +456,7 @@ class OrderPaymentResolutionService
      */
     protected function createNonBankTenderTransaction(Order $order, array $payment, float $amount): BankTransaction
     {
-        $account = $this->resolveAccountForSynthetic($order);
+        $account = $this->offBookAccounts->ensureForUser($order->user_id);
 
         return BankTransaction::query()->create([
             'user_id' => $order->user_id,
@@ -435,49 +479,6 @@ class OrderPaymentResolutionService
                 'order_id' => $order->id,
             ],
         ]);
-    }
-
-    protected function resolveAccountForSynthetic(Order $order): Account
-    {
-        $accountId = $order->importBatch?->metadata['account_id'] ?? null;
-
-        if ($accountId) {
-            $account = Account::query()
-                ->where('user_id', $order->user_id)
-                ->find($accountId);
-
-            if ($account) {
-                return $account;
-            }
-        }
-
-        $fromTransaction = BankTransaction::query()
-            ->where('user_id', $order->user_id)
-            ->whereNotNull('account_id')
-            ->latest('id')
-            ->first();
-
-        if ($fromTransaction?->account_id) {
-            $account = Account::query()
-                ->where('user_id', $order->user_id)
-                ->find($fromTransaction->account_id);
-
-            if ($account) {
-                return $account;
-            }
-        }
-
-        $account = Account::query()
-            ->where('user_id', $order->user_id)
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->first();
-
-        if (! $account) {
-            throw new RuntimeException('No account available for non-bank tender transaction.');
-        }
-
-        return $account;
     }
 
     protected function classifyPaymentKind(string $ending, ?string $lastFour): string
@@ -513,10 +514,14 @@ class OrderPaymentResolutionService
             return;
         }
 
+        $offBookChoices = [self::KIND_GIFT_CARD, self::KIND_CASH, self::KIND_OTHER];
+
         $allowedOverrides = [
-            'card' => ['gift_card'],
-            'unknown' => ['gift_card', 'card'],
-            'gift_card' => ['card'],
+            self::KIND_CARD => $offBookChoices,
+            self::KIND_UNKNOWN => [...$offBookChoices, self::KIND_CARD],
+            self::KIND_GIFT_CARD => [self::KIND_CARD, self::KIND_CASH, self::KIND_OTHER],
+            self::KIND_CASH => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_OTHER],
+            self::KIND_OTHER => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_CASH],
         ];
 
         $allowed = $allowedOverrides[$currentKind] ?? [];

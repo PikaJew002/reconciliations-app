@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
-    import { ref, watch } from 'vue';
+    import { Link, router, usePage } from '@inertiajs/vue3';
+    import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -24,7 +24,12 @@
         },
     });
 
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
+
     let search = ref(props.filters.q ?? '');
+    let selectedIds = ref([]);
+    let selectedNames = ref({});
 
     watch(
         () => props.filters.q,
@@ -51,6 +56,65 @@
 
         return value;
     };
+
+    let isSelected = (id) => selectedIds.value.includes(id);
+
+    let toggleSelected = (merchant) => {
+        if (isSelected(merchant.id)) {
+            selectedIds.value = selectedIds.value.filter(
+                (id) => id !== merchant.id,
+            );
+
+            return;
+        }
+
+        selectedIds.value = [...selectedIds.value, merchant.id];
+        selectedNames.value = {
+            ...selectedNames.value,
+            [merchant.id]: merchant.name,
+        };
+    };
+
+    let survivor = computed(() => {
+        if (selectedIds.value.length < 2) {
+            return null;
+        }
+
+        let id = Math.min(...selectedIds.value);
+
+        return {
+            id,
+            name: selectedNames.value[id] ?? 'the oldest merchant',
+        };
+    });
+
+    let submitMerge = () => {
+        if (!survivor.value) {
+            return;
+        }
+
+        let count = selectedIds.value.length;
+        let name = survivor.value.name;
+
+        if (
+            !window.confirm(
+                `Merge ${count} merchants into ${name}? Matching rules and related records will move, and the other merchants will be removed.`,
+            )
+        ) {
+            return;
+        }
+
+        router.post(
+            '/merchants/merge',
+            { merchant_ids: selectedIds.value },
+            {
+                onSuccess: () => {
+                    selectedIds.value = [];
+                    selectedNames.value = {};
+                },
+            },
+        );
+    };
 </script>
 
 <template>
@@ -72,6 +136,13 @@
                 </Link>
             </div>
         </div>
+
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
 
         <div v-if="bankCoverage" class="rounded border px-4 py-3 text-sm">
             <p class="font-medium">All bank transactions</p>
@@ -158,6 +229,15 @@
                 <button type="submit" class="btn rounded border px-4 text-sm">
                     Search
                 </button>
+                <button
+                    v-if="survivor"
+                    type="button"
+                    class="btn rounded border px-4 text-sm"
+                    @click="submitMerge"
+                >
+                    Merge {{ selectedIds.length }} merchants into
+                    {{ survivor.name }}
+                </button>
             </form>
 
             <div
@@ -168,10 +248,23 @@
             </div>
 
             <ul v-else class="divide-y rounded border">
-                <li v-for="merchant in otherMerchants" :key="merchant.id">
+                <li
+                    v-for="merchant in otherMerchants"
+                    :key="merchant.id"
+                    class="flex items-stretch"
+                >
+                    <label class="flex shrink-0 items-center px-3">
+                        <input
+                            type="checkbox"
+                            class="mt-0.5"
+                            :checked="isSelected(merchant.id)"
+                            @change="toggleSelected(merchant)"
+                        />
+                        <span class="sr-only">Select {{ merchant.name }}</span>
+                    </label>
                     <Link
                         :href="`/merchants/${merchant.id}`"
-                        class="block px-4 py-3 hover:bg-neutral-50"
+                        class="min-w-0 flex-1 px-4 py-3 hover:bg-neutral-50"
                     >
                         <div class="flex items-start justify-between gap-4">
                             <div>

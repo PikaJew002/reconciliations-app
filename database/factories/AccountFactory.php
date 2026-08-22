@@ -32,4 +32,18 @@ class AccountFactory extends Factory
             'is_active' => $this->faker->boolean(),
         ];
     }
+
+    public function offBook(): static
+    {
+        return $this->state(fn (): array => [
+            'name' => Account::OFF_BOOK_NAME,
+            'institution_name' => Account::OFF_BOOK_NAME,
+            'account_name' => null,
+            'account_type' => Account::OFF_BOOK,
+            'default_classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'last_four' => null,
+            'external_id' => Account::OFF_BOOK_EXTERNAL_ID,
+            'is_active' => true,
+        ]);
+    }
 }

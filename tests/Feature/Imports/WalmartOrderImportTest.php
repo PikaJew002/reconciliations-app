@@ -120,7 +120,7 @@ class WalmartOrderImportTest extends TestCase
             'user_id' => $user->id,
             'source' => 'amazon',
             'type' => 'orders',
-            'original_filename' => 'amazon.csv',
+            'original_filename' => 'amazon-scrape.json',
         ]);
 
         $this->actingAs($user)

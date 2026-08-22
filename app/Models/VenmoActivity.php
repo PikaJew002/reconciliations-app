@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Collection;
 
 class VenmoActivity extends Model
@@ -64,6 +65,11 @@ class VenmoActivity extends Model
     public function bankTransaction(): BelongsTo
     {
         return $this->belongsTo(BankTransaction::class);
+    }
+
+    public function pendingSpend(): HasOne
+    {
+        return $this->hasOne(PendingSpend::class);
     }
 
     public function cashedOutBy(): BelongsTo

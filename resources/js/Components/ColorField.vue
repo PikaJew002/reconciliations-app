@@ -73,7 +73,7 @@
             />
         </div>
         <div
-            class="flex h-10 min-w-[calc(7ch+3rem)] flex-1 items-stretch overflow-hidden rounded border bg-white focus-within:outline focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
+            class="flex h-10 min-w-[calc(7ch+3rem)] flex-1 items-stretch overflow-hidden rounded border bg-white focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-blue-500"
         >
             <span
                 class="flex items-center border-r bg-neutral-50 px-3 font-mono text-neutral-500"

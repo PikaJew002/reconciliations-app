@@ -64,6 +64,75 @@ class PaycheckBillAssignmentService
     }
 
     /**
+     * @param  Collection<int, Collection<int, PlannedOccurrence>>  $occurrencesByTemplateId
+     * @return array{
+     *     amount: float,
+     *     date: CarbonInterface,
+     *     status: string,
+     *     bills: list<array<string, mixed>>,
+     *     bills_amount: float,
+     *     leftover: float
+     * }
+     */
+    public function contributionForPaycheck(
+        PlannedTemplate $paycheck,
+        ?PlannedOccurrence $paycheckOccurrence,
+        CarbonInterface $paycheckMonth,
+        Collection $occurrencesByTemplateId,
+    ): array {
+        $paycheckMonth = $paycheckMonth->copy()->startOfMonth()->startOfDay();
+        $paycheckAmount = $this->amountFor(
+            $paycheckOccurrence,
+            (float) $paycheck->expected_amount,
+        );
+        $paycheckDate = $paycheckOccurrence?->expected_date
+            ?? PlannedOccurrence::expectedDateForMonth($paycheckMonth, (int) $paycheck->expected_day);
+
+        $bills = [];
+        $billsAmount = 0.0;
+
+        foreach ($paycheck->assignedBills as $bill) {
+            if (! $bill->is_active) {
+                continue;
+            }
+
+            $coversNextMonth = $this->billCoversNextMonth($paycheck, $bill);
+            $billMonth = $this->billCoverageMonth($paycheck, $bill, $paycheckMonth);
+            $billOccurrence = $this->occurrenceInMonth(
+                $occurrencesByTemplateId->get((int) $bill->id),
+                $billMonth,
+            );
+            $billAmount = $this->amountFor($billOccurrence, (float) $bill->expected_amount);
+            $billDate = $billOccurrence?->expected_date
+                ?? PlannedOccurrence::expectedDateForMonth($billMonth, (int) $bill->expected_day);
+
+            $bills[] = [
+                'id' => (int) $bill->id,
+                'occurrence_id' => $billOccurrence?->id,
+                'name' => $bill->name,
+                'expected_day' => (int) $bill->expected_day,
+                'expected_date' => $billDate->toDateString(),
+                'covers_next_month' => $coversNextMonth,
+                'amount' => $billAmount,
+                'status' => $billOccurrence?->status ?? PlannedOccurrence::STATUS_PLANNED,
+                'bank_transaction_id' => $billOccurrence?->bank_transaction_id,
+            ];
+            $billsAmount += $billAmount;
+        }
+
+        $billsAmount = round($billsAmount, 2);
+
+        return [
+            'amount' => $paycheckAmount,
+            'date' => $paycheckDate,
+            'status' => $paycheckOccurrence?->status ?? PlannedOccurrence::STATUS_PLANNED,
+            'bills' => $bills,
+            'bills_amount' => $billsAmount,
+            'leftover' => round($paycheckAmount - $billsAmount, 2),
+        ];
+    }
+
+    /**
      * @return array{
      *     paychecks: list<array<string, mixed>>,
      *     leftover: float,
@@ -102,60 +171,31 @@ class PaycheckBillAssignmentService
                 $occurrences->get((int) $paycheck->id),
                 $monthStart,
             );
-            $paycheckAmount = $this->amountFor(
+            $contribution = $this->contributionForPaycheck(
+                $paycheck,
                 $paycheckOccurrence,
-                (float) $paycheck->expected_amount,
+                $monthStart,
+                $occurrences,
             );
-            $paycheckDate = $paycheckOccurrence?->expected_date
-                ?? PlannedOccurrence::expectedDateForMonth($monthStart, (int) $paycheck->expected_day);
-
-            $bills = [];
-            $billsAmount = 0.0;
-
-            foreach ($paycheck->assignedBills as $bill) {
-                if (! $bill->is_active) {
-                    continue;
-                }
-
-                $coversNextMonth = $this->billCoversNextMonth($paycheck, $bill);
-                $billMonth = $this->billCoverageMonth($paycheck, $bill, $monthStart);
-                $billOccurrence = $this->occurrenceInMonth(
-                    $occurrences->get((int) $bill->id),
-                    $billMonth,
-                );
-                $billAmount = $this->amountFor($billOccurrence, (float) $bill->expected_amount);
-                $billDate = $billOccurrence?->expected_date
-                    ?? PlannedOccurrence::expectedDateForMonth($billMonth, (int) $bill->expected_day);
-
-                $bills[] = [
-                    'id' => (int) $bill->id,
-                    'name' => $bill->name,
-                    'expected_day' => (int) $bill->expected_day,
-                    'expected_date' => $billDate->toDateString(),
-                    'covers_next_month' => $coversNextMonth,
-                    'amount' => $billAmount,
-                    'status' => $billOccurrence?->status ?? PlannedOccurrence::STATUS_PLANNED,
-                ];
-                $billsAmount += $billAmount;
-            }
-
-            $billsAmount = round($billsAmount, 2);
-            $leftover = round($paycheckAmount - $billsAmount, 2);
 
             $cards[] = [
                 'id' => (int) $paycheck->id,
                 'name' => $paycheck->name,
                 'expected_day' => (int) $paycheck->expected_day,
-                'expected_date' => $paycheckDate->toDateString(),
-                'amount' => $paycheckAmount,
-                'status' => $paycheckOccurrence?->status ?? PlannedOccurrence::STATUS_PLANNED,
-                'bills' => $bills,
-                'bills_amount' => $billsAmount,
-                'leftover' => $leftover,
+                'expected_date' => $contribution['date']->toDateString(),
+                'amount' => $contribution['amount'],
+                'status' => $contribution['status'],
+                'bills' => array_map(function (array $bill): array {
+                    unset($bill['occurrence_id'], $bill['bank_transaction_id']);
+
+                    return $bill;
+                }, $contribution['bills']),
+                'bills_amount' => $contribution['bills_amount'],
+                'leftover' => $contribution['leftover'],
             ];
 
-            $totalIncome += $paycheckAmount;
-            $totalBills += $billsAmount;
+            $totalIncome += $contribution['amount'];
+            $totalBills += $contribution['bills_amount'];
         }
 
         return [
