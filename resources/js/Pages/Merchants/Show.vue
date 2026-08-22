@@ -2,7 +2,7 @@
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import axios from 'axios';
-    import { computed, ref, watch } from 'vue';
+    import { computed, nextTick, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -46,6 +46,7 @@
     let checkProcessing = ref(false);
     let checkResult = ref(null);
     let checkError = ref('');
+    let rulePatternInput = ref(null);
 
     watch(
         () => props.filters.q,
@@ -142,9 +143,15 @@
             return;
         }
 
-        router.post(`/merchants/${props.merchant.id}/rules`, {
-            match_mode: transaction.suggested_rule.match_mode,
-            pattern: transaction.suggested_rule.pattern,
+        ruleForm.match_mode = transaction.suggested_rule.match_mode;
+        ruleForm.pattern = transaction.suggested_rule.pattern;
+
+        nextTick(() => {
+            rulePatternInput.value?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+            });
+            rulePatternInput.value?.focus();
         });
     };
 
@@ -290,6 +297,7 @@
                     >
                     <input
                         id="rule-pattern"
+                        ref="rulePatternInput"
                         v-model="ruleForm.pattern"
                         type="text"
                         class="w-full rounded border px-3 text-sm"
