@@ -20,6 +20,7 @@ class AccountImportController extends Controller
     {
         $this->authorize('view', $account);
         $this->authorize('create', ImportBatch::class);
+        $this->assertCanImport($account);
 
         $accountId = (string) $account->id;
 
@@ -57,6 +58,7 @@ class AccountImportController extends Controller
     {
         $this->authorize('view', $account);
         $this->authorize('create', ImportBatch::class);
+        $this->assertCanImport($account);
 
         $file = $request->file('file');
         $storagePath = 'imports/'.Str::uuid().'.csv';
@@ -80,5 +82,12 @@ class AccountImportController extends Controller
         return redirect()
             ->route('accounts.imports.show', [$account, $batch])
             ->with('success', 'Bank transaction import queued.');
+    }
+
+    protected function assertCanImport(Account $account): void
+    {
+        if ($account->isOffBook()) {
+            abort(403, 'Off-book accounts cannot receive bank imports.');
+        }
     }
 }

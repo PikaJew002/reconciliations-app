@@ -12,7 +12,6 @@ use App\Models\User;
 use App\Services\Imports\WalmartOrderImporter;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Storage;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -140,6 +139,16 @@ class OrderPaymentResolutionTest extends TestCase
             'amount' => -50.00,
             'status' => 'matched',
         ]);
+
+        $giftTx = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('amount', -50.00)
+            ->first();
+
+        $this->assertNotNull($giftTx);
+        $this->assertTrue($giftTx->account->isOffBook());
+        $this->assertSame($account->id, $cardTx->account_id);
+        $this->assertNotSame($account->id, $giftTx->account_id);
     }
 
     public function test_payment_review_orders_appear_in_reconciliation_index(): void
@@ -217,10 +226,6 @@ class OrderPaymentResolutionTest extends TestCase
     public function test_auto_resolves_gift_only_amazon_order(): void
     {
         $user = User::factory()->create();
-        Account::factory()->create([
-            'user_id' => $user->id,
-            'is_active' => true,
-        ]);
         $merchant = Merchant::factory()->create([
             'user_id' => $user->id,
             'name' => 'Amazon',
@@ -279,6 +284,19 @@ class OrderPaymentResolutionTest extends TestCase
             'amount' => -15.84,
             'status' => 'matched',
         ]);
+        $this->assertDatabaseHas('accounts', [
+            'user_id' => $user->id,
+            'external_id' => Account::OFF_BOOK_EXTERNAL_ID,
+            'name' => Account::OFF_BOOK_NAME,
+        ]);
+
+        $giftTx = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('amount', -15.84)
+            ->first();
+
+        $this->assertNotNull($giftTx);
+        $this->assertTrue($giftTx->account->isOffBook());
     }
 
     public function test_amazon_split_payments_need_review_with_prefilled_amounts(): void
@@ -418,6 +436,22 @@ class OrderPaymentResolutionTest extends TestCase
             'amount' => -34.16,
             'status' => 'matched',
         ]);
+
+        $offBook = Account::query()
+            ->where('user_id', $user->id)
+            ->offBook()
+            ->first();
+
+        $this->assertNotNull($offBook);
+        $this->assertDatabaseHas('bank_transactions', [
+            'account_id' => $offBook->id,
+            'description' => 'Visa ending in 8463',
+        ]);
+        $this->assertDatabaseHas('bank_transactions', [
+            'account_id' => $offBook->id,
+            'description' => 'Amazon gift card balance',
+        ]);
+        $this->assertSame(1, Account::query()->where('user_id', $user->id)->offBook()->count());
     }
 
     public function test_user_can_remove_duplicate_payment_method(): void

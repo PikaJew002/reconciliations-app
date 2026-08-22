@@ -2,6 +2,7 @@
 
 namespace App\Services\Onboarding;
 
+use App\Models\Account;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -22,10 +23,12 @@ readonly class OnboardingSnapshot
                 exists(
                     select 1 from accounts
                     where user_id = ? and deleted_at is null
+                        and (external_id is null or external_id != ?)
                 ) as has_account,
                 (
                     select id from accounts
                     where user_id = ? and deleted_at is null
+                        and (external_id is null or external_id != ?)
                     order by name, id
                     limit 1
                 ) as first_account_id,
@@ -39,12 +42,16 @@ readonly class OnboardingSnapshot
                 ) as has_completed_bank_import,
                 exists(
                     select 1 from bank_transactions
-                    where user_id = ?
+                    inner join accounts on accounts.id = bank_transactions.account_id
+                    where bank_transactions.user_id = ?
+                        and (accounts.external_id is null or accounts.external_id != ?)
                 ) as has_bank_transaction,
                 exists(
                     select 1 from bank_transactions
-                    where user_id = ?
-                        and category_id is not null
+                    inner join accounts on accounts.id = bank_transactions.account_id
+                    where bank_transactions.user_id = ?
+                        and bank_transactions.category_id is not null
+                        and (accounts.external_id is null or accounts.external_id != ?)
                 ) as has_categorized_transaction,
                 exists(
                     select 1 from import_batches
@@ -59,13 +66,17 @@ readonly class OnboardingSnapshot
                 ) as has_order',
             [
                 $user->id,
+                Account::OFF_BOOK_EXTERNAL_ID,
                 $user->id,
+                Account::OFF_BOOK_EXTERNAL_ID,
                 $user->id,
                 'bank',
                 'transactions',
                 'completed',
                 $user->id,
+                Account::OFF_BOOK_EXTERNAL_ID,
                 $user->id,
+                Account::OFF_BOOK_EXTERNAL_ID,
                 $user->id,
                 'amazon',
                 'walmart',

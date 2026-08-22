@@ -152,6 +152,7 @@
                     </div>
                 </Link>
                 <Link
+                    v-if="!account.is_off_book"
                     :href="`/accounts/${account.id}/imports`"
                     class="shrink-0 self-center px-4 py-3 text-sm text-neutral-700 underline hover:text-neutral-900"
                 >

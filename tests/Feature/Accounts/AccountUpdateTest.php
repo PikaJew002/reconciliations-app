@@ -142,4 +142,24 @@ class AccountUpdateTest extends TestCase
             $account->fresh()->default_classification,
         );
     }
+
+    public function test_authenticated_user_cannot_edit_off_book_account(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->offBook()->create();
+
+        $this->actingAs($user)
+            ->get(route('accounts.edit', $account))
+            ->assertForbidden();
+
+        $this->actingAs($user)->put(route('accounts.update', $account), [
+            'name' => 'Hijacked',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CHECKING,
+            'currency' => 'USD',
+        ])->assertForbidden();
+
+        $this->assertSame(Account::OFF_BOOK_NAME, $account->fresh()->name);
+        $this->assertTrue($account->fresh()->isOffBook());
+    }
 }

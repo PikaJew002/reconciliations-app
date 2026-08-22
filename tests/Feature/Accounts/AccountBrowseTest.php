@@ -96,6 +96,29 @@ class AccountBrowseTest extends TestCase
                 ->where('filters.q', ''));
     }
 
+    public function test_index_marks_off_book_accounts(): void
+    {
+        $user = User::factory()->create();
+        $tracked = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Checking',
+            'is_active' => true,
+        ]);
+        $offBook = Account::factory()->for($user)->offBook()->create();
+
+        $this->actingAs($user)
+            ->get(route('accounts.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Accounts/Index')
+                ->has('accounts', 2)
+                ->where('accounts.0.id', $tracked->id)
+                ->where('accounts.0.is_off_book', false)
+                ->where('accounts.1.id', $offBook->id)
+                ->where('accounts.1.is_off_book', true)
+                ->where('accounts.1.name', Account::OFF_BOOK_NAME));
+    }
+
     public function test_index_search_filters_accounts(): void
     {
         $user = User::factory()->create();

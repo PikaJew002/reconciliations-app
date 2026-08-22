@@ -92,6 +92,7 @@ class ApiTokenPageTest extends TestCase
             'user_id' => $other->id,
             'name' => 'Someone else',
         ]);
+        Account::factory()->for($user)->offBook()->create();
 
         $merchant = Merchant::factory()->create([
             'user_id' => $user->id,

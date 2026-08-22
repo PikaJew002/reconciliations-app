@@ -80,6 +80,28 @@ class BankTransactionImportTest extends TestCase
         $this->assertDatabaseCount('import_batches', 0);
     }
 
+    public function test_authenticated_user_cannot_import_into_off_book_account(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->offBook()->create();
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.index', $account))
+            ->assertForbidden();
+
+        $this->actingAs($user)->post(route('accounts.imports.store', $account), [
+            'file' => UploadedFile::fake()->createWithContent(
+                'chase.csv',
+                "Date,Description,Amount\n01/01/2026,WALMART,-12.34\n",
+            ),
+        ])->assertForbidden();
+
+        $this->assertDatabaseCount('import_batches', 0);
+    }
+
     public function test_authenticated_user_can_queue_a_bank_import(): void
     {
         Storage::fake('local');

@@ -2,9 +2,9 @@
 
 namespace App\Services\Reconciliation;
 
-use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\Order;
+use App\Services\Accounts\OffBookAccountService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -14,6 +14,7 @@ class OrderPaymentResolutionService
 {
     public function __construct(
         protected ReconciliationService $reconciliation,
+        protected OffBookAccountService $offBookAccounts,
         protected int $dateWindowDays = 7,
     ) {}
 
@@ -412,7 +413,7 @@ class OrderPaymentResolutionService
      */
     protected function createNonBankTenderTransaction(Order $order, array $payment, float $amount): BankTransaction
     {
-        $account = $this->resolveAccountForSynthetic($order);
+        $account = $this->offBookAccounts->ensureForUser($order->user_id);
 
         return BankTransaction::query()->create([
             'user_id' => $order->user_id,
@@ -435,49 +436,6 @@ class OrderPaymentResolutionService
                 'order_id' => $order->id,
             ],
         ]);
-    }
-
-    protected function resolveAccountForSynthetic(Order $order): Account
-    {
-        $accountId = $order->importBatch?->metadata['account_id'] ?? null;
-
-        if ($accountId) {
-            $account = Account::query()
-                ->where('user_id', $order->user_id)
-                ->find($accountId);
-
-            if ($account) {
-                return $account;
-            }
-        }
-
-        $fromTransaction = BankTransaction::query()
-            ->where('user_id', $order->user_id)
-            ->whereNotNull('account_id')
-            ->latest('id')
-            ->first();
-
-        if ($fromTransaction?->account_id) {
-            $account = Account::query()
-                ->where('user_id', $order->user_id)
-                ->find($fromTransaction->account_id);
-
-            if ($account) {
-                return $account;
-            }
-        }
-
-        $account = Account::query()
-            ->where('user_id', $order->user_id)
-            ->where('is_active', true)
-            ->orderBy('id')
-            ->first();
-
-        if (! $account) {
-            throw new RuntimeException('No account available for non-bank tender transaction.');
-        }
-
-        return $account;
     }
 
     protected function classifyPaymentKind(string $ending, ?string $lastFour): string

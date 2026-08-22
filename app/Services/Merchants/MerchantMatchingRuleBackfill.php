@@ -19,15 +19,13 @@ class MerchantMatchingRuleBackfill
      */
     public function backfill(?int $userId = null): array
     {
-        $merchantQuery = Merchant::query()->orderBy('id');
+        $userQuery = Merchant::query()->select('user_id')->distinct()->orderBy('user_id');
 
         if ($userId !== null) {
-            $merchantQuery->where('user_id', $userId);
+            $userQuery->where('user_id', $userId);
         }
 
-        $userIds = $merchantQuery->clone()
-            ->distinct()
-            ->pluck('user_id');
+        $userIds = $userQuery->pluck('user_id');
 
         $rulesCreated = 0;
         $unexplained = 0;
@@ -68,6 +66,10 @@ class MerchantMatchingRuleBackfill
 
         foreach ($merchants as $merchant) {
             foreach ($merchant->bankTransactions as $transaction) {
+                if (($transaction->metadata['source'] ?? null) === 'non_bank_tender') {
+                    continue;
+                }
+
                 $derived = $this->deriveRulesForAssignment($merchant, $transaction);
                 $rulesCreated += $derived['created'];
                 $collisions += $derived['collisions'];
@@ -76,6 +78,10 @@ class MerchantMatchingRuleBackfill
 
         foreach ($merchants as $merchant) {
             foreach ($merchant->bankTransactions as $transaction) {
+                if (($transaction->metadata['source'] ?? null) === 'non_bank_tender') {
+                    continue;
+                }
+
                 $matched = $this->matcher->findMerchantByRules($transaction, $userId);
 
                 if ($matched?->id === $merchant->id) {

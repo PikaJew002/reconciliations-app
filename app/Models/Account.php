@@ -22,6 +22,12 @@ class Account extends Model
 
     public const CASH = 'cash';
 
+    public const OFF_BOOK = 'off_book';
+
+    public const OFF_BOOK_EXTERNAL_ID = 'system:off-book';
+
+    public const OFF_BOOK_NAME = 'Off-book';
+
     protected $fillable = [
         'user_id',
         'name', // user friendly name for the account
@@ -52,6 +58,25 @@ class Account extends Model
     public function pendingSpends()
     {
         return $this->hasMany(PendingSpend::class);
+    }
+
+    public function isOffBook(): bool
+    {
+        return $this->external_id === self::OFF_BOOK_EXTERNAL_ID;
+    }
+
+    public function scopeTracked($query)
+    {
+        return $query->where(function ($builder): void {
+            $builder
+                ->whereNull('external_id')
+                ->orWhere('external_id', '!=', self::OFF_BOOK_EXTERNAL_ID);
+        });
+    }
+
+    public function scopeOffBook($query)
+    {
+        return $query->where('external_id', self::OFF_BOOK_EXTERNAL_ID);
     }
 
     public function validationRules(): array

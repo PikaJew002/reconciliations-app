@@ -25,6 +25,7 @@ class ApiTokenController extends Controller
 
         $accounts = Account::query()
             ->where('user_id', $user->id)
+            ->tracked()
             ->orderBy('name')
             ->get(['id', 'name', 'account_type', 'last_four'])
             ->map(fn (Account $account): array => [

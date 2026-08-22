@@ -9,18 +9,20 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('merchant_matching_rules', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('merchant_id')->constrained()->cascadeOnDelete();
-            $table->string('match_mode');
-            $table->string('pattern');
-            $table->boolean('is_active')->default(true);
-            $table->timestamps();
+        if (! Schema::hasTable('merchant_matching_rules')) {
+            Schema::create('merchant_matching_rules', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+                $table->foreignId('merchant_id')->constrained()->cascadeOnDelete();
+                $table->string('match_mode');
+                $table->string('pattern');
+                $table->boolean('is_active')->default(true);
+                $table->timestamps();
 
-            $table->unique(['user_id', 'match_mode', 'pattern']);
-            $table->index(['merchant_id', 'is_active']);
-        });
+                $table->unique(['user_id', 'match_mode', 'pattern']);
+                $table->index(['merchant_id', 'is_active']);
+            });
+        }
 
         if (app()->runningUnitTests()) {
             return;

@@ -195,4 +195,35 @@ class MerchantMatchingRuleBackfillTest extends TestCase
                 && ($context['merchant_id'] ?? null) === $other->id;
         });
     }
+
+    public function test_backfill_skips_non_bank_tender_transactions(): void
+    {
+        Log::spy();
+
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->offBook()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+            'supports_order_import' => true,
+        ]);
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'amount' => -50.00,
+            'description' => 'Ending in 8723',
+            'normalized_description' => 'ending in 8723',
+            'metadata' => [
+                'source' => 'non_bank_tender',
+                'kind' => 'gift_card',
+            ],
+        ]);
+
+        $result = app(MerchantMatchingRuleBackfill::class)->backfill($user->id);
+
+        $this->assertSame(0, $result['unexplained']);
+        Log::shouldNotHaveReceived('warning');
+    }
 }
