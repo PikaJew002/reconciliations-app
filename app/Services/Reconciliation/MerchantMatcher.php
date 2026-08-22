@@ -4,6 +4,8 @@ namespace App\Services\Reconciliation;
 
 use App\Models\BankTransaction;
 use App\Models\Merchant;
+use App\Models\MerchantMatchingRule;
+use App\Services\Merchants\RetailerMerchantMatchingDefaults;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -13,31 +15,6 @@ class MerchantMatcher
         protected MerchantNameExtractorResolver $extractorResolver,
         protected float $fuzzyMatchThreshold = 0.85,
     ) {}
-
-    /**
-     * @var list<array{patterns: list<string>, normalized_name: string}>
-     */
-    protected array $rules = [
-        [
-            'patterns' => ['wal-mart', 'walmart', 'wal mart', 'wm supercenter', 'walmart.com'],
-            'normalized_name' => 'walmart',
-        ],
-        [
-            'patterns' => ['amazon', 'amzn', 'amzn mktp', 'amazon.com', 'amazon mktpl'],
-            'normalized_name' => 'amazon',
-        ],
-    ];
-
-    /**
-     * @var list<string>
-     */
-    protected array $amazonPatterns = [
-        'amazon',
-        'amzn',
-        'amzn mktp',
-        'amazon.com',
-        'amazon mktpl',
-    ];
 
     /**
      * @var list<string>
@@ -78,28 +55,16 @@ class MerchantMatcher
             return false;
         }
 
-        $description = $transaction->normalized_description
-            ?? Str::of($transaction->description)->lower()->squish()->toString();
+        $description = $this->normalizedDescription($transaction);
 
         if ($this->shouldSkipDescription($description)) {
             return false;
         }
 
-        foreach ($this->rules as $rule) {
-            if (! $this->descriptionMatches($description, $rule['patterns'])) {
-                continue;
-            }
+        $ruleMerchant = $this->findMerchantByRules($transaction, $userId, $description);
 
-            $merchant = Merchant::query()
-                ->where('user_id', $userId)
-                ->where('normalized_name', $rule['normalized_name'])
-                ->first();
-
-            if (! $merchant) {
-                return false;
-            }
-
-            $transaction->update(['merchant_id' => $merchant->id]);
+        if ($ruleMerchant !== null) {
+            $transaction->update(['merchant_id' => $ruleMerchant->id]);
 
             return true;
         }
@@ -108,29 +73,147 @@ class MerchantMatcher
             return false;
         }
 
-        $transaction->loadMissing('account');
-        $extractor = $this->extractorResolver->resolve($transaction->account?->institution_name);
-
-        if (! $extractor->canExtract($description)) {
-            return false;
-        }
-
-        $extracted = $extractor->extract($description);
+        $extracted = $this->extractName($transaction, $description);
 
         if ($extracted === null) {
             return false;
         }
 
-        if ($this->looksLikeAmazon($extracted['normalized_name'])) {
+        if ($this->looksLikeOrderImportRetailer($description)
+            || $this->looksLikeOrderImportRetailer($extracted['normalized_name'])) {
             return false;
         }
 
         $merchant = $this->findFuzzyMerchant($userId, $extracted['normalized_name'])
             ?? $this->createMerchant($userId, $extracted['display_name'], $extracted['normalized_name']);
 
+        $this->learnExtractedNameRule($userId, $merchant, $extracted['normalized_name']);
+
         $transaction->update(['merchant_id' => $merchant->id]);
 
         return true;
+    }
+
+    public function findMerchantByRules(
+        BankTransaction $transaction,
+        int $userId,
+        ?string $description = null,
+    ): ?Merchant {
+        $description ??= $this->normalizedDescription($transaction);
+
+        $containsMerchant = $this->findMerchantByContainsRules($userId, $description);
+
+        if ($containsMerchant !== null) {
+            return $containsMerchant;
+        }
+
+        $extracted = $this->extractName($transaction, $description);
+
+        if ($extracted === null) {
+            return null;
+        }
+
+        return $this->findMerchantByExtractedNameRule($userId, $extracted['normalized_name']);
+    }
+
+    public function extractedNameMatchesMerchant(Merchant $merchant, string $extractedNormalizedName): bool
+    {
+        if ($merchant->normalized_name === $extractedNormalizedName) {
+            return true;
+        }
+
+        $candidates = Collection::make([
+            $merchant->normalized_name,
+            $this->normalizeComparable($merchant->name),
+        ])->filter()->unique();
+
+        foreach ($candidates as $candidate) {
+            if ($this->similarity($extractedNormalizedName, $candidate) >= $this->fuzzyMatchThreshold) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function normalizedDescription(BankTransaction $transaction): string
+    {
+        if (filled($transaction->normalized_description)) {
+            return (string) $transaction->normalized_description;
+        }
+
+        return Str::of((string) $transaction->description)->lower()->squish()->toString();
+    }
+
+    /**
+     * @return array{display_name: string, normalized_name: string}|null
+     */
+    public function extractName(BankTransaction $transaction, ?string $description = null): ?array
+    {
+        $description ??= $this->normalizedDescription($transaction);
+
+        $transaction->loadMissing('account');
+        $extractor = $this->extractorResolver->resolve($transaction->account?->institution_name);
+
+        if (! $extractor->canExtract($description)) {
+            return null;
+        }
+
+        return $extractor->extract($description);
+    }
+
+    public function learnExtractedNameRule(int $userId, Merchant $merchant, string $pattern): void
+    {
+        $pattern = MerchantMatchingRule::normalizePattern($pattern);
+
+        if ($pattern === '') {
+            return;
+        }
+
+        MerchantMatchingRule::query()->firstOrCreate(
+            [
+                'user_id' => $userId,
+                'match_mode' => MerchantMatchingRule::MATCH_EXTRACTED_NAME,
+                'pattern' => $pattern,
+            ],
+            [
+                'merchant_id' => $merchant->id,
+                'is_active' => true,
+            ],
+        );
+    }
+
+    protected function findMerchantByContainsRules(int $userId, string $description): ?Merchant
+    {
+        $rules = MerchantMatchingRule::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->where('match_mode', MerchantMatchingRule::MATCH_CONTAINS)
+            ->with('merchant')
+            ->orderByRaw('LENGTH(pattern) DESC')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($rules as $rule) {
+            if ($rule->pattern !== '' && str_contains($description, $rule->pattern)) {
+                return $rule->merchant;
+            }
+        }
+
+        return null;
+    }
+
+    protected function findMerchantByExtractedNameRule(int $userId, string $extractedNormalizedName): ?Merchant
+    {
+        $rule = MerchantMatchingRule::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->where('match_mode', MerchantMatchingRule::MATCH_EXTRACTED_NAME)
+            ->where('pattern', $extractedNormalizedName)
+            ->with('merchant')
+            ->first();
+
+        return $rule?->merchant;
     }
 
     protected function shouldSkipDescription(string $description): bool
@@ -144,9 +227,9 @@ class MerchantMatcher
         return false;
     }
 
-    protected function looksLikeAmazon(string $value): bool
+    protected function looksLikeOrderImportRetailer(string $value): bool
     {
-        return $this->descriptionMatches($value, $this->amazonPatterns);
+        return $this->descriptionMatches($value, RetailerMerchantMatchingDefaults::allPatterns());
     }
 
     protected function findFuzzyMerchant(int $userId, string $normalizedName): ?Merchant
@@ -187,7 +270,7 @@ class MerchantMatcher
 
     protected function createMerchant(int $userId, string $displayName, string $normalizedName): Merchant
     {
-        return Merchant::query()->firstOrCreate(
+        $merchant = Merchant::query()->firstOrCreate(
             [
                 'user_id' => $userId,
                 'normalized_name' => $normalizedName,
@@ -201,6 +284,10 @@ class MerchantMatcher
                 'metadata' => [],
             ],
         );
+
+        $this->learnExtractedNameRule($userId, $merchant, $normalizedName);
+
+        return $merchant;
     }
 
     protected function similarity(string $left, string $right): float

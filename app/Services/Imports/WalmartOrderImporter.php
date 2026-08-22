@@ -7,6 +7,7 @@ use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\Imports\Contracts\Importer;
+use App\Services\Merchants\RetailerMerchantMatchingDefaults;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -82,10 +83,12 @@ class WalmartOrderImporter implements Importer
                 throw new RuntimeException('Merchant not found for this import batch.');
             }
 
+            RetailerMerchantMatchingDefaults::ensureForMerchant($merchant);
+
             return $merchant;
         }
 
-        return Merchant::query()->firstOrCreate(
+        $merchant = Merchant::query()->firstOrCreate(
             [
                 'user_id' => $batch->user_id,
                 'normalized_name' => 'walmart',
@@ -99,6 +102,10 @@ class WalmartOrderImporter implements Importer
                 'metadata' => [],
             ],
         );
+
+        RetailerMerchantMatchingDefaults::ensureForMerchant($merchant);
+
+        return $merchant;
     }
 
     /**

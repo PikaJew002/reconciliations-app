@@ -4,15 +4,34 @@ namespace App\Services\Merchants;
 
 use App\Models\BankTransaction;
 use App\Models\Merchant;
+use App\Models\MerchantMatchingRule;
 use App\Services\Orders\OrderBrowseService;
+use App\Services\Reconciliation\MerchantMatcher;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class MerchantBrowseService
 {
     public function __construct(
+        protected MerchantMatcher $matcher,
         protected int $listLimit = 50,
     ) {}
+
+    public function isBrowsable(int $userId, Merchant $merchant): bool
+    {
+        if ($merchant->user_id !== $userId) {
+            return false;
+        }
+
+        if ($this->isOrderImportRetailer($merchant)) {
+            return false;
+        }
+
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('merchant_id', $merchant->id)
+            ->exists();
+    }
 
     /**
      * @return array{
@@ -97,6 +116,7 @@ class MerchantBrowseService
     /**
      * @return array{
      *     merchant: array<string, mixed>,
+     *     rules: list<array<string, mixed>>,
      *     transactions: list<array<string, mixed>>,
      *     transactionsTruncated: bool,
      *     filters: array{q: string}
@@ -104,20 +124,7 @@ class MerchantBrowseService
      */
     public function show(int $userId, Merchant $merchant, ?string $query = null): ?array
     {
-        if ($merchant->user_id !== $userId) {
-            return null;
-        }
-
-        if ($this->isOrderImportRetailer($merchant)) {
-            return null;
-        }
-
-        $hasActivity = BankTransaction::query()
-            ->where('user_id', $userId)
-            ->where('merchant_id', $merchant->id)
-            ->exists();
-
-        if (! $hasActivity) {
+        if (! $this->isBrowsable($userId, $merchant)) {
             return null;
         }
 
@@ -170,6 +177,17 @@ class MerchantBrowseService
                 'max_posted_at' => $max,
                 'coverage_span_days' => $this->spanDays($min, $max),
             ],
+            'rules' => $merchant->matchingRules()
+                ->orderBy('match_mode')
+                ->orderBy('pattern')
+                ->orderBy('id')
+                ->get()
+                ->map(fn (MerchantMatchingRule $rule): array => [
+                    'id' => $rule->id,
+                    'match_mode' => $rule->match_mode,
+                    'pattern' => $rule->pattern,
+                    'is_active' => $rule->is_active,
+                ])->values()->all(),
             'transactions' => $transactions->map(fn (BankTransaction $transaction): array => [
                 'id' => $transaction->id,
                 'posted_at' => optional($transaction->posted_at)?->toDateString(),
@@ -178,11 +196,32 @@ class MerchantBrowseService
                 'status' => $transaction->status,
                 'card_last_four' => $transaction->card_last_four,
                 'account' => $transaction->account?->only(['id', 'name', 'institution_name', 'last_four']),
+                'suggested_rule' => $this->suggestRule($transaction),
             ])->values()->all(),
             'transactionsTruncated' => $totalMatching > $this->listLimit,
             'filters' => [
                 'q' => $query,
             ],
+        ];
+    }
+
+    /**
+     * @return array{match_mode: string, pattern: string}
+     */
+    protected function suggestRule(BankTransaction $transaction): array
+    {
+        $extracted = $this->matcher->extractName($transaction);
+
+        if ($extracted !== null && $extracted['normalized_name'] !== '') {
+            return [
+                'match_mode' => MerchantMatchingRule::MATCH_EXTRACTED_NAME,
+                'pattern' => $extracted['normalized_name'],
+            ];
+        }
+
+        return [
+            'match_mode' => MerchantMatchingRule::MATCH_CONTAINS,
+            'pattern' => $this->matcher->normalizedDescription($transaction),
         ];
     }
 

@@ -10,6 +10,7 @@ use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
+use App\Models\MerchantMatchingRule;
 use App\Models\Order;
 use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
@@ -46,6 +47,7 @@ class ResetUserDataService
             $userId = $user->id;
 
             TransactionCategorizationRule::query()->where('user_id', $userId)->delete();
+            MerchantMatchingRule::query()->where('user_id', $userId)->delete();
             PendingSpend::query()->where('user_id', $userId)->delete();
             PlannedOccurrence::query()->where('user_id', $userId)->delete();
             PlannedTemplate::query()->where('user_id', $userId)->delete();

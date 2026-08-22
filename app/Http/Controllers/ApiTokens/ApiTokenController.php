@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Category;
 use App\Models\Merchant;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,22 +15,13 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class ApiTokenController extends Controller
 {
-    public function index(Request $request): Response
+    public const ABILITY_PENDING_SPEND = 'pending-spend:create';
+
+    public const ABILITY_RETAILER_SCRAPER = 'amazon:import';
+
+    public function pendingSpend(Request $request): Response
     {
         $user = $request->user();
-
-        $tokens = $user->tokens()
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->get()
-            ->map(fn (PersonalAccessToken $token): array => [
-                'id' => $token->id,
-                'name' => $token->name,
-                'abilities' => $token->abilities,
-                'last_used_at' => $token->last_used_at?->toIso8601String(),
-                'created_at' => $token->created_at->toIso8601String(),
-                'expires_at' => $token->expires_at?->toIso8601String(),
-            ]);
 
         $accounts = Account::query()
             ->where('user_id', $user->id)
@@ -64,8 +56,8 @@ class ApiTokenController extends Controller
                 'kind' => $category->kind,
             ]);
 
-        return Inertia::render('ApiTokens/Index', [
-            'tokens' => $tokens,
+        return Inertia::render('ApiTokens/PendingSpend', [
+            'tokens' => $this->tokensForAbility($user, self::ABILITY_PENDING_SPEND),
             'accounts' => $accounts,
             'merchants' => $merchants,
             'categories' => $categories,
@@ -74,7 +66,46 @@ class ApiTokenController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function retailerScraper(Request $request): Response
+    {
+        return Inertia::render('ApiTokens/RetailerScraper', [
+            'tokens' => $this->tokensForAbility($request->user(), self::ABILITY_RETAILER_SCRAPER),
+            'endpoint' => url('/api/amazon/import'),
+            'statusEndpoint' => url('/api/amazon/orders/status'),
+            'plainTextToken' => $request->session()->pull('plainTextToken'),
+        ]);
+    }
+
+    public function storePendingSpend(Request $request): RedirectResponse
+    {
+        return $this->mintToken($request, self::ABILITY_PENDING_SPEND, 'api-tokens.pending-spend');
+    }
+
+    public function storeRetailerScraper(Request $request): RedirectResponse
+    {
+        return $this->mintToken($request, self::ABILITY_RETAILER_SCRAPER, 'api-tokens.retailer-scraper');
+    }
+
+    public function destroy(Request $request, int $token): RedirectResponse
+    {
+        $tokenModel = $request->user()->tokens()->whereKey($token)->first();
+
+        if (! $tokenModel instanceof PersonalAccessToken) {
+            abort(404);
+        }
+
+        $redirectRoute = $tokenModel->can(self::ABILITY_RETAILER_SCRAPER)
+            ? 'api-tokens.retailer-scraper'
+            : 'api-tokens.pending-spend';
+
+        $tokenModel->delete();
+
+        return redirect()
+            ->route($redirectRoute)
+            ->with('success', 'Token revoked.');
+    }
+
+    private function mintToken(Request $request, string $ability, string $redirectRoute): RedirectResponse
     {
         $request->merge([
             'name' => trim((string) $request->input('name')),
@@ -88,22 +119,33 @@ class ApiTokenController extends Controller
 
         $request->user()->tokens()->where('name', $name)->delete();
 
-        $token = $request->user()->createToken($name, ['pending-spend:create']);
+        $token = $request->user()->createToken($name, [$ability]);
 
         return redirect()
-            ->route('api-tokens.index')
+            ->route($redirectRoute)
             ->with('plainTextToken', $token->plainTextToken)
             ->with('success', 'Copy this token now. It will not be shown again.');
     }
 
-    public function destroy(Request $request, int $token): RedirectResponse
+    /**
+     * @return list<array{id: int, name: string, abilities: list<string>, last_used_at: ?string, created_at: string, expires_at: ?string}>
+     */
+    private function tokensForAbility(User $user, string $ability): array
     {
-        $deleted = $request->user()->tokens()->whereKey($token)->delete();
-
-        abort_unless($deleted === 1, 404);
-
-        return redirect()
-            ->route('api-tokens.index')
-            ->with('success', 'Token revoked.');
+        return $user->tokens()
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (PersonalAccessToken $token): bool => $token->can($ability))
+            ->values()
+            ->map(fn (PersonalAccessToken $token): array => [
+                'id' => $token->id,
+                'name' => $token->name,
+                'abilities' => $token->abilities,
+                'last_used_at' => $token->last_used_at?->toIso8601String(),
+                'created_at' => $token->created_at->toIso8601String(),
+                'expires_at' => $token->expires_at?->toIso8601String(),
+            ])
+            ->all();
     }
 }

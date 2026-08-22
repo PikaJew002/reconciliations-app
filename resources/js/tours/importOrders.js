@@ -16,7 +16,7 @@ export function importOrdersTour(page) {
                     popover: {
                         title: 'Open Imports',
                         description:
-                            'Each retailer has an Imports page where you upload the export file.',
+                            'Each retailer has an Imports page. Walmart uses a JSON export; Amazon orders come from the Chrome extension.',
                         side: 'left',
                     },
                 },
@@ -31,11 +31,11 @@ export function importOrdersTour(page) {
             return {
                 steps: [
                     {
-                        element: '[data-tour="import-amazon-form"]',
+                        element: '[data-tour="import-amazon-history"]',
                         popover: {
-                            title: 'Upload Amazon CSVs',
+                            title: 'Amazon import history',
                             description:
-                                'Amazon needs both the order summary CSV and the item details CSV. Upload about six weeks of history.',
+                                'Amazon orders arrive from the Chrome extension. Use this page to review past imports.',
                             side: 'bottom',
                         },
                     },

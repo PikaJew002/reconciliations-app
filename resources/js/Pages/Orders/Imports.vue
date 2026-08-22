@@ -24,21 +24,24 @@
         file: null,
     });
 
-    let amazonForm = useForm({
-        summary_file: null,
-        items_file: null,
-    });
-
     let submitWalmart = () => {
         walmartForm.post(`/orders/${props.merchant.normalized_name}/imports`, {
             forceFormData: true,
         });
     };
 
-    let submitAmazon = () => {
-        amazonForm.post(`/orders/${props.merchant.normalized_name}/imports`, {
-            forceFormData: true,
-        });
+    let formatImportedAt = (value) => {
+        if (!value) {
+            return '—';
+        }
+
+        let date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleString();
     };
 </script>
 
@@ -59,14 +62,18 @@
             <h1 class="mt-2 text-2xl font-semibold">
                 Import {{ merchant.name }} orders
             </h1>
-            <p class="text-sm text-neutral-600">
-                <template v-if="isAmazon">
-                    Upload both Amazon order history CSVs together: order
-                    summary and item details.
-                </template>
-                <template v-else>
-                    Upload a Walmart orders JSON export.
-                </template>
+            <p
+                v-if="isAmazon"
+                class="text-sm text-neutral-600"
+                data-tour="import-amazon-history"
+            >
+                Amazon orders arrive from the Chrome extension. Import
+                history is listed below. See
+                <Link href="/api-tokens/retailer-scraper" class="underline">
+                    retailer scraper API tokens</Link>.
+            </p>
+            <p v-else class="text-sm text-neutral-600">
+                Upload a Walmart orders JSON export.
             </p>
         </div>
 
@@ -78,62 +85,7 @@
         </p>
 
         <form
-            v-if="isAmazon"
-            class="space-y-4"
-            data-tour="import-amazon-form"
-            @submit.prevent="submitAmazon"
-        >
-            <div>
-                <label class="mb-1 block text-sm" for="summary_file">
-                    Order summary CSV
-                </label>
-                <input
-                    id="summary_file"
-                    type="file"
-                    accept=".csv,text/csv"
-                    class="w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-brand file:px-4 file:inline-flex file:h-10 file:items-center file:text-sm file:font-medium file:text-white hover:file:bg-brand-hover"
-                    required
-                    @input="amazonForm.summary_file = $event.target.files[0]"
-                />
-                <p
-                    v-if="amazonForm.errors.summary_file"
-                    class="mt-1 text-sm text-red-600"
-                >
-                    {{ amazonForm.errors.summary_file }}
-                </p>
-            </div>
-
-            <div>
-                <label class="mb-1 block text-sm" for="items_file">
-                    Item details CSV
-                </label>
-                <input
-                    id="items_file"
-                    type="file"
-                    accept=".csv,text/csv"
-                    class="w-full text-sm file:mr-4 file:rounded file:border-0 file:bg-brand file:px-4 file:inline-flex file:h-10 file:items-center file:text-sm file:font-medium file:text-white hover:file:bg-brand-hover"
-                    required
-                    @input="amazonForm.items_file = $event.target.files[0]"
-                />
-                <p
-                    v-if="amazonForm.errors.items_file"
-                    class="mt-1 text-sm text-red-600"
-                >
-                    {{ amazonForm.errors.items_file }}
-                </p>
-            </div>
-
-            <button
-                type="submit"
-                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-white disabled:opacity-50"
-                :disabled="amazonForm.processing"
-            >
-                Queue import
-            </button>
-        </form>
-
-        <form
-            v-else
+            v-if="!isAmazon"
             class="space-y-4"
             data-tour="import-walmart-form"
             @submit.prevent="submitWalmart"
@@ -185,6 +137,9 @@
                                 </p>
                                 <p class="text-sm text-neutral-600">
                                     {{ batch.source }} / {{ batch.type }}
+                                </p>
+                                <p class="text-sm text-neutral-600">
+                                    Imported {{ formatImportedAt(batch.created_at) }}
                                 </p>
                             </div>
                             <div class="text-right text-sm">

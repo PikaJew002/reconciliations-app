@@ -61,6 +61,11 @@ class Merchant extends Model
         return $this->hasMany(PendingSpend::class);
     }
 
+    public function matchingRules()
+    {
+        return $this->hasMany(MerchantMatchingRule::class);
+    }
+
     public function canImportOrders(): bool
     {
         return $this->supports_order_import;

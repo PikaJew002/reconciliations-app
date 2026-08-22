@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Orders;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Imports\StoreAmazonOrderImportRequest;
 use App\Http\Requests\Imports\StoreWalmartOrderImportRequest;
 use App\Jobs\ProcessImportBatch;
 use App\Models\ImportBatch;
@@ -54,11 +53,11 @@ class RetailerImportController extends Controller
 
         $vendor = $this->resolveVendor($merchant);
 
-        return match ($vendor['normalized_name']) {
-            'walmart' => $this->storeWalmart($request, $vendor),
-            'amazon' => $this->storeAmazon($request, $vendor),
-            default => throw new NotFoundHttpException(),
-        };
+        if ($vendor['normalized_name'] !== 'walmart') {
+            throw new NotFoundHttpException;
+        }
+
+        return $this->storeWalmart($request, $vendor);
     }
 
     /**
@@ -92,47 +91,6 @@ class RetailerImportController extends Controller
     }
 
     /**
-     * @param  array{normalized_name: string, name: string}  $vendor
-     */
-    protected function storeAmazon(Request $request, array $vendor): RedirectResponse
-    {
-        /** @var StoreAmazonOrderImportRequest $validated */
-        $validated = app(StoreAmazonOrderImportRequest::class);
-
-        $summaryFile = $validated->file('summary_file');
-        $itemsFile = $validated->file('items_file');
-        $directory = 'imports/'.Str::uuid();
-        $summaryPath = $directory.'/summary.csv';
-        $itemsPath = $directory.'/items.csv';
-
-        Storage::disk('local')->put($summaryPath, file_get_contents($summaryFile->getRealPath()));
-        Storage::disk('local')->put($itemsPath, file_get_contents($itemsFile->getRealPath()));
-
-        $metadata = [
-            'items_path' => $itemsPath,
-            'summary_filename' => $summaryFile->getClientOriginalName(),
-            'items_filename' => $itemsFile->getClientOriginalName(),
-            ...$this->merchantMetadata($request->user()->id, $vendor['normalized_name']),
-        ];
-
-        $batch = ImportBatch::create([
-            'user_id' => $request->user()->id,
-            'source' => 'amazon',
-            'type' => 'orders',
-            'original_filename' => $summaryFile->getClientOriginalName().' + '.$itemsFile->getClientOriginalName(),
-            'storage_path' => $summaryPath,
-            'status' => 'pending',
-            'metadata' => $metadata,
-        ]);
-
-        ProcessImportBatch::dispatch($batch);
-
-        return redirect()
-            ->route('orders.imports.show', [$vendor['normalized_name'], $batch])
-            ->with('success', 'Amazon order import queued.');
-    }
-
-    /**
      * @return array{normalized_name: string, name: string}
      */
     protected function resolveVendor(string $merchant): array
@@ -143,7 +101,7 @@ class RetailerImportController extends Controller
             }
         }
 
-        throw new NotFoundHttpException();
+        throw new NotFoundHttpException;
     }
 
     /**

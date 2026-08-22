@@ -122,6 +122,8 @@ class MerchantBrowseTest extends TestCase
                 ->has('transactions', 2)
                 ->where('transactions.0.description', 'TARGET STORE B')
                 ->where('transactions.0.account.name', 'Capital One Card')
+                ->has('transactions.0.suggested_rule')
+                ->has('rules')
                 ->where('transactionsTruncated', false));
     }
 

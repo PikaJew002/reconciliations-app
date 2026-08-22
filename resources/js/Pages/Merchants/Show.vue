@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
-    import { ref, watch } from 'vue';
+    import { Link, router, useForm, usePage } from '@inertiajs/vue3';
+    import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -9,6 +9,10 @@
         merchant: {
             type: Object,
             required: true,
+        },
+        rules: {
+            type: Array,
+            default: () => [],
         },
         transactions: {
             type: Array,
@@ -24,12 +28,31 @@
         },
     });
 
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
+
     let search = ref(props.filters.q ?? '');
+
+    let nameForm = useForm({
+        name: props.merchant.name,
+    });
+
+    let ruleForm = useForm({
+        match_mode: 'contains',
+        pattern: '',
+    });
 
     watch(
         () => props.filters.q,
         (value) => {
             search.value = value ?? '';
+        },
+    );
+
+    watch(
+        () => props.merchant.name,
+        (value) => {
+            nameForm.name = value;
         },
     );
 
@@ -41,6 +64,50 @@
                 preserveState: true,
                 replace: true,
             },
+        );
+    };
+
+    let submitName = () => {
+        nameForm.patch(`/merchants/${props.merchant.id}`);
+    };
+
+    let submitRule = () => {
+        ruleForm.post(`/merchants/${props.merchant.id}/rules`, {
+            onSuccess: () => ruleForm.reset('pattern'),
+        });
+    };
+
+    let toggleRule = (rule) => {
+        router.patch(`/merchants/${props.merchant.id}/rules/${rule.id}`, {
+            is_active: !rule.is_active,
+        });
+    };
+
+    let deleteRule = (rule) => {
+        if (!window.confirm('Delete this matching rule?')) {
+            return;
+        }
+
+        router.delete(`/merchants/${props.merchant.id}/rules/${rule.id}`);
+    };
+
+    let addRuleFromTransaction = (transaction) => {
+        if (!transaction.suggested_rule?.pattern) {
+            return;
+        }
+
+        router.post(`/merchants/${props.merchant.id}/rules`, {
+            match_mode: transaction.suggested_rule.match_mode,
+            pattern: transaction.suggested_rule.pattern,
+        });
+    };
+
+    let matchModeLabel = (mode) => {
+        return (
+            {
+                contains: 'Description contains',
+                extracted_name: 'Extracted name',
+            }[mode] ?? mode
         );
     };
 
@@ -94,6 +161,43 @@
             </p>
         </div>
 
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
+
+        <form class="space-y-2 rounded border px-4 py-3" @submit.prevent="submitName">
+            <label class="block text-sm font-medium" for="merchant-name"
+                >Display name</label
+            >
+            <div class="flex flex-wrap gap-2">
+                <input
+                    id="merchant-name"
+                    v-model="nameForm.name"
+                    type="text"
+                    class="min-w-64 flex-1 rounded border px-3 text-sm"
+                    required
+                />
+                <button
+                    type="submit"
+                    class="btn rounded border px-4 text-sm"
+                    :disabled="nameForm.processing"
+                >
+                    Save name
+                </button>
+            </div>
+            <p
+                v-if="nameForm.errors.name || nameForm.errors.normalized_name"
+                class="text-sm text-red-600"
+            >
+                {{
+                    nameForm.errors.name || nameForm.errors.normalized_name
+                }}
+            </p>
+        </form>
+
         <div class="rounded border px-4 py-3 text-sm">
             <p class="font-medium">Posted-date coverage</p>
             <p class="text-neutral-600">
@@ -107,6 +211,106 @@
                 {{ merchant.transaction_count }} transactions
             </p>
         </div>
+
+        <section class="space-y-3">
+            <div>
+                <h2 class="text-lg font-semibold">Matching rules</h2>
+                <p class="text-sm text-neutral-600">
+                    Transactions whose bank memo matches a rule are assigned to
+                    this merchant before fuzzy matching runs.
+                </p>
+            </div>
+
+            <form
+                class="flex flex-wrap items-end gap-2 rounded border px-4 py-3"
+                @submit.prevent="submitRule"
+            >
+                <div>
+                    <label class="mb-1 block text-sm" for="rule-mode"
+                        >Match type</label
+                    >
+                    <select
+                        id="rule-mode"
+                        v-model="ruleForm.match_mode"
+                        class="rounded border px-3 text-sm"
+                    >
+                        <option value="contains">Description contains</option>
+                        <option value="extracted_name">Extracted name</option>
+                    </select>
+                </div>
+                <div class="min-w-64 flex-1">
+                    <label class="mb-1 block text-sm" for="rule-pattern"
+                        >Pattern</label
+                    >
+                    <input
+                        id="rule-pattern"
+                        v-model="ruleForm.pattern"
+                        type="text"
+                        class="w-full rounded border px-3 text-sm"
+                        required
+                    />
+                </div>
+                <button
+                    type="submit"
+                    class="btn rounded border px-4 text-sm"
+                    :disabled="ruleForm.processing"
+                >
+                    Add rule
+                </button>
+                <p
+                    v-if="ruleForm.errors.pattern || ruleForm.errors.match_mode"
+                    class="w-full text-sm text-red-600"
+                >
+                    {{ ruleForm.errors.pattern || ruleForm.errors.match_mode }}
+                </p>
+            </form>
+
+            <div v-if="rules.length === 0" class="text-sm text-neutral-600">
+                No matching rules yet. Add one above, or from a transaction
+                below.
+            </div>
+
+            <ul v-else class="divide-y rounded border text-sm">
+                <li
+                    v-for="rule in rules"
+                    :key="rule.id"
+                    class="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
+                >
+                    <div>
+                        <p class="font-medium">{{ rule.pattern }}</p>
+                        <p class="text-neutral-600">
+                            {{ matchModeLabel(rule.match_mode) }}
+                        </p>
+                        <p
+                            class="text-xs"
+                            :class="
+                                rule.is_active
+                                    ? 'text-green-700'
+                                    : 'text-neutral-500'
+                            "
+                        >
+                            {{ rule.is_active ? 'Active' : 'Disabled' }}
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            class="btn rounded border px-3"
+                            @click="toggleRule(rule)"
+                        >
+                            {{ rule.is_active ? 'Disable' : 'Enable' }}
+                        </button>
+                        <button
+                            type="button"
+                            class="btn rounded border px-3 text-red-700"
+                            @click="deleteRule(rule)"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </li>
+            </ul>
+        </section>
 
         <form class="flex flex-wrap gap-2" @submit.prevent="submitSearch">
             <input
@@ -168,6 +372,14 @@
                             · •••• {{ transaction.card_last_four }}
                         </template>
                     </p>
+                    <button
+                        v-if="transaction.suggested_rule?.pattern"
+                        type="button"
+                        class="mt-2 text-xs underline"
+                        @click="addRuleFromTransaction(transaction)"
+                    >
+                        Add rule from this description
+                    </button>
                 </div>
                 <p class="shrink-0 font-medium">
                     {{ formatMoney(transaction.amount) }}

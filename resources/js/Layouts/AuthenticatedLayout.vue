@@ -86,10 +86,10 @@
                     </button>
                     <span class="text-mute">{{ user?.email }}</span>
                     <Link
-                        href="/api-tokens"
+                        href="/api-tokens/pending-spend"
                         class="rounded px-1.5 py-0.5"
                         :class="
-                            currentUrl === '/api-tokens'
+                            currentUrl.startsWith('/api-tokens')
                                 ? 'bg-brand-wash font-semibold text-brand'
                                 : 'text-mute hover:bg-brand-wash hover:text-ink'
                         "

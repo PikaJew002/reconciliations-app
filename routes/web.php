@@ -13,6 +13,7 @@ use App\Http\Controllers\Categories\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Imports\ImportBatchController;
 use App\Http\Controllers\Merchants\MerchantController;
+use App\Http\Controllers\Merchants\MerchantMatchingRuleController;
 use App\Http\Controllers\Onboarding\OnboardingController;
 use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
@@ -61,8 +62,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/leftover', [LeftoverController::class, 'index'])
         ->name('api.leftover.index');
 
-    Route::get('/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
-    Route::post('/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
+    Route::get('/api-tokens/pending-spend', [ApiTokenController::class, 'pendingSpend'])
+        ->name('api-tokens.pending-spend');
+    Route::post('/api-tokens/pending-spend', [ApiTokenController::class, 'storePendingSpend'])
+        ->name('api-tokens.pending-spend.store');
+    Route::get('/api-tokens/retailer-scraper', [ApiTokenController::class, 'retailerScraper'])
+        ->name('api-tokens.retailer-scraper');
+    Route::post('/api-tokens/retailer-scraper', [ApiTokenController::class, 'storeRetailerScraper'])
+        ->name('api-tokens.retailer-scraper.store');
     Route::delete('/api-tokens/{token}', [ApiTokenController::class, 'destroy'])
         ->whereNumber('token')
         ->name('api-tokens.destroy');
@@ -159,6 +166,13 @@ Route::middleware('auth')->group(function () {
         ->name('orders.show');
 
     Route::get('/merchants/{merchant}', [MerchantController::class, 'show'])->name('merchants.show');
+    Route::patch('/merchants/{merchant}', [MerchantController::class, 'update'])->name('merchants.update');
+    Route::post('/merchants/{merchant}/rules', [MerchantMatchingRuleController::class, 'store'])
+        ->name('merchants.rules.store');
+    Route::patch('/merchants/{merchant}/rules/{rule}', [MerchantMatchingRuleController::class, 'update'])
+        ->name('merchants.rules.update');
+    Route::delete('/merchants/{merchant}/rules/{rule}', [MerchantMatchingRuleController::class, 'destroy'])
+        ->name('merchants.rules.destroy');
 
     Route::get('/reconciliation/unmatched-transactions', [ReconciliationController::class, 'unmatchedTransactions'])
         ->name('reconciliation.unmatched-transactions');
