@@ -452,6 +452,163 @@ class OrderPaymentResolutionTest extends TestCase
             'description' => 'Amazon gift card balance',
         ]);
         $this->assertSame(1, Account::query()->where('user_id', $user->id)->offBook()->count());
+
+        $visaTx = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('description', 'Visa ending in 8463')
+            ->first();
+
+        $this->assertSame('non_bank_tender', $visaTx?->metadata['source']);
+        $this->assertSame('gift_card', $visaTx?->metadata['kind']);
+    }
+
+    public function test_can_mark_card_payments_as_cash_and_other(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+            'supports_order_import' => true,
+        ]);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => '114-1111111-1111111',
+            'ordered_at' => '2026-07-21',
+            'total' => 20.00,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 8463',
+                        'last_four' => '8463',
+                        'amount' => 12.00,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Unknown tender',
+                        'last_four' => null,
+                        'amount' => 8.00,
+                        'kind' => 'unknown',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Item',
+            'amount' => 20.00,
+            'order_item_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.orders.resolve-payments', $order), [
+                'payments' => [
+                    [
+                        'index' => 0,
+                        'amount' => 12.00,
+                        'bank_transaction_id' => null,
+                        'kind' => 'cash',
+                    ],
+                    [
+                        'index' => 1,
+                        'amount' => 8.00,
+                        'bank_transaction_id' => null,
+                        'kind' => 'other',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+
+        $this->assertSame('reconciled', $order->status);
+        $this->assertSame('cash', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('other', $order->metadata['payments'][1]['kind']);
+
+        $offBook = Account::query()
+            ->where('user_id', $user->id)
+            ->offBook()
+            ->first();
+
+        $this->assertNotNull($offBook);
+
+        $cashTx = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('description', 'Visa ending in 8463')
+            ->first();
+        $otherTx = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('description', 'Unknown tender')
+            ->first();
+
+        $this->assertSame($offBook->id, $cashTx?->account_id);
+        $this->assertSame('non_bank_tender', $cashTx?->metadata['source']);
+        $this->assertSame('cash', $cashTx?->metadata['kind']);
+        $this->assertSame($offBook->id, $otherTx?->account_id);
+        $this->assertSame('non_bank_tender', $otherTx?->metadata['source']);
+        $this->assertSame('other', $otherTx?->metadata['kind']);
+    }
+
+    public function test_resolve_rejects_unknown_payment_kind(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'total' => 10.00,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 1111',
+                        'last_four' => '1111',
+                        'amount' => 6.00,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Ending in 2222',
+                        'last_four' => '2222',
+                        'amount' => 4.00,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('reconciliation.needs-review'))
+            ->post(route('reconciliation.orders.resolve-payments', $order), [
+                'payments' => [
+                    [
+                        'index' => 0,
+                        'amount' => 6.00,
+                        'kind' => 'banana',
+                    ],
+                    [
+                        'index' => 1,
+                        'amount' => 4.00,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHasErrors(['payments.0.kind']);
     }
 
     public function test_user_can_remove_duplicate_payment_method(): void

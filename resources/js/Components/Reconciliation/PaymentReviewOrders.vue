@@ -34,14 +34,28 @@
             {
                 card: 'Card',
                 gift_card: 'Gift card',
+                cash: 'Cash',
+                other: 'Other',
                 walmart_balance: 'Walmart Balance',
                 unknown: 'Unknown',
             }[kind] || kind
         );
     }
 
-    function canMarkAsGiftCard(payment) {
-        return payment.kind === 'card' || payment.kind === 'unknown';
+    function isOffBookKind(kind) {
+        return ['gift_card', 'cash', 'other', 'walmart_balance'].includes(kind);
+    }
+
+    function canChooseTenderKind(payment) {
+        return payment.kind !== 'walmart_balance';
+    }
+
+    function importedBankKind(payment) {
+        if (payment.kind === 'card' || payment.kind === 'unknown') {
+            return payment.kind;
+        }
+
+        return 'card';
     }
 
     function paymentRequiresBankTransaction(order, paymentIndex) {
@@ -49,24 +63,19 @@
             paymentForms[order.id]?.[paymentIndex]?.kind ??
             order.payments[paymentIndex]?.kind;
 
-        return kind === 'card' || kind === 'unknown';
+        return !isOffBookKind(kind);
     }
 
-    function onGiftCardToggle(order, paymentIndex, event) {
+    function onTenderKindChange(order, paymentIndex) {
         let row = paymentForms[order.id]?.[paymentIndex];
-        let payment = order.payments[paymentIndex];
 
-        if (!row || !payment) {
+        if (!row) {
             return;
         }
 
-        if (event.target.checked) {
-            row.kind = 'gift_card';
+        if (!paymentRequiresBankTransaction(order, paymentIndex)) {
             row.bank_transaction_id = '';
-            return;
         }
-
-        row.kind = payment.kind === 'gift_card' ? 'card' : payment.kind;
     }
 
     function amountsMatch(left, right) {
@@ -238,9 +247,9 @@
         <div>
             <h2 class="text-base font-semibold">Multi-payment orders</h2>
             <p class="text-sm text-neutral-600">
-                Orders paid with more than one method (card + gift card /
-                Walmart Balance). Remove a failed/duplicate attempt, or match
-                the bank card charge, enter the other tender amount, then save.
+                Orders paid with more than one method. Match the bank card
+                charge, or mark a tender as gift card, cash, or other if it did
+                not post to an imported account.
             </p>
         </div>
 
@@ -289,14 +298,11 @@
                                 <p class="font-medium">
                                     {{ payment.ending }}
                                 </p>
-                                <p class="text-neutral-600">
-                                    {{
-                                        paymentKindLabel(
-                                            paymentForms[order.id]?.[
-                                                paymentIndex
-                                            ]?.kind ?? payment.kind,
-                                        )
-                                    }}
+                                <p
+                                    v-if="!canChooseTenderKind(payment)"
+                                    class="text-neutral-600"
+                                >
+                                    {{ paymentKindLabel(payment.kind) }}
                                 </p>
                             </div>
                             <div class="flex flex-wrap items-center gap-3">
@@ -304,25 +310,47 @@
                                     v-if="
                                         order.components_balanced &&
                                         paymentForms[order.id] &&
-                                        canMarkAsGiftCard(payment)
+                                        canChooseTenderKind(payment)
                                     "
                                     class="flex items-center gap-2 text-neutral-700"
                                 >
-                                    <input
-                                        type="checkbox"
-                                        :checked="
+                                    <span class="text-neutral-600">Tender</span>
+                                    <select
+                                        v-model="
                                             paymentForms[order.id][paymentIndex]
-                                                .kind === 'gift_card'
+                                                .kind
                                         "
+                                        class="rounded border px-2 py-1"
                                         @change="
-                                            onGiftCardToggle(
+                                            onTenderKindChange(
                                                 order,
                                                 paymentIndex,
-                                                $event,
                                             )
                                         "
-                                    />
-                                    <span>Mark as gift card</span>
+                                    >
+                                        <optgroup label="Imported">
+                                            <option
+                                                :value="
+                                                    importedBankKind(payment)
+                                                "
+                                            >
+                                                {{
+                                                    paymentKindLabel(
+                                                        importedBankKind(
+                                                            payment,
+                                                        ),
+                                                    )
+                                                }}
+                                            </option>
+                                        </optgroup>
+                                        <optgroup label="Off-book">
+                                            <option value="gift_card">
+                                                Gift card
+                                            </option>
+                                            <option value="cash">Cash</option>
+                                            <option value="other">Other</option>
+                                        </optgroup>
+                                    </select>
                                 </label>
                                 <button
                                     v-if="order.payments.length > 1"
@@ -413,7 +441,14 @@
                             </label>
 
                             <p v-else class="self-end text-neutral-600">
-                                Non-bank tender (no bank transaction required)
+                                Off-book
+                                {{
+                                    paymentKindLabel(
+                                        paymentForms[order.id][paymentIndex]
+                                            .kind,
+                                    ).toLowerCase()
+                                }}
+                                (no bank transaction required)
                             </p>
                         </div>
                     </div>

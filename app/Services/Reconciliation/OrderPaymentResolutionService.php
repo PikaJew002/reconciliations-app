@@ -12,6 +12,51 @@ use RuntimeException;
 
 class OrderPaymentResolutionService
 {
+    public const KIND_CARD = 'card';
+
+    public const KIND_GIFT_CARD = 'gift_card';
+
+    public const KIND_CASH = 'cash';
+
+    public const KIND_OTHER = 'other';
+
+    public const KIND_WALMART_BALANCE = 'walmart_balance';
+
+    public const KIND_UNKNOWN = 'unknown';
+
+    /**
+     * @return list<string>
+     */
+    public static function paymentKinds(): array
+    {
+        return [
+            self::KIND_CARD,
+            self::KIND_GIFT_CARD,
+            self::KIND_CASH,
+            self::KIND_OTHER,
+            self::KIND_WALMART_BALANCE,
+            self::KIND_UNKNOWN,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function offBookKinds(): array
+    {
+        return [
+            self::KIND_GIFT_CARD,
+            self::KIND_CASH,
+            self::KIND_OTHER,
+            self::KIND_WALMART_BALANCE,
+        ];
+    }
+
+    public static function isOffBookKind(string $kind): bool
+    {
+        return in_array($kind, self::offBookKinds(), true);
+    }
+
     public function __construct(
         protected ReconciliationService $reconciliation,
         protected OffBookAccountService $offBookAccounts,
@@ -93,7 +138,7 @@ class OrderPaymentResolutionService
 
                 $kind = $resolution['kind'] ?? $payment['kind'];
                 $payment = [...$payment, 'kind' => $kind];
-                $requiresBankTx = in_array($kind, ['card', 'unknown'], true);
+                $requiresBankTx = ! self::isOffBookKind($kind);
 
                 if ($requiresBankTx) {
                     $transactionId = $resolution['bank_transaction_id'];
@@ -328,10 +373,8 @@ class OrderPaymentResolutionService
             return false;
         }
 
-        $nonBankKinds = ['gift_card', 'walmart_balance'];
-
         foreach ($payments as $payment) {
-            if (! in_array($payment['kind'], $nonBankKinds, true)) {
+            if (! self::isOffBookKind($payment['kind'])) {
                 return false;
             }
 
@@ -365,7 +408,7 @@ class OrderPaymentResolutionService
      */
     public function candidateTransactionsForPayment(Order $order, array $payment): array
     {
-        if (! in_array($payment['kind'], ['card', 'unknown'], true)) {
+        if (self::isOffBookKind($payment['kind'])) {
             return [];
         }
 
@@ -471,10 +514,14 @@ class OrderPaymentResolutionService
             return;
         }
 
+        $offBookChoices = [self::KIND_GIFT_CARD, self::KIND_CASH, self::KIND_OTHER];
+
         $allowedOverrides = [
-            'card' => ['gift_card'],
-            'unknown' => ['gift_card', 'card'],
-            'gift_card' => ['card'],
+            self::KIND_CARD => $offBookChoices,
+            self::KIND_UNKNOWN => [...$offBookChoices, self::KIND_CARD],
+            self::KIND_GIFT_CARD => [self::KIND_CARD, self::KIND_CASH, self::KIND_OTHER],
+            self::KIND_CASH => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_OTHER],
+            self::KIND_OTHER => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_CASH],
         ];
 
         $allowed = $allowedOverrides[$currentKind] ?? [];
