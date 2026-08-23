@@ -319,7 +319,7 @@ class ReconciliationServiceTest extends TestCase
         $this->assertEqualsWithDelta(50.00, (float) $order->fresh()->allocated_amount, 0.01);
     }
 
-    public function test_skips_multi_match_when_order_is_near_import_edge(): void
+    public function test_skips_multi_match_when_order_is_outside_bank_coverage(): void
     {
         $user = User::factory()->create();
         $merchant = Merchant::factory()->create([
@@ -329,14 +329,13 @@ class ReconciliationServiceTest extends TestCase
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
 
-        // Range anchors only — order on 2026-07-03 is within 3 days of min posted_at.
         $this->createRangeAnchorTransactions($user, $account, $batch, '2026-07-01', '2026-08-15');
 
         $order = Order::factory()->create([
             'user_id' => $user->id,
             'import_batch_id' => $batch->id,
             'merchant_id' => $merchant->id,
-            'ordered_at' => '2026-07-03',
+            'ordered_at' => '2026-06-28',
             'total' => 50.00,
             'payment_last_four' => '2195',
             'status' => 'imported',

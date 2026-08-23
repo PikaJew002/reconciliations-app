@@ -129,7 +129,7 @@
             v-if="nearImportEdge"
             class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
-            Some orders in this range sit within 3 days of the bank import edge,
+            Some orders in this range fall outside bank posted coverage,
             so multi-transaction matching may skip them.
             <Link href="/accounts" class="underline">
                 Import more bank history
@@ -172,7 +172,7 @@
                             v-if="order.near_import_edge"
                             class="mt-1 text-amber-800"
                         >
-                            Near bank import edge — multi-tx matching skipped
+                            Outside bank posted coverage — multi-tx matching skipped
                         </p>
                         <p
                             v-if="!order.components_balanced"

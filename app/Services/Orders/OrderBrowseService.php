@@ -22,7 +22,6 @@ class OrderBrowseService
     ];
 
     public function __construct(
-        protected int $importEdgeWindowDays = 3,
         protected int $listLimit = 50,
     ) {}
 
@@ -405,19 +404,7 @@ class OrderBrowseService
         $min = Carbon::parse($bankCoverage['min'])->startOfDay();
         $max = Carbon::parse($bankCoverage['max'])->startOfDay();
 
-        if ($orderDate->lt($min) || $orderDate->gt($max)) {
-            return true;
-        }
-
-        if (abs($orderDate->diffInDays($min, false)) <= $this->importEdgeWindowDays) {
-            return true;
-        }
-
-        if (abs($orderDate->diffInDays($max, false)) <= $this->importEdgeWindowDays) {
-            return true;
-        }
-
-        return false;
+        return $orderDate->lt($min) || $orderDate->gt($max);
     }
 
     protected function orderDate(Order $order): ?Carbon

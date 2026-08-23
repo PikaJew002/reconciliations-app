@@ -238,12 +238,12 @@ class OrderBrowseTest extends TestCase
             'amount' => -20.00,
         ]);
 
-        $nearEdgeOrder = Order::factory()->create([
+        $outsideCoverageOrder = Order::factory()->create([
             'user_id' => $user->id,
             'merchant_id' => $walmart->id,
-            'order_number' => 'NEAR-EDGE-1',
-            'ordered_at' => '2026-08-04 00:00:00',
-            'delivered_at' => '2026-08-05 00:00:00',
+            'order_number' => 'OUTSIDE-1',
+            'ordered_at' => '2026-08-08 00:00:00',
+            'delivered_at' => '2026-08-09 00:00:00',
             'total' => 102.43,
             'payment_last_four' => '2525',
             'status' => 'imported',
@@ -290,10 +290,10 @@ class OrderBrowseTest extends TestCase
                 ->where('bankCoverage.min', '2026-06-01')
                 ->where('bankCoverage.max', '2026-08-06')
                 ->where('orderCoverage.min', '2026-07-01')
-                ->where('orderCoverage.max', '2026-08-04')
+                ->where('orderCoverage.max', '2026-08-08')
                 ->where('nearImportEdge', true)
                 ->has('orders', 2)
-                ->where('orders.0.id', $nearEdgeOrder->id)
+                ->where('orders.0.id', $outsideCoverageOrder->id)
                 ->where('orders.0.near_import_edge', true)
                 ->where('orders.1.id', $safeOrder->id)
                 ->where('orders.1.near_import_edge', false));

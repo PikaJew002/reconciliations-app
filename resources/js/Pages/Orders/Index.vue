@@ -151,8 +151,8 @@
                 {{ formatDate(bankCoverage.max) }}
             </p>
             <p class="mt-1 text-neutral-600">
-                Multi-transaction matches skip orders within 3 days of these
-                edges.
+                Multi-transaction matches skip orders outside this posted-date
+                range.
             </p>
         </div>
         <p v-else class="text-sm text-neutral-600">
