@@ -159,6 +159,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders/{merchant}/imports/{importBatch}', [ImportBatchController::class, 'showForMerchant'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.imports.show');
+    Route::get('/orders/{merchant}/{order}', [OrderController::class, 'detail'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->whereNumber('order')
+        ->name('orders.detail');
+    Route::delete('/orders/{merchant}/{order}', [OrderController::class, 'destroy'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->whereNumber('order')
+        ->name('orders.destroy');
     Route::get('/orders/{merchant}', [OrderController::class, 'show'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.show');

@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
-    import { ref, watch } from 'vue';
+    import { Link, router, usePage } from '@inertiajs/vue3';
+    import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -36,6 +36,8 @@
         },
     });
 
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
     let search = ref(props.filters.q ?? '');
 
     watch(
@@ -95,6 +97,13 @@
             </div>
         </div>
 
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
+
         <div class="grid gap-3 sm:grid-cols-2">
             <div class="rounded border px-4 py-3 text-sm">
                 <p class="font-medium">Order date coverage</p>
@@ -144,29 +153,30 @@
         </div>
 
         <ul v-else class="divide-y rounded border text-sm">
-            <li
-                v-for="order in orders"
-                :key="order.id"
-                class="flex items-start justify-between gap-4 px-4 py-3"
-            >
-                <div>
-                    <p class="font-medium">{{ order.order_number }}</p>
-                    <p class="text-neutral-600">
-                        Ordered {{ formatDate(order.ordered_at) }} · Delivered
-                        {{ formatDate(order.delivered_at) }} ·
-                        {{ order.status }}
-                        <template v-if="order.payment_last_four">
-                            · •••• {{ order.payment_last_four }}
-                        </template>
-                    </p>
-                    <p
-                        v-if="order.near_import_edge"
-                        class="mt-1 text-amber-800"
-                    >
-                        Near bank import edge — multi-tx matching skipped
-                    </p>
-                </div>
-                <p class="font-medium">{{ formatMoney(order.total) }}</p>
+            <li v-for="order in orders" :key="order.id" class="flex items-stretch">
+                <Link
+                    :href="`/orders/${merchant.normalized_name}/${order.id}`"
+                    class="flex min-w-0 flex-1 items-start justify-between gap-4 px-4 py-3 hover:bg-neutral-50"
+                >
+                    <div>
+                        <p class="font-medium">{{ order.order_number }}</p>
+                        <p class="text-neutral-600">
+                            Ordered {{ formatDate(order.ordered_at) }} · Delivered
+                            {{ formatDate(order.delivered_at) }} ·
+                            {{ order.status }}
+                            <template v-if="order.payment_last_four">
+                                · •••• {{ order.payment_last_four }}
+                            </template>
+                        </p>
+                        <p
+                            v-if="order.near_import_edge"
+                            class="mt-1 text-amber-800"
+                        >
+                            Near bank import edge — multi-tx matching skipped
+                        </p>
+                    </div>
+                    <p class="font-medium">{{ formatMoney(order.total) }}</p>
+                </Link>
             </li>
         </ul>
 
