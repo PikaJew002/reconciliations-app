@@ -148,6 +148,8 @@ Route::middleware('auth')->group(function () {
         ->name('orders.categorize-all');
     Route::post('/orders/items/{item}/categorize-as-product', [OrderItemCategorizationController::class, 'store'])
         ->name('orders.items.categorize-as-product');
+    Route::post('/orders/items/{item}/categorize-this-time', [OrderItemCategorizationController::class, 'storeInstance'])
+        ->name('orders.items.categorize-this-time');
     Route::delete('/orders/items/{item}', [OrderItemCategorizationController::class, 'destroy'])
         ->name('orders.items.destroy');
     Route::get('/orders/{merchant}/imports', [RetailerImportController::class, 'index'])

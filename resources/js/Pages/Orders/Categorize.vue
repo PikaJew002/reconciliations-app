@@ -249,6 +249,45 @@
         );
     };
 
+    let instanceSavingKey = (order, line) =>
+        `once:${selectionKey(order, line)}`;
+
+    let lineIsBusy = (order, line) => {
+        let key = selectionKey(order, line);
+
+        return (
+            savingKey.value === key ||
+            savingKey.value === instanceSavingKey(order, line) ||
+            savingKey.value === `remove:${key}`
+        );
+    };
+
+    let submitThisTimeOnly = (order, line) => {
+        let key = instanceSavingKey(order, line);
+        let categoryId = categorySelections[selectionKey(order, line)];
+
+        if (!categoryId || savingKey.value) {
+            return;
+        }
+
+        savingKey.value = key;
+        dismissItem(line.id);
+
+        router.post(
+            `/orders/items/${line.id}/categorize-this-time`,
+            { category_id: Number(categoryId) },
+            {
+                ...reloadOptions,
+                onFinish: () => {
+                    savingKey.value = null;
+                },
+                onError: () => {
+                    router.reload(reloadOptions);
+                },
+            },
+        );
+    };
+
     let submitComponentCategory = (order, line) => {
         let key = selectionKey(order, line);
         let categoryId = categorySelections[key];
@@ -346,8 +385,9 @@
             </p>
             <h1 class="text-2xl font-semibold">Categorize order lines</h1>
             <p class="text-sm text-neutral-600">
-                Walmart lines update shared products. Amazon lines are one-off
-                component categories.
+                Walmart Save updates the shared product. This time only
+                categorizes this line and leaves later matches uncategorized.
+                Amazon lines are always one-off.
             </p>
         </div>
 
@@ -515,9 +555,7 @@
                                             :disabled="
                                                 !categorySelections[
                                                     selectionKey(order, line)
-                                                ] ||
-                                                savingKey ===
-                                                    selectionKey(order, line)
+                                                ] || lineIsBusy(order, line)
                                             "
                                         >
                                             {{
@@ -529,13 +567,27 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
+                                            class="btn rounded border px-3 text-sm disabled:opacity-50"
                                             :disabled="
-                                                savingKey ===
-                                                    selectionKey(order, line) ||
-                                                savingKey ===
-                                                    `remove:${selectionKey(order, line)}`
+                                                !categorySelections[
+                                                    selectionKey(order, line)
+                                                ] || lineIsBusy(order, line)
                                             "
+                                            @click="
+                                                submitThisTimeOnly(order, line)
+                                            "
+                                        >
+                                            {{
+                                                savingKey ===
+                                                instanceSavingKey(order, line)
+                                                    ? 'Saving…'
+                                                    : 'This time only'
+                                            }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
+                                            :disabled="lineIsBusy(order, line)"
                                             @click="removeItem(order, line)"
                                         >
                                             {{
@@ -618,9 +670,7 @@
                                             :disabled="
                                                 !categorySelections[
                                                     selectionKey(order, line)
-                                                ] ||
-                                                savingKey ===
-                                                    selectionKey(order, line)
+                                                ] || lineIsBusy(order, line)
                                             "
                                         >
                                             {{
@@ -632,13 +682,27 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
+                                            class="btn rounded border px-3 text-sm disabled:opacity-50"
                                             :disabled="
-                                                savingKey ===
-                                                    selectionKey(order, line) ||
-                                                savingKey ===
-                                                    `remove:${selectionKey(order, line)}`
+                                                !categorySelections[
+                                                    selectionKey(order, line)
+                                                ] || lineIsBusy(order, line)
                                             "
+                                            @click="
+                                                submitThisTimeOnly(order, line)
+                                            "
+                                        >
+                                            {{
+                                                savingKey ===
+                                                instanceSavingKey(order, line)
+                                                    ? 'Saving…'
+                                                    : 'This time only'
+                                            }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn rounded border px-3 text-sm text-red-700 disabled:opacity-50"
+                                            :disabled="lineIsBusy(order, line)"
                                             @click="removeItem(order, line)"
                                         >
                                             {{

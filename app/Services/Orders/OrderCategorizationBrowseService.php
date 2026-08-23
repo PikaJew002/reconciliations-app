@@ -60,6 +60,9 @@ class OrderCategorizationBrowseService
             ->with([
                 'merchant:id,name,normalized_name',
                 'items.product:id,name,sku,category_id',
+                'items.components' => fn ($builder) => $builder
+                    ->where('type', 'product')
+                    ->orderBy('id'),
                 'components' => fn ($builder) => $builder
                     ->where('type', 'product')
                     ->whereNull('category_id')
@@ -110,11 +113,17 @@ class OrderCategorizationBrowseService
                         $walmart
                             ->whereHas('merchant', fn (Builder $m) => $m->where('normalized_name', 'walmart'))
                             ->whereHas('items', function (Builder $items): void {
-                                $items->where(function (Builder $item): void {
-                                    $item
-                                        ->whereNull('product_id')
-                                        ->orWhereHas('product', fn (Builder $product) => $product->whereNull('category_id'));
-                                });
+                                $items
+                                    ->where(function (Builder $item): void {
+                                        $item
+                                            ->whereNull('product_id')
+                                            ->orWhereHas('product', fn (Builder $product) => $product->whereNull('category_id'));
+                                    })
+                                    ->whereDoesntHave('components', function (Builder $components): void {
+                                        $components
+                                            ->where('type', 'product')
+                                            ->whereNotNull('category_id');
+                                    });
                             });
                     })
                     ->orWhere(function (Builder $amazon): void {
@@ -183,6 +192,10 @@ class OrderCategorizationBrowseService
      */
     protected function mapWalmartItem(OrderItem $item): ?array
     {
+        if ($this->itemHasInstanceCategory($item)) {
+            return null;
+        }
+
         if ($item->product_id === null) {
             return [
                 'kind' => 'item',
@@ -233,5 +246,17 @@ class OrderCategorizationBrowseService
             ])
             ->values()
             ->all();
+    }
+
+    protected function itemHasInstanceCategory(OrderItem $item): bool
+    {
+        $components = $item->relationLoaded('components')
+            ? $item->components
+            : $item->components()->where('type', 'product')->get();
+
+        return $components->contains(
+            fn (OrderComponent $component): bool => $component->type === 'product'
+                && $component->category_id !== null,
+        );
     }
 }

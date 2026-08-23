@@ -568,4 +568,341 @@ class OrderCategorizationTest extends TestCase
         $this->assertSame($category->id, $second->fresh()->category_id);
         $this->assertSame($previous, $already->fresh()->category_id);
     }
+
+    public function test_queue_hides_one_off_walmart_line_but_keeps_same_product_elsewhere(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Gifts']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'name' => 'LEGO set',
+            'normalized_name' => 'lego set',
+            'sku' => 'LEGO-1',
+        ]);
+
+        $giftOrder = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-GIFT',
+            'ordered_at' => '2026-08-10 00:00:00',
+        ]);
+        $giftItem = OrderItem::factory()->create([
+            'order_id' => $giftOrder->id,
+            'product_id' => $product->id,
+            'description' => 'LEGO set',
+            'sku' => 'LEGO-1',
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $giftOrder->id,
+            'order_item_id' => $giftItem->id,
+            'type' => 'product',
+            'category_id' => $category->id,
+            'is_user_modified' => true,
+        ]);
+
+        $laterOrder = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-LATER',
+            'ordered_at' => '2026-08-11 00:00:00',
+        ]);
+        $laterItem = OrderItem::factory()->create([
+            'order_id' => $laterOrder->id,
+            'product_id' => $product->id,
+            'description' => 'LEGO set',
+            'sku' => 'LEGO-1',
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $laterOrder->id,
+            'order_item_id' => $laterItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.categorize'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Categorize')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'W-LATER')
+                ->where('orders.0.lines.0.id', $laterItem->id)
+                ->where('orders.0.lines.0.status', 'needs_category'));
+    }
+
+    public function test_this_time_only_categorizes_component_without_sticking_product(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Gifts']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'name' => 'Toy',
+            'normalized_name' => 'toy',
+            'sku' => 'TOY-1',
+        ]);
+        $first = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-1',
+        ]);
+        $second = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-2',
+        ]);
+        $firstItem = OrderItem::factory()->create([
+            'order_id' => $first->id,
+            'product_id' => $product->id,
+        ]);
+        $secondItem = OrderItem::factory()->create([
+            'order_id' => $second->id,
+            'product_id' => $product->id,
+        ]);
+        $firstComponent = OrderComponent::factory()->create([
+            'order_id' => $first->id,
+            'order_item_id' => $firstItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+        $secondComponent = OrderComponent::factory()->create([
+            'order_id' => $second->id,
+            'order_item_id' => $secondItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.items.categorize-this-time', $firstItem), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->assertNull($product->fresh()->category_id);
+        $this->assertSame($category->id, $firstComponent->fresh()->category_id);
+        $this->assertTrue($firstComponent->fresh()->is_user_modified);
+        $this->assertNull($secondComponent->fresh()->category_id);
+
+        $this->actingAs($user)
+            ->get(route('orders.categorize'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Categorize')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'W-2')
+                ->where('orders.0.lines.0.id', $secondItem->id));
+    }
+
+    public function test_this_time_only_links_product_without_categorizing_it(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Household']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => null,
+            'sku' => 'SOAP-ONCE',
+            'description' => 'Dish soap',
+            'normalized_description' => 'dish soap',
+            'extended_price' => 3.50,
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.items.categorize-this-time', $item), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $item->refresh();
+        $this->assertNotNull($item->product_id);
+        $this->assertNull($item->product->category_id);
+        $this->assertSame($category->id, $component->fresh()->category_id);
+        $this->assertDatabaseHas('products', [
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'sku' => 'SOAP-ONCE',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.categorize'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Categorize')
+                ->has('orders', 0));
+    }
+
+    public function test_this_time_only_generates_missing_components_for_this_item_only(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'tax' => 1.10,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'discount' => 0,
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'description' => 'Bananas',
+            'extended_price' => 2.00,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('orders.items.categorize-this-time', $item), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->assertNull($product->fresh()->category_id);
+        $this->assertDatabaseHas('order_components', [
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'category_id' => $category->id,
+            'is_user_modified' => true,
+        ]);
+        $this->assertDatabaseHas('order_components', [
+            'order_id' => $order->id,
+            'type' => 'tax',
+            'category_id' => null,
+        ]);
+    }
+
+    public function test_this_time_only_leaves_sibling_line_on_same_order(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'DUP-1',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-DUP',
+        ]);
+        $firstItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'line_number' => 1,
+            'description' => 'First box',
+        ]);
+        $secondItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'line_number' => 2,
+            'description' => 'Second box',
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $firstItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $secondItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.items.categorize-this-time', $firstItem), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->actingAs($user)
+            ->get(route('orders.categorize'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Categorize')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'W-DUP')
+                ->has('orders.0.lines', 1)
+                ->where('orders.0.lines.0.id', $secondItem->id));
+    }
+
+    public function test_cannot_categorize_this_time_for_amazon_item(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('orders.items.categorize-this-time', $item), [
+                'category_id' => $category->id,
+            ])
+            ->assertNotFound();
+    }
 }
