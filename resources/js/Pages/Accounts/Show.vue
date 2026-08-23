@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { Link, router } from '@inertiajs/vue3';
-    import { computed, ref, watch } from 'vue';
+    import { ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -32,19 +32,6 @@
             search.value = value ?? '';
         },
     );
-
-    let nearRecentEdge = computed(() => {
-        if (!props.account.max_posted_at) {
-            return false;
-        }
-
-        let max = new Date(`${props.account.max_posted_at}T00:00:00`);
-        let today = new Date();
-        today.setHours(0, 0, 0, 0);
-        let diffDays = Math.abs((today - max) / (1000 * 60 * 60 * 24));
-
-        return diffDays <= 7;
-    });
 
     let submitSearch = () => {
         router.get(
@@ -242,10 +229,6 @@
             </p>
             <p class="mt-1 text-neutral-600">
                 {{ account.transaction_count }} transactions
-            </p>
-            <p v-if="nearRecentEdge && !account.is_off_book" class="mt-2 text-amber-800">
-                Coverage ends near today. Import newer bank history if recent
-                multi-transaction matches are being skipped.
             </p>
         </div>
 
