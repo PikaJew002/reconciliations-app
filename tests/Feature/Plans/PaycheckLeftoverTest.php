@@ -11,9 +11,12 @@ use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
+use App\Models\TransactionTransferLink;
 use App\Models\User;
+use App\Services\Plans\PaycheckLeftoverService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -68,6 +71,7 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(0, $july['brought_forward']);
         $this->assertEquals(3000, $july['planned_leftover']);
         $this->assertEquals(0, $july['spent']);
+        $this->assertEquals(0, $july['allocated']);
         $this->assertEquals(3000, $july['remaining']);
         $this->assertEquals(3000, $august['brought_forward']);
         $this->assertEquals(3000, $august['planned_leftover']);
@@ -223,6 +227,103 @@ class PaycheckLeftoverTest extends TestCase
             ->assertJsonPath('leftover.paycheck.name', 'Mid-month paycheck');
     }
 
+    public function test_credit_card_payments_reduce_remaining_but_not_spent(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 500,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::CREDIT_CARD,
+            'kind' => PaycheckLeftoverService::ALLOCATION_CREDIT_CARD_PAYMENT,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJsonPath('leftover.spent', 0)
+            ->assertJsonPath('leftover.allocated', 500)
+            ->assertJsonPath('leftover.credit_card_payments', 500)
+            ->assertJsonPath('leftover.savings_transfers', 0)
+            ->assertJsonPath('leftover.remaining', 5500);
+    }
+
+    public function test_savings_transfers_reduce_remaining_but_not_spent(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::SAVINGS,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJsonPath('leftover.spent', 0)
+            ->assertJsonPath('leftover.allocated', 200)
+            ->assertJsonPath('leftover.savings_transfers', 200)
+            ->assertJsonPath('leftover.credit_card_payments', 0)
+            ->assertJsonPath('leftover.remaining', 5800);
+    }
+
+    public function test_savings_to_checking_transfers_increase_remaining(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-08',
+            'from' => Account::SAVINGS,
+            'to' => Account::CHECKING,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJsonPath('leftover.spent', 0)
+            ->assertJsonPath('leftover.allocated', -200)
+            ->assertJsonPath('leftover.savings_transfers', -200)
+            ->assertJsonPath('leftover.credit_card_payments', 0)
+            ->assertJsonPath('leftover.remaining', 6200);
+    }
+
+    public function test_checking_to_checking_transfers_do_not_affect_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 250,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::CHECKING,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJsonPath('leftover.spent', 0)
+            ->assertJsonPath('leftover.allocated', 0)
+            ->assertJsonPath('leftover.remaining', 6000);
+    }
+
+    public function test_rejected_transfers_do_not_reduce_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 500,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::SAVINGS,
+            'status' => TransactionTransferLink::STATUS_REJECTED,
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJsonPath('leftover.allocated', 0)
+            ->assertJsonPath('leftover.remaining', 6000);
+    }
+
     public function test_dashboard_includes_current_paycheck_leftover_as_the_hero(): void
     {
         [$user] = $this->paycheckSetup();
@@ -286,6 +387,64 @@ class PaycheckLeftoverTest extends TestCase
             'normalized_pattern' => 'acme payroll mid',
             'expected_day' => 15,
             'expected_amount' => 3000,
+        ]);
+    }
+
+    /**
+     * @param  array{
+     *     amount: float,
+     *     posted_at: string,
+     *     from: string,
+     *     to: string,
+     *     kind?: string,
+     *     status?: string
+     * }  $attributes
+     */
+    protected function transferPair(User $user, array $attributes): TransactionTransferLink
+    {
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $from = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => $attributes['from'],
+        ]);
+        $to = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => $attributes['to'],
+        ]);
+
+        $debit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $from->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -1 * $attributes['amount'],
+            'classification' => BankTransaction::CLASSIFICATION_TRANSFER,
+            'posted_at' => $attributes['posted_at'],
+            'description' => 'Transfer',
+        ]);
+        $credit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $to->id,
+            'import_batch_id' => $batch->id,
+            'amount' => $attributes['amount'],
+            'classification' => BankTransaction::CLASSIFICATION_TRANSFER,
+            'posted_at' => $attributes['posted_at'],
+            'description' => 'Transfer',
+        ]);
+
+        $metadata = ['source' => 'auto'];
+
+        if (isset($attributes['kind'])) {
+            $metadata['kind'] = $attributes['kind'];
+        }
+
+        return TransactionTransferLink::query()->create([
+            'user_id' => $user->id,
+            'debit_transaction_id' => $debit->id,
+            'credit_transaction_id' => $credit->id,
+            'transfer_group_id' => (string) Str::uuid(),
+            'match_confidence' => 90,
+            'status' => $attributes['status'] ?? TransactionTransferLink::STATUS_CONFIRMED,
+            'metadata' => $metadata,
         ]);
     }
 

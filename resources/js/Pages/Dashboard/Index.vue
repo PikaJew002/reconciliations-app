@@ -357,6 +357,14 @@
                 + {{ paycheck_leftover.paycheck.name }} leftover
                 {{ formatMoney(paycheck_leftover.planned_leftover) }}
                 − spent {{ formatMoney(paycheck_leftover.spent) }}
+                <template v-if="(paycheck_leftover.allocated ?? 0) > 0">
+                    − transferred
+                    {{ formatMoney(paycheck_leftover.allocated) }}
+                </template>
+                <template v-else-if="(paycheck_leftover.allocated ?? 0) < 0">
+                    + from savings
+                    {{ formatMoney(-paycheck_leftover.allocated) }}
+                </template>
             </p>
             <p
                 v-if="paycheck_leftover.next_paycheck"

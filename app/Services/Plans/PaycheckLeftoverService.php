@@ -2,9 +2,11 @@
 
 namespace App\Services\Plans;
 
+use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\TransactionTransferLink;
 use App\Services\Reporting\CategorySpendQuery;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -12,6 +14,10 @@ use Illuminate\Support\Collection;
 
 class PaycheckLeftoverService
 {
+    public const ALLOCATION_CREDIT_CARD_PAYMENT = 'credit_card_payment';
+
+    public const ALLOCATION_SAVINGS_TRANSFER = 'savings_transfer';
+
     public function __construct(
         protected PaycheckBillAssignmentService $assignments,
         protected CategorySpendQuery $spendQuery,
@@ -94,6 +100,7 @@ class PaycheckLeftoverService
             ->all();
 
         $from = $starts->first()['start'];
+        $allocationEvents = $this->allocationEventsForUser($userId, $from);
         $spendEvents = collect($this->spendQuery->spendEventsForUser($userId, $from))
             ->reject(function (array $event) use ($assignedBillTransactionIds): bool {
                 $transactionId = $event['bank_transaction_id'] ?? null;
@@ -144,13 +151,30 @@ class PaycheckLeftoverService
                     && $this->dateInWindow($bill->expected_date->toDateString(), $start, $end);
             });
 
+            $windowAllocations = $allocationEvents->filter(
+                fn (array $event) => $this->dateInWindow($event['date'], $start, $end),
+            )->values();
+
             $spent = round(
                 (float) $windowEvents->sum('amount')
                 + (float) $plannedUnassigned->sum(fn (PlannedOccurrence $bill) => (float) $bill->expected_amount),
                 2,
             );
+            $allocated = round((float) $windowAllocations->sum('amount'), 2);
+            $creditCardPayments = round(
+                (float) $windowAllocations
+                    ->where('kind', self::ALLOCATION_CREDIT_CARD_PAYMENT)
+                    ->sum('amount'),
+                2,
+            );
+            $savingsTransfers = round(
+                (float) $windowAllocations
+                    ->where('kind', self::ALLOCATION_SAVINGS_TRANSFER)
+                    ->sum('amount'),
+                2,
+            );
 
-            $remaining = round($broughtForward + $contribution['leftover'] - $spent, 2);
+            $remaining = round($broughtForward + $contribution['leftover'] - $spent - $allocated, 2);
             $nextPaycheck = $next !== null
                 ? $this->paycheckPayload($paychecks->get($next['occurrence']->template_id), $next['occurrence'], $next['start'])
                 : null;
@@ -163,6 +187,10 @@ class PaycheckLeftoverService
                 'brought_forward' => $broughtForward,
                 'planned_leftover' => $contribution['leftover'],
                 'spent' => $spent,
+                'allocated' => $allocated,
+                'credit_card_payments' => $creditCardPayments,
+                'savings_transfers' => $savingsTransfers,
+                'allocations' => $windowAllocations->all(),
                 'remaining' => $remaining,
                 ...$this->dayCounts($start, $end),
                 'bills' => array_map(function (array $bill): array {
@@ -208,6 +236,96 @@ class PaycheckLeftoverService
         }
 
         return $windows[array_key_last($windows)];
+    }
+
+    /**
+     * Credit card payments and checking↔savings transfers change remaining
+     * leftover without counting as discretionary spend.
+     *
+     * Allocated is signed because remaining always subtracts it: checking →
+     * savings is positive, savings → checking is negative. Debit rows are
+     * always stored negative, so the sign comes from direction, not abs(debit).
+     *
+     * @return Collection<int, array{date: string, amount: float, kind: string, name: ?string}>
+     */
+    protected function allocationEventsForUser(int $userId, CarbonInterface $from): Collection
+    {
+        $links = TransactionTransferLink::query()
+            ->where('user_id', $userId)
+            ->whereIn('status', [
+                TransactionTransferLink::STATUS_CONFIRMED,
+                TransactionTransferLink::STATUS_SUGGESTED,
+            ])
+            ->with([
+                'debitTransaction.account',
+                'creditTransaction.account',
+            ])
+            ->get();
+
+        $events = [];
+
+        foreach ($links as $link) {
+            $debit = $link->debitTransaction;
+
+            if ($debit?->posted_at === null) {
+                continue;
+            }
+
+            $allocation = $this->allocationForLink($link);
+
+            if ($allocation === null) {
+                continue;
+            }
+
+            $events[] = [
+                'date' => $debit->posted_at->toDateString(),
+                'amount' => $allocation['amount'],
+                'kind' => $allocation['kind'],
+                'name' => $debit->description,
+            ];
+        }
+
+        return collect($events)->filter(
+            fn (array $event) => ! Carbon::parse($event['date'])->startOfDay()->lt($from->copy()->startOfDay()),
+        )->values();
+    }
+
+    /**
+     * @return array{kind: string, amount: float}|null
+     */
+    protected function allocationForLink(TransactionTransferLink $link): ?array
+    {
+        $magnitude = abs((float) ($link->debitTransaction?->amount ?? 0));
+
+        if ($magnitude < 0.01) {
+            return null;
+        }
+
+        if (($link->metadata['kind'] ?? null) === self::ALLOCATION_CREDIT_CARD_PAYMENT) {
+            return [
+                'kind' => self::ALLOCATION_CREDIT_CARD_PAYMENT,
+                'amount' => $magnitude,
+            ];
+        }
+
+        $debitType = $link->debitTransaction?->account?->account_type;
+        $creditType = $link->creditTransaction?->account?->account_type;
+
+        if ($debitType === Account::CHECKING && $creditType === Account::SAVINGS) {
+            return [
+                'kind' => self::ALLOCATION_SAVINGS_TRANSFER,
+                'amount' => $magnitude,
+            ];
+        }
+
+        if ($debitType === Account::SAVINGS && $creditType === Account::CHECKING) {
+            return [
+                'kind' => self::ALLOCATION_SAVINGS_TRANSFER,
+                'amount' => -1 * $magnitude,
+            ];
+        }
+
+        return null;
     }
 
     protected function windowStart(PlannedOccurrence $occurrence): CarbonInterface
