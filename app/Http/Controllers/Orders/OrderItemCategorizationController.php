@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\ProductMatchingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,32 +22,14 @@ class OrderItemCategorizationController extends Controller
         OrderItem $item,
         ProductMatchingService $productMatching,
     ): RedirectResponse {
-        $item->loadMissing('order.merchant');
+        $this->authorizeWalmartItem($request, $item);
 
-        $order = $item->order;
-
-        if ($order === null || $order->user_id !== $request->user()->id) {
-            throw new NotFoundHttpException();
-        }
-
-        if ($order->merchant?->normalized_name !== 'walmart') {
-            throw new NotFoundHttpException();
-        }
-
-        $validated = $request->validate([
-            'category_id' => [
-                'required',
-                'integer',
-                Rule::exists('categories', 'id')->where(fn ($query) => $query
-                    ->where('user_id', $request->user()->id)
-                    ->where('kind', Category::KIND_EXPENSE)),
-            ],
-        ]);
+        $validated = ['category_id' => $this->validatedExpenseCategoryId($request)];
 
         $result = $productMatching->linkOrCreateForItem($item);
 
         if ($result === null) {
-            throw new NotFoundHttpException();
+            throw new NotFoundHttpException;
         }
 
         $product = $result['product'];
@@ -71,6 +54,63 @@ class OrderItemCategorizationController extends Controller
             ->with('success', 'Product created and categorized.');
     }
 
+    public function storeInstance(
+        Request $request,
+        OrderItem $item,
+        ProductMatchingService $productMatching,
+        OrderComponentGenerator $componentGenerator,
+    ): RedirectResponse {
+        $this->authorizeWalmartItem($request, $item);
+
+        $categoryId = $this->validatedExpenseCategoryId($request);
+
+        $result = $productMatching->linkOrCreateForItem($item);
+
+        if ($result === null) {
+            throw new NotFoundHttpException;
+        }
+
+        $item->refresh();
+        $item->loadMissing('order');
+
+        $order = $item->order;
+
+        if ($order === null) {
+            throw new NotFoundHttpException;
+        }
+
+        if (! $order->components()->exists()) {
+            $componentGenerator->generateForOrder($order);
+        }
+
+        $updated = OrderComponent::query()
+            ->where('order_item_id', $item->id)
+            ->where('type', 'product')
+            ->update([
+                'category_id' => $categoryId,
+                'category_confidence' => 100,
+                'is_user_modified' => true,
+            ]);
+
+        if ($updated === 0) {
+            OrderComponent::create([
+                'order_id' => $order->id,
+                'order_item_id' => $item->id,
+                'type' => 'product',
+                'description' => $item->description,
+                'amount' => $item->extended_price,
+                'category_id' => $categoryId,
+                'category_confidence' => 100,
+                'is_user_modified' => true,
+                'metadata' => [],
+            ]);
+        }
+
+        return redirect()
+            ->back(fallback: route('orders.categorize'))
+            ->with('success', 'Line categorized for this order only.');
+    }
+
     public function destroy(Request $request, OrderItem $item): RedirectResponse
     {
         $item->loadMissing(['order', 'product', 'components.allocations']);
@@ -78,7 +118,7 @@ class OrderItemCategorizationController extends Controller
         $order = $item->order;
 
         if ($order === null || $order->user_id !== $request->user()->id) {
-            throw new NotFoundHttpException();
+            throw new NotFoundHttpException;
         }
 
         abort_if($order->status === 'reconciled', 422, 'Reconciled orders cannot be edited.');
@@ -125,5 +165,35 @@ class OrderItemCategorizationController extends Controller
         return redirect()
             ->back(fallback: route('orders.categorize'))
             ->with('success', $message);
+    }
+
+    protected function authorizeWalmartItem(Request $request, OrderItem $item): void
+    {
+        $item->loadMissing('order.merchant');
+
+        $order = $item->order;
+
+        if ($order === null || $order->user_id !== $request->user()->id) {
+            throw new NotFoundHttpException;
+        }
+
+        if ($order->merchant?->normalized_name !== 'walmart') {
+            throw new NotFoundHttpException;
+        }
+    }
+
+    protected function validatedExpenseCategoryId(Request $request): int
+    {
+        $validated = $request->validate([
+            'category_id' => [
+                'required',
+                'integer',
+                Rule::exists('categories', 'id')->where(fn ($query) => $query
+                    ->where('user_id', $request->user()->id)
+                    ->where('kind', Category::KIND_EXPENSE)),
+            ],
+        ]);
+
+        return (int) $validated['category_id'];
     }
 }
