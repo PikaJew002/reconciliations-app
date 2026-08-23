@@ -90,12 +90,20 @@ class BankTransaction extends Model
 
     public function debitTransferLink()
     {
-        return $this->hasOne(TransactionTransferLink::class, 'debit_transaction_id');
+        return $this->hasOne(TransactionTransferLink::class, 'debit_transaction_id')
+            ->whereIn('status', [
+                TransactionTransferLink::STATUS_SUGGESTED,
+                TransactionTransferLink::STATUS_CONFIRMED,
+            ]);
     }
 
     public function creditTransferLink()
     {
-        return $this->hasOne(TransactionTransferLink::class, 'credit_transaction_id');
+        return $this->hasOne(TransactionTransferLink::class, 'credit_transaction_id')
+            ->whereIn('status', [
+                TransactionTransferLink::STATUS_SUGGESTED,
+                TransactionTransferLink::STATUS_CONFIRMED,
+            ]);
     }
 
     public function isSuggestedIncome(): bool
