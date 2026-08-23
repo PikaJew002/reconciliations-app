@@ -168,6 +168,9 @@ class OrderDetailTest extends TestCase
                 ->where('order.order_number', '111-0000002-0000002')
                 ->where('order.total', 7.39)
                 ->where('order.tax', 0.42)
+                ->where('order.component_sum', 7.39)
+                ->where('order.gap', 0)
+                ->where('order.components_balanced', true)
                 ->where('order.payment_last_four', '1111')
                 ->where('can_delete', true)
                 ->where('has_allocations', false)
@@ -187,6 +190,42 @@ class OrderDetailTest extends TestCase
                 ->where('components.0.allocated_amount', 0)
                 ->where('components.1.type', 'tax')
                 ->where('components.1.description', 'Sales Tax'));
+    }
+
+    public function test_amazon_detail_flags_unbalanced_components(): void
+    {
+        $user = User::factory()->create();
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'order_number' => 'AMZ-GAP',
+            'total' => 42.30,
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Partial scrape',
+            'amount' => 36.80,
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.detail', ['merchant' => 'amazon', 'order' => $order->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Detail')
+                ->where('order.components_balanced', false)
+                ->where('order.component_sum', 36.8)
+                ->where('order.gap', 5.5));
     }
 
     public function test_destroy_removes_order_and_unwinds_bank_matches(): void

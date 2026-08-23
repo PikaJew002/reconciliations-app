@@ -118,12 +118,17 @@ class OrderBrowseService
 
         $orders = $ordersQuery
             ->with('merchant:id,name,normalized_name')
+            ->withSum('components', 'amount')
             ->orderByDesc('ordered_at')
             ->orderByDesc('id')
             ->limit($this->listLimit)
             ->get()
             ->map(function (Order $order) use ($bankCoverage): array {
                 $orderDate = $this->orderDate($order);
+                $balance = $this->componentBalance(
+                    (float) $order->total,
+                    (float) ($order->components_sum_amount ?? 0),
+                );
 
                 return [
                     'id' => $order->id,
@@ -135,6 +140,7 @@ class OrderBrowseService
                     'payment_last_four' => $order->payment_last_four,
                     'merchant' => $order->merchant?->only(['id', 'name', 'normalized_name']),
                     'near_import_edge' => $this->orderNearImportEdge($orderDate, $bankCoverage),
+                    ...$balance,
                 ];
             })
             ->values()
@@ -199,6 +205,11 @@ class OrderBrowseService
             fn (array $component): bool => abs($component['allocated_amount']) >= 0.01,
         );
 
+        $balance = $this->componentBalance(
+            (float) $order->total,
+            (float) $order->components->sum('amount'),
+        );
+
         return [
             'merchant' => $vendor,
             'order' => [
@@ -215,6 +226,7 @@ class OrderBrowseService
                 'tip' => (float) $order->tip,
                 'discount' => (float) $order->discount,
                 'total' => (float) $order->total,
+                ...$balance,
             ],
             'items' => $order->items
                 ->map(fn (OrderItem $item): array => [
@@ -246,6 +258,22 @@ class OrderBrowseService
         }
 
         return $order;
+    }
+
+    /**
+     * @return array{component_sum: float, gap: float, components_balanced: bool}
+     */
+    protected function componentBalance(float $total, float $componentSum): array
+    {
+        $componentSum = round($componentSum, 2);
+        $total = round($total, 2);
+        $gap = round($total - $componentSum, 2);
+
+        return [
+            'component_sum' => $componentSum,
+            'gap' => $gap,
+            'components_balanced' => abs($gap) < 0.01,
+        ];
     }
 
     /**
