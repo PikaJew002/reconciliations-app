@@ -2,9 +2,7 @@
 
 namespace App\Http\Requests\PendingSpends;
 
-use App\Models\PendingSpend;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StorePendingSpendRequest extends FormRequest
 {
@@ -19,6 +17,7 @@ class StorePendingSpendRequest extends FormRequest
             'merchant_id' => $this->filled('merchant_id') ? $this->input('merchant_id') : null,
             'category_id' => $this->filled('category_id') ? $this->input('category_id') : null,
             'notes' => $this->filled('notes') ? $this->input('notes') : null,
+            'venmo' => $this->has('venmo') ? $this->boolean('venmo') : false,
         ]);
     }
 
@@ -29,7 +28,7 @@ class StorePendingSpendRequest extends FormRequest
     {
         return [
             'account_id' => ['required', 'uuid'],
-            'source' => ['required', 'string', Rule::in(PendingSpend::sources())],
+            'venmo' => ['sometimes', 'boolean'],
             'spent_at' => ['required', 'date'],
             'amount' => ['required', 'numeric', 'gt:0'],
             'merchant_id' => ['nullable', 'integer'],

@@ -3,9 +3,6 @@
 namespace App\Http\Controllers\ApiTokens;
 
 use App\Http\Controllers\Controller;
-use App\Models\Account;
-use App\Models\Category;
-use App\Models\Merchant;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,47 +20,8 @@ class ApiTokenController extends Controller
 
     public function pendingSpend(Request $request): Response
     {
-        $user = $request->user();
-
-        $accounts = Account::query()
-            ->where('user_id', $user->id)
-            ->tracked()
-            ->orderBy('name')
-            ->get(['id', 'name', 'account_type', 'last_four'])
-            ->map(fn (Account $account): array => [
-                'id' => $account->id,
-                'name' => $account->name,
-                'account_type' => $account->account_type,
-                'last_four' => $account->last_four,
-            ]);
-
-        $merchants = Merchant::query()
-            ->where('user_id', $user->id)
-            ->where('supports_order_import', false)
-            ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn (Merchant $merchant): array => [
-                'id' => $merchant->id,
-                'name' => $merchant->name,
-            ]);
-
-        $categories = Category::query()
-            ->where('user_id', $user->id)
-            ->where('kind', '!=', Category::KIND_INCOME)
-            ->orderBy('kind')
-            ->orderBy('name')
-            ->get(['id', 'name', 'kind'])
-            ->map(fn (Category $category): array => [
-                'id' => $category->id,
-                'name' => $category->name,
-                'kind' => $category->kind,
-            ]);
-
         return Inertia::render('ApiTokens/PendingSpend', [
-            'tokens' => $this->tokensForAbility($user, self::ABILITY_PENDING_SPEND),
-            'accounts' => $accounts,
-            'merchants' => $merchants,
-            'categories' => $categories,
+            'tokens' => $this->tokensForAbility($request->user(), self::ABILITY_PENDING_SPEND),
             'endpoint' => url('/api/pending-spends'),
             'plainTextToken' => $request->session()->pull('plainTextToken'),
         ]);
@@ -83,8 +41,7 @@ class ApiTokenController extends Controller
     {
         return Inertia::render('ApiTokens/LeftoverReporting', [
             'tokens' => $this->tokensForAbility($request->user(), self::ABILITY_LEFTOVER_REPORTING),
-            'currentEndpoint' => url('/api/leftover/current'),
-            'windowsEndpoint' => url('/api/leftover'),
+            'endpoint' => url('/api/leftover/current'),
             'plainTextToken' => $request->session()->pull('plainTextToken'),
         ]);
     }

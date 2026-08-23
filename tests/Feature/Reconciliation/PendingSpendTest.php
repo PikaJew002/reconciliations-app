@@ -60,7 +60,6 @@ class PendingSpendTest extends TestCase
 
         $service->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 40.00,
@@ -98,7 +97,6 @@ class PendingSpendTest extends TestCase
 
         app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'category_id' => $dining->id,
             'spent_at' => '2026-08-10 18:30:00',
@@ -119,7 +117,6 @@ class PendingSpendTest extends TestCase
         $dining = Category::factory()->for($context['user'])->expense()->create();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'category_id' => $dining->id,
             'spent_at' => '2026-08-10 18:30:00',
@@ -157,7 +154,6 @@ class PendingSpendTest extends TestCase
         $dining = Category::factory()->for($context['user'])->expense()->create();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'category_id' => $dining->id,
             'spent_at' => '2026-08-31 21:00:00',
@@ -191,7 +187,6 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 12.50,
@@ -226,7 +221,7 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_VENMO,
+            'venmo' => true,
             'spent_at' => '2026-08-10 19:11:00',
             'amount' => 250.00,
         ]);
@@ -270,7 +265,6 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 09:00:00',
             'amount' => 12.50,
@@ -303,7 +297,6 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 12.50,
@@ -369,7 +362,6 @@ class PendingSpendTest extends TestCase
 
         app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $amazon->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 40.00,
@@ -381,7 +373,6 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 40.00,
@@ -420,7 +411,6 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 18.75,
@@ -440,7 +430,6 @@ class PendingSpendTest extends TestCase
         $context = $this->context();
         $pending = app(PendingSpendService::class)->create($context['user'], [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 12.25,

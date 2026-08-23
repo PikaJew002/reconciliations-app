@@ -12,11 +12,7 @@
             type: Array,
             required: true,
         },
-        currentEndpoint: {
-            type: String,
-            required: true,
-        },
-        windowsEndpoint: {
+        endpoint: {
             type: String,
             required: true,
         },
@@ -29,6 +25,11 @@
     let form = useForm({
         name: 'Leftover reporting',
     });
+
+    let sampleResponse = `{
+  "remaining": 2700,
+  "days_remaining": 10
+}`;
 
     let submit = () => {
         form.post('/api-tokens/leftover-reporting');
@@ -74,16 +75,24 @@
             <ApiTokenList :tokens="tokens" />
 
             <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Reporting request</h2>
+                <h2 class="text-lg font-semibold">Widget request</h2>
                 <p class="text-sm text-neutral-600">
-                    <code>GET {{ currentEndpoint }}</code>
-                    returns the current paycheck leftover window. Then
-                    <code>GET {{ windowsEndpoint }}</code>
-                    returns every leftover window.
+                    <code>GET {{ endpoint }}</code>
+                    returns remaining to spend and days until the next
+                    paycheck. Both are
+                    <code>null</code>
+                    when there are no paycheck plans.
                 </p>
                 <pre
                     class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"
                 >Authorization: Bearer PASTE_TOKEN_HERE</pre>
+            </section>
+
+            <section class="space-y-3">
+                <h2 class="text-lg font-semibold">Example response</h2>
+                <pre
+                    class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"
+                >{{ sampleResponse }}</pre>
             </section>
         </div>
     </ApiTokensShell>

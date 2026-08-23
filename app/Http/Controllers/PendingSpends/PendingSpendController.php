@@ -4,6 +4,7 @@ namespace App\Http\Controllers\PendingSpends;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\PendingSpends\StorePendingSpendRequest;
+use App\Models\Account;
 use App\Models\Category;
 use App\Models\Merchant;
 use App\Services\Reconciliation\PendingSpendService;
@@ -35,9 +36,20 @@ class PendingSpendController extends Controller
                 $merchant->name => $merchant->id,
             ]);
 
+        $accounts = Account::query()
+            ->where('user_id', $userId)
+            ->tracked()
+            ->whereIn('account_type', [Account::CHECKING, Account::CREDIT_CARD])
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->mapWithKeys(fn (Account $account): array => [
+                $account->name => $account->id,
+            ]);
+
         return response()->json([
             'categories' => (object) $categories->all(),
             'merchants' => (object) $merchants->all(),
+            'accounts' => (object) $accounts->all(),
         ]);
     }
 

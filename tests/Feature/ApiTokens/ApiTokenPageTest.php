@@ -2,9 +2,6 @@
 
 namespace Tests\Feature\ApiTokens;
 
-use App\Models\Account;
-use App\Models\Category;
-use App\Models\Merchant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -80,8 +77,7 @@ class ApiTokenPageTest extends TestCase
                 ->has('tokens', 1)
                 ->where('tokens.0.name', 'Leftover reporting')
                 ->where('tokens.0.abilities', ['leftover:read'])
-                ->has('currentEndpoint')
-                ->has('windowsEndpoint')
+                ->has('endpoint')
                 ->missing('tokens.0.token')
                 ->missing('tokens.0.plainTextToken'));
     }
@@ -108,58 +104,19 @@ class ApiTokenPageTest extends TestCase
                 ->missing('tokens.0.plainTextToken'));
     }
 
-    public function test_pending_spend_page_includes_eligible_ids_for_shortcuts(): void
+    public function test_pending_spend_page_does_not_list_lookup_tables(): void
     {
         $user = User::factory()->create();
-        $other = User::factory()->create();
-
-        $account = Account::factory()->create([
-            'user_id' => $user->id,
-            'name' => 'Checking',
-            'account_type' => Account::CHECKING,
-            'last_four' => '6218',
-        ]);
-        Account::factory()->create([
-            'user_id' => $other->id,
-            'name' => 'Someone else',
-        ]);
-        Account::factory()->for($user)->offBook()->create();
-
-        $merchant = Merchant::factory()->create([
-            'user_id' => $user->id,
-            'name' => "Buc-ee's",
-            'supports_order_import' => false,
-        ]);
-        Merchant::factory()->create([
-            'user_id' => $user->id,
-            'name' => 'Amazon',
-            'normalized_name' => 'amazon',
-            'supports_order_import' => true,
-        ]);
-        Merchant::factory()->create([
-            'user_id' => $other->id,
-            'name' => 'Other merchant',
-            'supports_order_import' => false,
-        ]);
-
-        $dining = Category::factory()->for($user)->expense()->create(['name' => 'Dining']);
-        Category::factory()->for($user)->income()->create(['name' => 'Paycheck']);
-        Category::factory()->for($other)->expense()->create(['name' => 'Other dining']);
 
         $this->actingAs($user)
             ->get(route('api-tokens.pending-spend'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('ApiTokens/PendingSpend')
-                ->has('accounts', 1)
-                ->where('accounts.0.id', $account->id)
-                ->where('accounts.0.last_four', '6218')
-                ->has('merchants', 1)
-                ->where('merchants.0.id', $merchant->id)
-                ->where('merchants.0.name', "Buc-ee's")
-                ->has('categories', 1)
-                ->where('categories.0.id', $dining->id)
-                ->where('categories.0.name', 'Dining'));
+                ->has('endpoint')
+                ->missing('accounts')
+                ->missing('merchants')
+                ->missing('categories'));
     }
 
     public function test_authenticated_user_can_mint_a_pending_spend_token(): void

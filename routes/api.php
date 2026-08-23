@@ -27,6 +27,4 @@ Route::middleware(['auth:sanctum', 'abilities:pending-spend:create'])->group(fun
 Route::middleware(['auth:sanctum', 'abilities:leftover:read'])->group(function () {
     Route::get('/leftover/current', [LeftoverController::class, 'current'])
         ->name('api.leftover.current');
-    Route::get('/leftover', [LeftoverController::class, 'index'])
-        ->name('api.leftover.index');
 });

@@ -4,24 +4,11 @@
     import ApiTokensShell from '../../Components/ApiTokens/ApiTokensShell.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { useForm } from '@inertiajs/vue3';
-    import { computed, ref } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
-    let props = defineProps({
+    defineProps({
         tokens: {
-            type: Array,
-            required: true,
-        },
-        accounts: {
-            type: Array,
-            required: true,
-        },
-        merchants: {
-            type: Array,
-            required: true,
-        },
-        categories: {
             type: Array,
             required: true,
         },
@@ -35,52 +22,33 @@
         },
     });
 
-    let copiedValue = ref('');
-
     let form = useForm({
         name: 'iPhone Shortcut',
     });
 
-    let samplePayload = computed(() => {
-        let account = props.accounts[0];
-        let source = 'debit_card';
+    let samplePayload = `{
+  "account_id": "11111111-1111-1111-1111-111111111111",
+  "spent_at": "2026-08-20 12:00:00",
+  "amount": 12.5,
+  "merchant_id": 3,
+  "category_id": 1,
+  "notes": "Coffee"
+}`;
 
-        if (account?.account_type === 'credit_card') {
-            source = 'credit_card';
-        }
-
-        return JSON.stringify(
-            {
-                account_id: account?.id ?? 'ACCOUNT_UUID',
-                source,
-                spent_at: '2026-08-20 12:00:00',
-                amount: 12.5,
-                merchant_id: props.merchants[0]?.id ?? null,
-                category_id: props.categories[0]?.id ?? null,
-                notes: 'Coffee',
-            },
-            null,
-            2,
-        );
-    });
-
-    let accountTypeLabel = (type) => {
-        return type.replaceAll('_', ' ');
-    };
-
-    let kindLabel = (kind) => {
-        return (
-            {
-                bill: 'Bill',
-                expense: 'Expense',
-            }[kind] ?? kind
-        );
-    };
-
-    let copyText = async (value, key = '') => {
-        await navigator.clipboard.writeText(String(value));
-        copiedValue.value = key || String(value);
-    };
+    let sampleOptionsResponse = `{
+  "categories": {
+    "Dining": 1,
+    "Groceries": 2
+  },
+  "merchants": {
+    "Buc-ee's": 3,
+    "Zebra Cafe": 4
+  },
+  "accounts": {
+    "CVNB Checking": "11111111-1111-1111-1111-111111111111",
+    "Capital One": "22222222-2222-2222-2222-222222222222"
+  }
+}`;
 
     let submit = () => {
         form.post('/api-tokens/pending-spend');
@@ -129,130 +97,34 @@
                 <h2 class="text-lg font-semibold">Shortcut request</h2>
                 <p class="text-sm text-neutral-600">
                     <code>GET {{ endpoint }}/options</code>
-                    returns expense categories and merchants as
+                    returns expense categories, merchants, and
+                    checking/credit card accounts as
                     <code>name → id</code>. Then
                     <code>POST {{ endpoint }}</code>
-                    to create.
+                    to create. Card vs credit is derived from the
+                    account. For Venmo, add
+                    <code>"venmo": true</code>
+                    and you can omit
+                    <code>merchant_id</code>.
                 </p>
                 <pre
                     class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"
-                >Authorization: Bearer PASTE_TOKEN_HERE
+                >POST {{ endpoint }}
+
+Authorization: Bearer PASTE_TOKEN_HERE
 Content-Type: application/json
 
 {{ samplePayload }}</pre>
             </section>
 
             <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Accounts</h2>
-                <p v-if="accounts.length === 0" class="text-sm text-neutral-600">
-                    No accounts yet.
-                </p>
-                <ul v-else class="divide-y rounded border">
-                    <li
-                        v-for="account in accounts"
-                        :key="account.id"
-                        class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                    >
-                        <div>
-                            <p class="font-medium">{{ account.name }}</p>
-                            <p class="text-sm text-neutral-600">
-                                {{ accountTypeLabel(account.account_type) }}
-                                <template v-if="account.last_four">
-                                    · •••• {{ account.last_four }}
-                                </template>
-                            </p>
-                            <code class="break-all text-xs text-neutral-600">{{
-                                account.id
-                            }}</code>
-                        </div>
-                        <button
-                            type="button"
-                            class="btn rounded border px-3 text-sm hover:bg-brand-wash"
-                            @click="copyText(account.id, `account-${account.id}`)"
-                        >
-                            {{
-                                copiedValue === `account-${account.id}`
-                                    ? 'Copied'
-                                    : 'Copy ID'
-                            }}
-                        </button>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Merchants</h2>
+                <h2 class="text-lg font-semibold">Example options response</h2>
                 <p class="text-sm text-neutral-600">
-                    Order-import merchants are omitted; those spends come from
-                    orders.
+                    <code>GET {{ endpoint }}/options</code>
                 </p>
-                <p v-if="merchants.length === 0" class="text-sm text-neutral-600">
-                    No eligible merchants yet.
-                </p>
-                <ul v-else class="divide-y rounded border">
-                    <li
-                        v-for="merchant in merchants"
-                        :key="merchant.id"
-                        class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                    >
-                        <div>
-                            <p class="font-medium">{{ merchant.name }}</p>
-                            <code class="text-xs text-neutral-600">{{
-                                merchant.id
-                            }}</code>
-                        </div>
-                        <button
-                            type="button"
-                            class="btn rounded border px-3 text-sm hover:bg-brand-wash"
-                            @click="copyText(merchant.id, `merchant-${merchant.id}`)"
-                        >
-                            {{
-                                copiedValue === `merchant-${merchant.id}`
-                                    ? 'Copied'
-                                    : 'Copy ID'
-                            }}
-                        </button>
-                    </li>
-                </ul>
-            </section>
-
-            <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Categories</h2>
-                <p class="text-sm text-neutral-600">
-                    Income categories cannot be used for pending spend.
-                </p>
-                <p v-if="categories.length === 0" class="text-sm text-neutral-600">
-                    No eligible categories yet.
-                </p>
-                <ul v-else class="divide-y rounded border">
-                    <li
-                        v-for="category in categories"
-                        :key="category.id"
-                        class="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                    >
-                        <div>
-                            <p class="font-medium">{{ category.name }}</p>
-                            <p class="text-sm text-neutral-600">
-                                {{ kindLabel(category.kind) }}
-                                ·
-                                <code class="text-xs">{{ category.id }}</code>
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            class="btn rounded border px-3 text-sm hover:bg-brand-wash"
-                            @click="
-                                copyText(category.id, `category-${category.id}`)
-                            "
-                        >
-                            {{
-                                copiedValue === `category-${category.id}`
-                                    ? 'Copied'
-                                    : 'Copy ID'
-                            }}
-                        </button>
-                    </li>
-                </ul>
+                <pre
+                    class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"
+                >{{ sampleOptionsResponse }}</pre>
             </section>
         </div>
     </ApiTokensShell>
