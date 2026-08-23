@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Orders\AmazonImportController;
 use App\Http\Controllers\PendingSpends\PendingSpendController;
+use App\Http\Controllers\Plans\LeftoverController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -21,4 +22,11 @@ Route::middleware(['auth:sanctum', 'abilities:pending-spend:create'])->group(fun
         ->name('api.pending-spends.options');
     Route::post('/pending-spends', [PendingSpendController::class, 'store'])
         ->name('api.pending-spends.store');
+});
+
+Route::middleware(['auth:sanctum', 'abilities:leftover:read'])->group(function () {
+    Route::get('/leftover/current', [LeftoverController::class, 'current'])
+        ->name('api.leftover.current');
+    Route::get('/leftover', [LeftoverController::class, 'index'])
+        ->name('api.leftover.index');
 });

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Plans;
 
+use App\Http\Controllers\ApiTokens\ApiTokenController;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\BudgetYear;
@@ -18,6 +19,7 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class PaycheckLeftoverTest extends TestCase
@@ -46,11 +48,42 @@ class PaycheckLeftoverTest extends TestCase
             ->assertUnauthorized();
     }
 
+    public function test_tokens_without_leftover_ability_are_forbidden(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['other']);
+
+        $this->getJson(route('api.leftover.current'))
+            ->assertForbidden();
+        $this->getJson(route('api.leftover.index'))
+            ->assertForbidden();
+    }
+
+    public function test_pending_spend_and_amazon_tokens_cannot_read_leftover(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['pending-spend:create']);
+
+        $this->getJson(route('api.leftover.current'))
+            ->assertForbidden();
+
+        Sanctum::actingAs(User::factory()->create(), ['amazon:import']);
+
+        $this->getJson(route('api.leftover.index'))
+            ->assertForbidden();
+    }
+
+    public function test_leftover_tokens_cannot_create_pending_spend(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), [ApiTokenController::ABILITY_LEFTOVER_REPORTING]);
+
+        $this->postJson(route('api.pending-spends.store'), [])
+            ->assertForbidden();
+    }
+
     public function test_current_is_null_without_paycheck_plans(): void
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJson(['leftover' => null]);
@@ -60,7 +93,7 @@ class PaycheckLeftoverTest extends TestCase
     {
         [$user] = $this->paycheckSetup();
 
-        $windows = $this->actingAs($user)
+        $windows = $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.index'))
             ->assertOk()
             ->json('windows');
@@ -84,7 +117,7 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         $this->expense($user, 5000, '2026-07-10');
 
-        $windows = $this->actingAs($user)
+        $windows = $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.index'))
             ->json('windows');
 
@@ -102,7 +135,7 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         $this->expense($user, 400, '2026-08-10');
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.starts_on', '2026-08-01')
@@ -117,7 +150,7 @@ class PaycheckLeftoverTest extends TestCase
         $rent = $this->rentBill($user);
         $paycheck->assignedBills()->sync([$rent->id]);
 
-        $this->actingAs($user)->getJson(route('api.leftover.current'));
+        $this->actingAsLeftoverReporter($user)->getJson(route('api.leftover.current'));
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -138,7 +171,7 @@ class PaycheckLeftoverTest extends TestCase
                 'status' => PlannedOccurrence::STATUS_RESOLVED,
             ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.planned_leftover', 1800)
@@ -151,7 +184,7 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         $this->rentBill($user);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.spent', 1200)
@@ -174,7 +207,7 @@ class PaycheckLeftoverTest extends TestCase
             'status' => PendingSpend::STATUS_PENDING,
         ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.spent', 50)
@@ -184,7 +217,7 @@ class PaycheckLeftoverTest extends TestCase
     public function test_resolved_paycheck_uses_the_actual_amount(): void
     {
         [$user, $paycheck] = $this->paycheckSetup();
-        $this->actingAs($user)->getJson(route('api.leftover.current'));
+        $this->actingAsLeftoverReporter($user)->getJson(route('api.leftover.current'));
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -205,7 +238,7 @@ class PaycheckLeftoverTest extends TestCase
                 'status' => PlannedOccurrence::STATUS_RESOLVED,
             ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.starts_on', '2026-08-02')
@@ -218,7 +251,7 @@ class PaycheckLeftoverTest extends TestCase
         [$user, $first] = $this->paycheckSetup();
         $this->secondPaycheck($user, $first->category_id);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.starts_on', '2026-08-15')
@@ -238,7 +271,7 @@ class PaycheckLeftoverTest extends TestCase
             'kind' => PaycheckLeftoverService::ALLOCATION_CREDIT_CARD_PAYMENT,
         ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.spent', 0)
@@ -258,7 +291,7 @@ class PaycheckLeftoverTest extends TestCase
             'to' => Account::SAVINGS,
         ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.spent', 0)
@@ -278,7 +311,7 @@ class PaycheckLeftoverTest extends TestCase
             'to' => Account::CHECKING,
         ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.spent', 0)
@@ -298,7 +331,7 @@ class PaycheckLeftoverTest extends TestCase
             'to' => Account::CHECKING,
         ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.spent', 0)
@@ -317,7 +350,7 @@ class PaycheckLeftoverTest extends TestCase
             'status' => TransactionTransferLink::STATUS_REJECTED,
         ]);
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJsonPath('leftover.allocated', 0)
@@ -340,6 +373,13 @@ class PaycheckLeftoverTest extends TestCase
                 ->where('paycheck_leftover.remaining', 5600)
                 ->has('summary.leftover_income')
                 ->has('summary.vs_budget_difference'));
+    }
+
+    protected function actingAsLeftoverReporter(User $user): static
+    {
+        Sanctum::actingAs($user, [ApiTokenController::ABILITY_LEFTOVER_REPORTING]);
+
+        return $this;
     }
 
     /**

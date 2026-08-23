@@ -19,6 +19,9 @@ class ApiTokenPageTest extends TestCase
         $this->get(route('api-tokens.pending-spend'))
             ->assertRedirect('/login');
 
+        $this->get(route('api-tokens.leftover-reporting'))
+            ->assertRedirect('/login');
+
         $this->get(route('api-tokens.retailer-scraper'))
             ->assertRedirect('/login');
     }
@@ -27,6 +30,10 @@ class ApiTokenPageTest extends TestCase
     {
         $this->post(route('api-tokens.pending-spend.store'), [
             'name' => 'iPhone Shortcut',
+        ])->assertRedirect('/login');
+
+        $this->post(route('api-tokens.leftover-reporting.store'), [
+            'name' => 'Leftover reporting',
         ])->assertRedirect('/login');
 
         $this->post(route('api-tokens.retailer-scraper.store'), [
@@ -41,6 +48,7 @@ class ApiTokenPageTest extends TestCase
         $user = User::factory()->create();
         $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
         $user->createToken('iPhone Shortcut', ['pending-spend:create']);
+        $user->createToken('Leftover reporting', ['leftover:read']);
 
         $this->actingAs($user)
             ->get(route('api-tokens.pending-spend'))
@@ -56,11 +64,34 @@ class ApiTokenPageTest extends TestCase
                 ->missing('tokens.0.plainTextToken'));
     }
 
+    public function test_leftover_reporting_page_lists_only_leftover_tokens(): void
+    {
+        $user = User::factory()->create();
+        $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
+        $user->createToken('iPhone Shortcut', ['pending-spend:create']);
+        $user->createToken('Leftover reporting', ['leftover:read']);
+
+        $this->actingAs($user)
+            ->get(route('api-tokens.leftover-reporting'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ApiTokens/LeftoverReporting')
+                ->where('plainTextToken', null)
+                ->has('tokens', 1)
+                ->where('tokens.0.name', 'Leftover reporting')
+                ->where('tokens.0.abilities', ['leftover:read'])
+                ->has('currentEndpoint')
+                ->has('windowsEndpoint')
+                ->missing('tokens.0.token')
+                ->missing('tokens.0.plainTextToken'));
+    }
+
     public function test_retailer_scraper_page_lists_only_scraper_tokens(): void
     {
         $user = User::factory()->create();
         $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
         $user->createToken('iPhone Shortcut', ['pending-spend:create']);
+        $user->createToken('Leftover reporting', ['leftover:read']);
 
         $this->actingAs($user)
             ->get(route('api-tokens.retailer-scraper'))
@@ -164,6 +195,34 @@ class ApiTokenPageTest extends TestCase
                 ->where('tokens.0.name', 'iPhone Shortcut'));
     }
 
+    public function test_authenticated_user_can_mint_a_leftover_reporting_token(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('api-tokens.leftover-reporting.store'), [
+            'name' => 'Leftover reporting',
+        ]);
+
+        $response
+            ->assertRedirect(route('api-tokens.leftover-reporting'))
+            ->assertSessionHas('plainTextToken')
+            ->assertSessionHas('success');
+
+        $token = $user->tokens()->first();
+        $this->assertNotNull($token);
+        $this->assertSame('Leftover reporting', $token->name);
+        $this->assertSame(['leftover:read'], $token->abilities);
+
+        $this->actingAs($user)
+            ->get(route('api-tokens.leftover-reporting'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ApiTokens/LeftoverReporting')
+                ->has('tokens', 1)
+                ->where('tokens.0.name', 'Leftover reporting')
+                ->where('tokens.0.abilities', ['leftover:read']));
+    }
+
     public function test_authenticated_user_can_mint_a_retailer_scraper_token(): void
     {
         $user = User::factory()->create();
@@ -216,6 +275,19 @@ class ApiTokenPageTest extends TestCase
         $this->actingAs($user)
             ->delete(route('api-tokens.destroy', $token->accessToken->id))
             ->assertRedirect(route('api-tokens.pending-spend'))
+            ->assertSessionHas('success');
+
+        $this->assertSame(0, $user->tokens()->count());
+    }
+
+    public function test_authenticated_user_can_revoke_their_leftover_reporting_token(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('Leftover reporting', ['leftover:read']);
+
+        $this->actingAs($user)
+            ->delete(route('api-tokens.destroy', $token->accessToken->id))
+            ->assertRedirect(route('api-tokens.leftover-reporting'))
             ->assertSessionHas('success');
 
         $this->assertSame(0, $user->tokens()->count());

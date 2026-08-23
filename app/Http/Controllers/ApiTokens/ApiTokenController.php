@@ -17,6 +17,8 @@ class ApiTokenController extends Controller
 {
     public const ABILITY_PENDING_SPEND = 'pending-spend:create';
 
+    public const ABILITY_LEFTOVER_REPORTING = 'leftover:read';
+
     public const ABILITY_RETAILER_SCRAPER = 'amazon:import';
 
     public function pendingSpend(Request $request): Response
@@ -77,9 +79,24 @@ class ApiTokenController extends Controller
         ]);
     }
 
+    public function leftoverReporting(Request $request): Response
+    {
+        return Inertia::render('ApiTokens/LeftoverReporting', [
+            'tokens' => $this->tokensForAbility($request->user(), self::ABILITY_LEFTOVER_REPORTING),
+            'currentEndpoint' => url('/api/leftover/current'),
+            'windowsEndpoint' => url('/api/leftover'),
+            'plainTextToken' => $request->session()->pull('plainTextToken'),
+        ]);
+    }
+
     public function storePendingSpend(Request $request): RedirectResponse
     {
         return $this->mintToken($request, self::ABILITY_PENDING_SPEND, 'api-tokens.pending-spend');
+    }
+
+    public function storeLeftoverReporting(Request $request): RedirectResponse
+    {
+        return $this->mintToken($request, self::ABILITY_LEFTOVER_REPORTING, 'api-tokens.leftover-reporting');
     }
 
     public function storeRetailerScraper(Request $request): RedirectResponse
@@ -95,9 +112,11 @@ class ApiTokenController extends Controller
             abort(404);
         }
 
-        $redirectRoute = $tokenModel->can(self::ABILITY_RETAILER_SCRAPER)
-            ? 'api-tokens.retailer-scraper'
-            : 'api-tokens.pending-spend';
+        $redirectRoute = match (true) {
+            $tokenModel->can(self::ABILITY_RETAILER_SCRAPER) => 'api-tokens.retailer-scraper',
+            $tokenModel->can(self::ABILITY_LEFTOVER_REPORTING) => 'api-tokens.leftover-reporting',
+            default => 'api-tokens.pending-spend',
+        };
 
         $tokenModel->delete();
 
