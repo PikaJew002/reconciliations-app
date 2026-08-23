@@ -20,7 +20,7 @@ class PendingSpendService
     /**
      * @param  array{
      *     account_id: string,
-     *     source: string,
+     *     venmo?: bool,
      *     spent_at: mixed,
      *     amount: float|int|string,
      *     merchant_id?: int|null,
@@ -30,12 +30,6 @@ class PendingSpendService
      */
     public function create(User $user, array $attributes): PendingSpend
     {
-        $source = $attributes['source'] ?? null;
-
-        if (! is_string($source) || ! in_array($source, PendingSpend::sources(), true)) {
-            throw new InvalidArgumentException('Source must be debit_card, credit_card, or venmo.');
-        }
-
         $account = Account::query()
             ->where('user_id', $user->id)
             ->find($attributes['account_id'] ?? null);
@@ -44,7 +38,7 @@ class PendingSpendService
             throw new InvalidArgumentException('Account is required and must belong to the user.');
         }
 
-        $this->assertAccountMatchesSource($account, $source);
+        $source = $this->resolveSource($account, (bool) ($attributes['venmo'] ?? false));
 
         $amount = round((float) ($attributes['amount'] ?? 0), 2);
 
@@ -101,19 +95,29 @@ class PendingSpendService
         return $pendingSpend->refresh();
     }
 
-    protected function assertAccountMatchesSource(Account $account, string $source): void
+    protected function resolveSource(Account $account, bool $venmo): string
     {
-        if ($source === PendingSpend::SOURCE_CREDIT_CARD) {
-            if ($account->account_type !== Account::CREDIT_CARD) {
-                throw new InvalidArgumentException('Credit card pending spend requires a credit card account.');
+        if ($venmo) {
+            if ($account->account_type === Account::CREDIT_CARD) {
+                throw new InvalidArgumentException('Venmo pending spend cannot use a credit card account.');
             }
 
-            return;
+            if (! in_array($account->account_type, [Account::CHECKING, Account::SAVINGS], true)) {
+                throw new InvalidArgumentException('Venmo pending spend requires a checking or savings account.');
+            }
+
+            return PendingSpend::SOURCE_VENMO;
         }
 
-        if (! in_array($account->account_type, [Account::CHECKING, Account::SAVINGS], true)) {
-            throw new InvalidArgumentException('Debit and Venmo pending spend require a checking or savings account.');
+        if ($account->account_type === Account::CREDIT_CARD) {
+            return PendingSpend::SOURCE_CREDIT_CARD;
         }
+
+        if (in_array($account->account_type, [Account::CHECKING, Account::SAVINGS], true)) {
+            return PendingSpend::SOURCE_DEBIT_CARD;
+        }
+
+        throw new InvalidArgumentException('Pending spend requires a checking, savings, or credit card account.');
     }
 
     protected function resolveMerchant(User $user, string $source, mixed $merchantId): ?Merchant

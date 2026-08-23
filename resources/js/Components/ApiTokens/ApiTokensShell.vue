@@ -20,6 +20,11 @@
             label: 'Pending spend',
         },
         {
+            id: 'leftover-reporting',
+            href: '/api-tokens/leftover-reporting',
+            label: 'Leftover reporting',
+        },
+        {
             id: 'retailer-scraper',
             href: '/api-tokens/retailer-scraper',
             label: 'Retailer scraper',
@@ -32,8 +37,8 @@
         <div>
             <h1 class="text-2xl font-semibold">API tokens</h1>
             <p class="text-sm text-neutral-600">
-                Mint a token for pending spend or the retailer scraper, then
-                paste it as a Bearer token.
+                Mint a token for pending spend, leftover reporting, or the
+                retailer scraper, then paste it as a Bearer token.
             </p>
         </div>
 

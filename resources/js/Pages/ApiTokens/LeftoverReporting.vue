@@ -23,45 +23,26 @@
     });
 
     let form = useForm({
-        name: 'iPhone Shortcut',
+        name: 'Leftover reporting',
     });
 
-    let samplePayload = `{
-  "account_id": "11111111-1111-1111-1111-111111111111",
-  "spent_at": "2026-08-20 12:00:00",
-  "amount": 12.5,
-  "merchant_id": 3,
-  "category_id": 1,
-  "notes": "Coffee"
-}`;
-
-    let sampleOptionsResponse = `{
-  "categories": {
-    "Dining": 1,
-    "Groceries": 2
-  },
-  "merchants": {
-    "Buc-ee's": 3,
-    "Zebra Cafe": 4
-  },
-  "accounts": {
-    "CVNB Checking": "11111111-1111-1111-1111-111111111111",
-    "Capital One": "22222222-2222-2222-2222-222222222222"
-  }
+    let sampleResponse = `{
+  "remaining": 2700,
+  "days_remaining": 10
 }`;
 
     let submit = () => {
-        form.post('/api-tokens/pending-spend');
+        form.post('/api-tokens/leftover-reporting');
     };
 </script>
 
 <template>
-    <ApiTokensShell active-tab="pending-spend">
+    <ApiTokensShell active-tab="leftover-reporting">
         <div class="space-y-8">
             <ApiTokenPlainText :token="plainTextToken" />
 
             <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Create pending spend token</h2>
+                <h2 class="text-lg font-semibold">Create leftover reporting token</h2>
                 <form class="flex flex-wrap items-end gap-2" @submit.prevent="submit">
                     <div class="min-w-64 flex-1">
                         <label class="mb-1 block text-sm" for="name">Label</label>
@@ -87,44 +68,31 @@
                 <p class="text-sm text-neutral-600">
                     Minting a token with an existing label replaces the old one.
                     Ability:
-                    <code>pending-spend:create</code>
+                    <code>leftover:read</code>
                 </p>
             </section>
 
             <ApiTokenList :tokens="tokens" />
 
             <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Shortcut request</h2>
+                <h2 class="text-lg font-semibold">Widget request</h2>
                 <p class="text-sm text-neutral-600">
-                    <code>GET {{ endpoint }}/options</code>
-                    returns expense categories, merchants, and
-                    checking/credit card accounts as
-                    <code>name → id</code>. Then
-                    <code>POST {{ endpoint }}</code>
-                    to create. Card vs credit is derived from the
-                    account. For Venmo, add
-                    <code>"venmo": true</code>
-                    and you can omit
-                    <code>merchant_id</code>.
+                    <code>GET {{ endpoint }}</code>
+                    returns remaining to spend and days until the next
+                    paycheck. Both are
+                    <code>null</code>
+                    when there are no paycheck plans.
                 </p>
                 <pre
                     class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"
-                >POST {{ endpoint }}
-
-Authorization: Bearer PASTE_TOKEN_HERE
-Content-Type: application/json
-
-{{ samplePayload }}</pre>
+                >Authorization: Bearer PASTE_TOKEN_HERE</pre>
             </section>
 
             <section class="space-y-3">
-                <h2 class="text-lg font-semibold">Example options response</h2>
-                <p class="text-sm text-neutral-600">
-                    <code>GET {{ endpoint }}/options</code>
-                </p>
+                <h2 class="text-lg font-semibold">Example response</h2>
                 <pre
                     class="overflow-x-auto rounded border bg-white px-4 py-3 text-sm"
-                >{{ sampleOptionsResponse }}</pre>
+                >{{ sampleResponse }}</pre>
             </section>
         </div>
     </ApiTokensShell>

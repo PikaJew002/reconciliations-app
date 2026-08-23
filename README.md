@@ -1,13 +1,18 @@
 # Reconciliations App
 
-A financial reconciliation engine that imports **bank transactions** and **merchant order history** separately, then reconciles them into categorized spending.
+A personal finance app that imports **bank transactions** and **merchant order history**, then turns them into categorized spending, budgets, and paycheck leftover.
+
+The original reconciliation idea still holds:
 
 > **Bank transactions represent how money moved. Orders represent what was purchased. Transaction allocations connect the two.**
 
+Most everyday card spend never gets a line-item order. Those transactions are classified and categorized on the bank transaction itself. Walmart and Amazon charges wait for a real order import so spend can be attributed to products.
+
 ## Tech Stack
 
-- **Backend:** Laravel 13, PHP 8.3+
+- **Backend:** Laravel 13, PHP 8.5+
 - **Frontend:** Vue 3, Inertia.js, Tailwind CSS 4, Vite
+- **API:** Laravel Sanctum (Chrome extension and pending-spend clients)
 
 ## Getting Started
 
@@ -23,86 +28,136 @@ Start the development environment (server, queue, logs, and Vite):
 composer dev
 ```
 
+The queue worker matters. Imports and reconciliation run as background jobs.
+
 Run tests:
 
 ```bash
 composer test
 ```
 
+## What the app does
+
+After login, the nav covers the working surface:
+
+| Page | What it is for |
+| --- | --- |
+| **Home** | Month or year-to-month income, bills, and expenses vs budget, plus the current paycheck leftover window |
+| **Accounts** | Checking, savings, and credit card accounts; CSV imports; per-account transaction lists |
+| **Categories** | User-owned bill, expense, and income categories |
+| **Budgets** | Monthly limits on a 12-month budget year |
+| **Plans** | Recurring paychecks and bills, assigned to each other, then matched to posted transactions |
+| **Rules** | Learned income and expense categorization rules |
+| **Orders** | Walmart / Amazon imports, other merchant spend, product categorization |
+| **Reconciliation** | Unmatched transactions, needs-review suggestions, and a manual “run reconciliation” action |
+
+A first-run onboarding checklist walks through: add accounts → import bank history → optionally import retailer orders → start categorizing.
+
+### Imports
+
+| Source | How it arrives |
+| --- | --- |
+| **Cumberland Valley National Bank** | Checking/savings CSV |
+| **Cumberland Valley National Bank Credit Card** | Card CSV |
+| **Capital One** | Card CSV |
+| **Walmart** | Order history CSV |
+| **Amazon** | Chrome extension scrape → `POST /api/amazon/import` |
+| **Venmo** | Activity CSV |
+
+Each upload becomes an `ImportBatch`. After a successful import, a job chain pairs transfers, applies rules, matches merchants, links Venmo and pending spends, generates order components, and tries to match orders to bank charges.
+
+### Reconciliation
+
+The review pages are where most day-to-day work happens:
+
+- Classify a transaction as **income**, **bill**, **expense**, **transfer**, or **reimbursement**
+- Assign a category and optionally save a rule so the next similar line is automatic
+- Confirm or reject suggested **transfers**, **credit card payments**, and **Venmo** matches
+- Group reimbursed spend so only the leftover hits a category
+- Resolve split-tender retailer orders (card + gift card, cash, Walmart balance, and so on)
+- Log a **pending spend** from a client before the bank line posts; it counts toward the dashboard until it matches
+
+Bank descriptions are normalized and matched to a `Merchant` with user-owned matching rules (Walmart and Amazon ship with default patterns). Unrecognized card/POS names can create a new merchant.
+
+### Planning and leftover
+
+**Plans** are recurring income and bill templates. Each template generates monthly **occurrences** and tries to match them to posted bank transactions.
+
+Assign bills to a paycheck. Planned leftover is paycheck amount minus those assigned bills. The dashboard leftover window then subtracts unassigned spend between this paycheck and the next, and carries remaining leftover forward.
+
+Debt payoff and credit-card balance tracking are not modeled as a ledger yet. Card payments are paired as transfers so they are not double-counted as spend.
+
 ## Domain Model
+
+Everything below is scoped to a `User`.
+
+### Account
+
+A real financial account you import into. Types: checking, savings, credit card, cash.
+
+Each account has a default classification (`bill` or `expense`) used as a hint when categorizing its spend. A system **Off-book** account holds gift-card, cash, and similar tenders that never hit a bank CSV.
+
+```
+Account
+    belongsTo User
+    hasMany BankTransactions
+    hasMany PendingSpends
+```
 
 ### ImportBatch
 
-Represents a single import operation.
-
-Examples:
-
-- Chase Checking CSV import
-- Walmart Orders CSV import
-- Amazon Order History import
+One import operation: a bank CSV, a Walmart CSV, an Amazon scrape, or a Venmo activity file.
 
 ```
 ImportBatch
+    belongsTo User
     hasMany BankTransactions
     hasMany Orders
+    hasMany VenmoActivities
 ```
 
 ### Merchant
 
-Represents a canonical merchant (e.g. Walmart, Amazon, Kroger, Target). Used by both orders and bank transactions after merchant normalization.
+A canonical payee (Walmart, Amazon, a local restaurant, the electric company). Used by orders, bank transactions, pending spends, and matching rules.
+
+Retailers that can import line items set `supports_order_import = true`. Those charges wait for a real order. Other merchants are categorized on the bank transaction.
 
 ```
 Merchant
+    belongsTo User
     hasMany Orders
-    hasMany ProductAliases
-    hasMany BankTransactions (nullable until matched)
+    hasMany BankTransactions
+    hasMany Products
+    hasMany MerchantMatchingRules
+    hasMany PendingSpends
 ```
 
 ### BankTransaction
 
-Represents one transaction imported from a financial institution.
+One posted line from a financial institution.
 
-Examples:
-
-```
--249.71 Walmart
--31.94 Walmart
-1850.00 Payroll
-```
-
-Bank transactions never contain categories or purchased products.
+It can be classified as `income`, `transfer`, `bill`, `expense`, or `reimbursement`, and it can have a `category_id`. Status is typically `unmatched`, `matched`, `partial`, or `ignored`.
 
 ```
 BankTransaction
+    belongsTo User
     belongsTo Account
     belongsTo Merchant (nullable)
+    belongsTo Category (nullable)
     belongsTo ImportBatch
     hasMany TransactionAllocations
-```
-
-Example raw import:
-
-```
-Checking Account
-
--249.71
-WAL-MART SUPERCENTER
+    hasOne PlannedOccurrence
+    hasOne PendingSpend
+    hasMany VenmoActivities
 ```
 
 ### Order
 
-Represents one logical purchase from a merchant. An order exists independently of how it was paid.
-
-Example:
-
-```
-Walmart Order #12345
-
-Total: 249.71
-```
+One logical purchase from a merchant, independent of how it was paid. Real imports come from Walmart or Amazon. Split tenders (card + gift card, cash, store balance) are resolved against bank lines and the off-book account.
 
 ```
 Order
+    belongsTo User
     belongsTo Merchant
     belongsTo ImportBatch
     hasMany OrderItems
@@ -111,9 +166,9 @@ Order
 
 ### OrderItem
 
-Represents one purchased product (merchandise only — never tax, delivery, tip, or discounts).
+Merchandise only — never tax, delivery, tip, or discounts.
 
-Examples: Milk, Eggs, Shoes, Dog Food
+Walmart (and Sam’s Club) lines are linked to a merchant-scoped `Product` by SKU or normalized description. Amazon lines are usually categorized at the order or item level without a product catalog.
 
 ```
 OrderItem
@@ -124,83 +179,48 @@ OrderItem
 
 ### Product
 
-Represents a canonical product. Many merchant descriptions may map to one product.
-
-Example product: **Great Value Whole Milk**
-
-Aliases:
-
-- GV Whole Milk
-- Great Value Milk 1 Gal
-- Great Value Whole Milk 128 oz
+A canonical item at one merchant. Categorizing a product applies that category to its order-item components.
 
 ```
 Product
-    belongsTo ExpenseCategory
-    hasMany OrderItems
-    hasMany ProductAliases
-```
-
-### ProductAlias
-
-Maps merchant-specific descriptions to canonical products.
-
-```
-Merchant: Walmart
-Description: GV Whole Milk 128 oz
-    ↓
-Product: Great Value Whole Milk
-```
-
-```
-ProductAlias
+    belongsTo User
     belongsTo Merchant
-    belongsTo Product
+    belongsTo Category (nullable)
+    hasMany OrderItems
 ```
 
-### ExpenseCategory
+### Category
 
-Reporting categories such as Groceries, Household, Clothing, Dining Out, Delivery Fees, and Delivery Tips.
+Reporting buckets with a `kind` of `bill`, `expense`, or `income`. Categories can nest (`parent_id`).
 
 ```
-ExpenseCategory
+Category
+    belongsTo User
+    belongsTo Category (parent, nullable)
+    hasMany Categories (children)
     hasMany Products
     hasMany OrderComponents
+    hasMany BankTransactions
+    hasMany TransactionCategorizationRules
+    hasMany PlannedTemplates
+    hasMany PendingSpends
 ```
 
 ### OrderComponent
 
-Represents every dollar within an order — the financial representation of an order. Each component has an amount, type, and category. Every component is eventually allocated to bank transactions.
-
-Examples:
-
-```
-Milk           3.49
-Shoes         16.98
-Dog Food      27.99
-Sales Tax      2.70
-Delivery Fee   7.95
-Driver Tip     5.00
-Discount      -3.50
-```
+Every dollar on an order. Product components come from line items. Tax, delivery, tip, and discount are **order-level** components (not split across items).
 
 ```
 OrderComponent
     belongsTo Order
     belongsTo OrderItem (nullable)
-    belongsTo ExpenseCategory
+    belongsTo Category (nullable)
     hasMany TransactionAllocations
 ```
 
 ### TransactionAllocation
 
-Connects bank transactions to order components. This is the reconciliation table.
-
-Supports:
-
-- one bank transaction → many components
-- many bank transactions → one component
-- many-to-many
+The reconciliation table. Connects bank transactions to order components. Supports one-to-many, many-to-one, and many-to-many, including partial amounts.
 
 ```
 TransactionAllocation
@@ -208,137 +228,32 @@ TransactionAllocation
     belongsTo OrderComponent
 ```
 
-Example:
+### Supporting records
 
-```
-Transaction: -31.94
-    → Milk        3.49
-    → Eggs        5.20
-    → Bread       4.10
-    → Shoes      16.98
-    → Tax         2.17
-```
+| Model | Role |
+| --- | --- |
+| `MerchantMatchingRule` | Maps bank description text to a merchant (`contains` or extracted name) |
+| `TransactionCategorizationRule` | Auto-classifies later transactions by description, merchant, and/or amount |
+| `TransactionTransferLink` | Suggested or confirmed pairing of a debit and a credit (transfers and card payments) |
+| `VenmoActivity` | Imported Venmo payment or cashout, optionally linked to a bank line |
+| `PendingSpend` | Spend logged before it posts; matched later to a bank line or Venmo activity |
+| `ReimbursementGroup` | Expense + reimbursement legs; closed remainder can hit a category |
+| `PlannedTemplate` / `PlannedOccurrence` | Recurring paycheck or bill, and each month’s expected instance |
+| `BudgetYear` / `BudgetCategoryLimit` | A 12-month budget period and per-category monthly amounts |
 
-Another transaction can fund the remaining components of the same order.
+## Reporting
 
-## Relationship Diagrams
+Dashboard totals are **not** “sum every order component.” `CategorySpendQuery` combines:
 
-### Import and reconciliation flow
+- Classified, categorized bank spend (and income)
+- Categorized order components
+- Unmatched pending spends (as a stand-in until the bank line posts)
+- Still-planned income occurrences (expected amount on the expected date)
+- Closed reimbursement remainders
 
-```
-ImportBatch
-    │
-    ├──────────────┐
-    │              │
-    ▼              ▼
-BankTransaction   Order
-                      │
-                      ▼
-                 OrderItem
-                      │
-                      ▼
-                OrderComponent
-                      ▲
-                      │
-            TransactionAllocation
-                      │
-                      ▼
-               BankTransaction
-```
+Transactions inside an open or closed reimbursement group are excluded from the raw bank totals so they are not double-counted.
 
-### Product hierarchy
-
-```
-Merchant
-     │
-     ▼
-ProductAlias
-     │
-     ▼
-Product
-     │
-     ▼
-ExpenseCategory
-```
-
-### Order hierarchy
-
-```
-Order
-├── Milk
-│      ├── Product Component
-│      └── Tax Component
-├── Shoes
-│      ├── Product Component
-│      └── Tax Component
-├── Dog Food
-│      ├── Product Component
-│      └── Tax Component
-├── Delivery Fee
-├── Driver Tip
-└── Discount
-```
-
-## End-to-End Example
-
-**Bank imports:**
-
-```
-Checking
-
--31.94 Walmart
--217.77 Walmart
-```
-
-**Walmart order:**
-
-```
-Milk            3.49
-Shoes          16.98
-Dog Food       27.99
-Tax             2.70
-Delivery        7.95
-Tip             5.00
-```
-
-**Generated components:**
-
-```
-Milk              Grocery         3.49
-Shoes             Clothing       16.98
-Dog Food          Pet Supplies   27.99
-Tax (Milk)        Grocery         0.00
-Tax (Shoes)       Clothing        1.02
-Tax (Dog Food)    Pet Supplies    1.68
-Delivery Fee      Delivery Fees   7.95
-Driver Tip        Delivery Tips   5.00
-```
-
-**Reconciliation:**
-
-```
-Transaction 1 (-31.94)
-    → Milk
-    → Shoes
-    → Shoes Tax
-    → Partial Dog Food
-
-Transaction 2 (-217.77)
-    → Remaining Dog Food
-    → Dog Food Tax
-    → Delivery Fee
-    → Driver Tip
-    → Remaining order components
-```
-
-## Reporting and Verification
-
-Reports are produced by summing `OrderComponent.amount` grouped by `ExpenseCategory`.
-
-Reconciliation is verified by ensuring:
-
-- The sum of `TransactionAllocation.allocated_amount` equals each `BankTransaction.amount`
-- The sum of `TransactionAllocation.allocated_amount` equals each `OrderComponent.amount`
+Reconciliation for imported orders still checks that allocations cover each bank transaction and each order component.
 
 ## License
 

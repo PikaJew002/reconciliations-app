@@ -9,17 +9,13 @@ use Illuminate\Http\Request;
 
 class LeftoverController extends Controller
 {
-    public function index(Request $request, PaycheckLeftoverService $leftover): JsonResponse
-    {
-        return response()->json([
-            'windows' => $leftover->windows($request->user()->id),
-        ]);
-    }
-
     public function current(Request $request, PaycheckLeftoverService $leftover): JsonResponse
     {
+        $window = $leftover->current($request->user()->id);
+
         return response()->json([
-            'leftover' => $leftover->current($request->user()->id),
+            'remaining' => $window['remaining'] ?? null,
+            'days_remaining' => $window['days_remaining'] ?? null,
         ]);
     }
 }

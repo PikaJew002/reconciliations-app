@@ -53,7 +53,6 @@ class PendingSpendApiTest extends TestCase
 
         $response = $this->postJson(route('api.pending-spends.store'), [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'category_id' => $context['category']->id,
             'spent_at' => '2026-08-10 18:30:00',
@@ -94,7 +93,6 @@ class PendingSpendApiTest extends TestCase
 
         $this->postJson(route('api.pending-spends.store'), [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
         ])->assertUnprocessable()
@@ -113,7 +111,6 @@ class PendingSpendApiTest extends TestCase
 
         $this->postJson(route('api.pending-spends.store'), [
             'account_id' => $otherAccount->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $context['merchant']->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 12.5,
@@ -138,13 +135,74 @@ class PendingSpendApiTest extends TestCase
 
         $this->postJson(route('api.pending-spends.store'), [
             'account_id' => $context['account']->id,
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'merchant_id' => $amazon->id,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 40.00,
         ])->assertUnprocessable()
             ->assertJson([
                 'message' => 'Order-import merchants are tracked via orders, not pending spend.',
+            ]);
+
+        $this->assertSame(0, PendingSpend::query()->count());
+    }
+
+    public function test_checking_account_with_venmo_creates_venmo_source(): void
+    {
+        $context = $this->context();
+        Sanctum::actingAs($context['user'], ['pending-spend:create']);
+
+        $this->postJson(route('api.pending-spends.store'), [
+            'account_id' => $context['account']->id,
+            'venmo' => true,
+            'spent_at' => '2026-08-10 19:11:00',
+            'amount' => 250,
+        ])->assertCreated()
+            ->assertJson([
+                'source' => PendingSpend::SOURCE_VENMO,
+                'merchant_id' => null,
+            ]);
+
+        $this->assertSame(PendingSpend::SOURCE_VENMO, PendingSpend::query()->first()?->source);
+    }
+
+    public function test_credit_card_account_derives_credit_card_source(): void
+    {
+        $context = $this->context();
+        $card = Account::factory()->create([
+            'user_id' => $context['user']->id,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        Sanctum::actingAs($context['user'], ['pending-spend:create']);
+
+        $this->postJson(route('api.pending-spends.store'), [
+            'account_id' => $card->id,
+            'merchant_id' => $context['merchant']->id,
+            'spent_at' => '2026-08-10 18:30:00',
+            'amount' => 12.5,
+        ])->assertCreated()
+            ->assertJson([
+                'account_id' => $card->id,
+                'source' => PendingSpend::SOURCE_CREDIT_CARD,
+            ]);
+    }
+
+    public function test_venmo_on_credit_card_is_rejected(): void
+    {
+        $context = $this->context();
+        $card = Account::factory()->create([
+            'user_id' => $context['user']->id,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        Sanctum::actingAs($context['user'], ['pending-spend:create']);
+
+        $this->postJson(route('api.pending-spends.store'), [
+            'account_id' => $card->id,
+            'venmo' => true,
+            'spent_at' => '2026-08-10 19:11:00',
+            'amount' => 20,
+        ])->assertUnprocessable()
+            ->assertJson([
+                'message' => 'Venmo pending spend cannot use a credit card account.',
             ]);
 
         $this->assertSame(0, PendingSpend::query()->count());
@@ -164,7 +222,7 @@ class PendingSpendApiTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_options_lists_expense_categories_and_merchants_as_name_to_id(): void
+    public function test_options_lists_expense_categories_merchants_and_accounts_as_name_to_id(): void
     {
         $context = $this->context();
         $groceries = Category::factory()->for($context['user'])->expense()->create([
@@ -190,6 +248,29 @@ class PendingSpendApiTest extends TestCase
             'supports_order_import' => false,
         ]);
 
+        $creditCard = Account::factory()->create([
+            'user_id' => $context['user']->id,
+            'name' => 'Capital One',
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        Account::factory()->create([
+            'user_id' => $context['user']->id,
+            'name' => 'Emergency Savings',
+            'account_type' => Account::SAVINGS,
+        ]);
+        Account::factory()->create([
+            'user_id' => $context['user']->id,
+            'name' => 'Wallet',
+            'account_type' => Account::CASH,
+        ]);
+        Account::factory()->offBook()->create([
+            'user_id' => $context['user']->id,
+        ]);
+        Account::factory()->create([
+            'name' => 'Someone else checking',
+            'account_type' => Account::CHECKING,
+        ]);
+
         Sanctum::actingAs($context['user'], ['pending-spend:create']);
 
         $this->getJson(route('api.pending-spends.options'))
@@ -203,6 +284,10 @@ class PendingSpendApiTest extends TestCase
                     "Buc-ee's" => $context['merchant']->id,
                     'Zebra Cafe' => $zebra->id,
                 ],
+                'accounts' => [
+                    'Capital One' => $creditCard->id,
+                    'CVNB Checking' => $context['account']->id,
+                ],
             ]);
     }
 
@@ -212,7 +297,7 @@ class PendingSpendApiTest extends TestCase
 
         $this->getJson(route('api.pending-spends.options'))
             ->assertOk()
-            ->assertContent('{"categories":{},"merchants":{}}');
+            ->assertContent('{"categories":{},"merchants":{},"accounts":{}}');
     }
 
     /**
@@ -222,7 +307,6 @@ class PendingSpendApiTest extends TestCase
     {
         return [
             'account_id' => '11111111-1111-1111-1111-111111111111',
-            'source' => PendingSpend::SOURCE_DEBIT_CARD,
             'spent_at' => '2026-08-10 18:30:00',
             'amount' => 12.5,
         ];
@@ -236,6 +320,7 @@ class PendingSpendApiTest extends TestCase
         $user = User::factory()->create();
         $account = Account::factory()->create([
             'user_id' => $user->id,
+            'name' => 'CVNB Checking',
             'account_type' => Account::CHECKING,
             'last_four' => '6218',
         ]);

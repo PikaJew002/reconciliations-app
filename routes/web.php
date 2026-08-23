@@ -19,7 +19,6 @@ use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
-use App\Http\Controllers\Plans\LeftoverController;
 use App\Http\Controllers\Plans\PlannedOccurrenceController;
 use App\Http\Controllers\Plans\PlannedTemplateController;
 use App\Http\Controllers\Products\ProductController;
@@ -57,15 +56,14 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
-    Route::get('/api/leftover/current', [LeftoverController::class, 'current'])
-        ->name('api.leftover.current');
-    Route::get('/api/leftover', [LeftoverController::class, 'index'])
-        ->name('api.leftover.index');
-
     Route::get('/api-tokens/pending-spend', [ApiTokenController::class, 'pendingSpend'])
         ->name('api-tokens.pending-spend');
     Route::post('/api-tokens/pending-spend', [ApiTokenController::class, 'storePendingSpend'])
         ->name('api-tokens.pending-spend.store');
+    Route::get('/api-tokens/leftover-reporting', [ApiTokenController::class, 'leftoverReporting'])
+        ->name('api-tokens.leftover-reporting');
+    Route::post('/api-tokens/leftover-reporting', [ApiTokenController::class, 'storeLeftoverReporting'])
+        ->name('api-tokens.leftover-reporting.store');
     Route::get('/api-tokens/retailer-scraper', [ApiTokenController::class, 'retailerScraper'])
         ->name('api-tokens.retailer-scraper');
     Route::post('/api-tokens/retailer-scraper', [ApiTokenController::class, 'storeRetailerScraper'])

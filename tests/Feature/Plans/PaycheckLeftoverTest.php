@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Plans;
 
+use App\Http\Controllers\ApiTokens\ApiTokenController;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\BudgetYear;
@@ -11,10 +12,14 @@ use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
+use App\Models\TransactionTransferLink;
 use App\Models\User;
+use App\Services\Plans\PaycheckLeftoverService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class PaycheckLeftoverTest extends TestCase
@@ -39,28 +44,55 @@ class PaycheckLeftoverTest extends TestCase
     {
         $this->getJson(route('api.leftover.current'))
             ->assertUnauthorized();
-        $this->getJson(route('api.leftover.index'))
-            ->assertUnauthorized();
+    }
+
+    public function test_tokens_without_leftover_ability_are_forbidden(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['other']);
+
+        $this->getJson(route('api.leftover.current'))
+            ->assertForbidden();
+    }
+
+    public function test_pending_spend_and_amazon_tokens_cannot_read_leftover(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), ['pending-spend:create']);
+
+        $this->getJson(route('api.leftover.current'))
+            ->assertForbidden();
+
+        Sanctum::actingAs(User::factory()->create(), ['amazon:import']);
+
+        $this->getJson(route('api.leftover.current'))
+            ->assertForbidden();
+    }
+
+    public function test_leftover_tokens_cannot_create_pending_spend(): void
+    {
+        Sanctum::actingAs(User::factory()->create(), [ApiTokenController::ABILITY_LEFTOVER_REPORTING]);
+
+        $this->postJson(route('api.pending-spends.store'), [])
+            ->assertForbidden();
     }
 
     public function test_current_is_null_without_paycheck_plans(): void
     {
         $user = User::factory()->create();
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
-            ->assertJson(['leftover' => null]);
+            ->assertJson([
+                'remaining' => null,
+                'days_remaining' => null,
+            ]);
     }
 
     public function test_windows_chain_remaining_into_the_next_brought_forward(): void
     {
         [$user] = $this->paycheckSetup();
 
-        $windows = $this->actingAs($user)
-            ->getJson(route('api.leftover.index'))
-            ->assertOk()
-            ->json('windows');
+        $windows = $this->leftoverWindows($user);
 
         $july = $this->windowStarting($windows, '2026-07-01');
         $august = $this->windowStarting($windows, '2026-08-01');
@@ -68,6 +100,7 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(0, $july['brought_forward']);
         $this->assertEquals(3000, $july['planned_leftover']);
         $this->assertEquals(0, $july['spent']);
+        $this->assertEquals(0, $july['allocated']);
         $this->assertEquals(3000, $july['remaining']);
         $this->assertEquals(3000, $august['brought_forward']);
         $this->assertEquals(3000, $august['planned_leftover']);
@@ -80,9 +113,7 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         $this->expense($user, 5000, '2026-07-10');
 
-        $windows = $this->actingAs($user)
-            ->getJson(route('api.leftover.index'))
-            ->json('windows');
+        $windows = $this->leftoverWindows($user);
 
         $july = $this->windowStarting($windows, '2026-07-01');
         $august = $this->windowStarting($windows, '2026-08-01');
@@ -98,13 +129,13 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         $this->expense($user, 400, '2026-08-10');
 
-        $this->actingAs($user)
+        $this->actingAsLeftoverReporter($user)
             ->getJson(route('api.leftover.current'))
             ->assertOk()
-            ->assertJsonPath('leftover.starts_on', '2026-08-01')
-            ->assertJsonPath('leftover.ends_before', '2026-09-01')
-            ->assertJsonPath('leftover.spent', 400)
-            ->assertJsonPath('leftover.remaining', 5600);
+            ->assertJson([
+                'remaining' => 5600,
+                'days_remaining' => 17,
+            ]);
     }
 
     public function test_assigned_bill_transactions_are_not_counted_as_spend(): void
@@ -113,7 +144,7 @@ class PaycheckLeftoverTest extends TestCase
         $rent = $this->rentBill($user);
         $paycheck->assignedBills()->sync([$rent->id]);
 
-        $this->actingAs($user)->getJson(route('api.leftover.current'));
+        $this->leftoverCurrent($user);
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -134,12 +165,11 @@ class PaycheckLeftoverTest extends TestCase
                 'status' => PlannedOccurrence::STATUS_RESOLVED,
             ]);
 
-        $this->actingAs($user)
-            ->getJson(route('api.leftover.current'))
-            ->assertOk()
-            ->assertJsonPath('leftover.planned_leftover', 1800)
-            ->assertJsonPath('leftover.spent', 0)
-            ->assertJsonPath('leftover.unassigned_bills', []);
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(1800, $leftover['planned_leftover']);
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertSame([], $leftover['unassigned_bills']);
     }
 
     public function test_unassigned_bills_count_as_spend_and_are_listed(): void
@@ -147,13 +177,12 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         $this->rentBill($user);
 
-        $this->actingAs($user)
-            ->getJson(route('api.leftover.current'))
-            ->assertOk()
-            ->assertJsonPath('leftover.spent', 1200)
-            ->assertJsonPath('leftover.unassigned_bills.0.name', 'Rent')
-            ->assertJsonPath('leftover.unassigned_bills.0.amount', 1200)
-            ->assertJsonPath('leftover.unassigned_bills.0.date', '2026-08-01');
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(1200, $leftover['spent']);
+        $this->assertSame('Rent', $leftover['unassigned_bills'][0]['name']);
+        $this->assertEquals(1200, $leftover['unassigned_bills'][0]['amount']);
+        $this->assertSame('2026-08-01', $leftover['unassigned_bills'][0]['date']);
     }
 
     public function test_pending_spend_counts_in_the_paycheck_window(): void
@@ -170,17 +199,16 @@ class PaycheckLeftoverTest extends TestCase
             'status' => PendingSpend::STATUS_PENDING,
         ]);
 
-        $this->actingAs($user)
-            ->getJson(route('api.leftover.current'))
-            ->assertOk()
-            ->assertJsonPath('leftover.spent', 50)
-            ->assertJsonPath('leftover.remaining', 5950);
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(50, $leftover['spent']);
+        $this->assertEquals(5950, $leftover['remaining']);
     }
 
     public function test_resolved_paycheck_uses_the_actual_amount(): void
     {
         [$user, $paycheck] = $this->paycheckSetup();
-        $this->actingAs($user)->getJson(route('api.leftover.current'));
+        $this->leftoverCurrent($user);
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -201,12 +229,11 @@ class PaycheckLeftoverTest extends TestCase
                 'status' => PlannedOccurrence::STATUS_RESOLVED,
             ]);
 
-        $this->actingAs($user)
-            ->getJson(route('api.leftover.current'))
-            ->assertOk()
-            ->assertJsonPath('leftover.starts_on', '2026-08-02')
-            ->assertJsonPath('leftover.paycheck.amount', 2987)
-            ->assertJsonPath('leftover.planned_leftover', 2987);
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertSame('2026-08-02', $leftover['starts_on']);
+        $this->assertEquals(2987, $leftover['paycheck']['amount']);
+        $this->assertEquals(2987, $leftover['planned_leftover']);
     }
 
     public function test_next_paycheck_is_the_next_income_occurrence_of_any_template(): void
@@ -214,13 +241,104 @@ class PaycheckLeftoverTest extends TestCase
         [$user, $first] = $this->paycheckSetup();
         $this->secondPaycheck($user, $first->category_id);
 
-        $this->actingAs($user)
-            ->getJson(route('api.leftover.current'))
-            ->assertOk()
-            ->assertJsonPath('leftover.starts_on', '2026-08-15')
-            ->assertJsonPath('leftover.ends_before', '2026-09-01')
-            ->assertJsonPath('leftover.next_paycheck.date', '2026-09-01')
-            ->assertJsonPath('leftover.paycheck.name', 'Mid-month paycheck');
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertSame('2026-08-15', $leftover['starts_on']);
+        $this->assertSame('2026-09-01', $leftover['ends_before']);
+        $this->assertSame('2026-09-01', $leftover['next_paycheck']['date']);
+        $this->assertSame('Mid-month paycheck', $leftover['paycheck']['name']);
+    }
+
+    public function test_credit_card_payments_reduce_remaining_but_not_spent(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 500,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::CREDIT_CARD,
+            'kind' => PaycheckLeftoverService::ALLOCATION_CREDIT_CARD_PAYMENT,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(500, $leftover['allocated']);
+        $this->assertEquals(500, $leftover['credit_card_payments']);
+        $this->assertEquals(0, $leftover['savings_transfers']);
+        $this->assertEquals(5500, $leftover['remaining']);
+    }
+
+    public function test_savings_transfers_reduce_remaining_but_not_spent(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::SAVINGS,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(200, $leftover['allocated']);
+        $this->assertEquals(200, $leftover['savings_transfers']);
+        $this->assertEquals(0, $leftover['credit_card_payments']);
+        $this->assertEquals(5800, $leftover['remaining']);
+    }
+
+    public function test_savings_to_checking_transfers_increase_remaining(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-08',
+            'from' => Account::SAVINGS,
+            'to' => Account::CHECKING,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(-200, $leftover['allocated']);
+        $this->assertEquals(-200, $leftover['savings_transfers']);
+        $this->assertEquals(0, $leftover['credit_card_payments']);
+        $this->assertEquals(6200, $leftover['remaining']);
+    }
+
+    public function test_checking_to_checking_transfers_do_not_affect_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 250,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::CHECKING,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(0, $leftover['allocated']);
+        $this->assertEquals(6000, $leftover['remaining']);
+    }
+
+    public function test_rejected_transfers_do_not_reduce_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 500,
+            'posted_at' => '2026-08-08',
+            'from' => Account::CHECKING,
+            'to' => Account::SAVINGS,
+            'status' => TransactionTransferLink::STATUS_REJECTED,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['allocated']);
+        $this->assertEquals(6000, $leftover['remaining']);
     }
 
     public function test_dashboard_includes_current_paycheck_leftover_as_the_hero(): void
@@ -239,6 +357,29 @@ class PaycheckLeftoverTest extends TestCase
                 ->where('paycheck_leftover.remaining', 5600)
                 ->has('summary.leftover_income')
                 ->has('summary.vs_budget_difference'));
+    }
+
+    protected function actingAsLeftoverReporter(User $user): static
+    {
+        Sanctum::actingAs($user, [ApiTokenController::ABILITY_LEFTOVER_REPORTING]);
+
+        return $this;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function leftoverWindows(User $user): array
+    {
+        return app(PaycheckLeftoverService::class)->windows($user->id);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function leftoverCurrent(User $user): ?array
+    {
+        return app(PaycheckLeftoverService::class)->current($user->id);
     }
 
     /**
@@ -286,6 +427,64 @@ class PaycheckLeftoverTest extends TestCase
             'normalized_pattern' => 'acme payroll mid',
             'expected_day' => 15,
             'expected_amount' => 3000,
+        ]);
+    }
+
+    /**
+     * @param  array{
+     *     amount: float,
+     *     posted_at: string,
+     *     from: string,
+     *     to: string,
+     *     kind?: string,
+     *     status?: string
+     * }  $attributes
+     */
+    protected function transferPair(User $user, array $attributes): TransactionTransferLink
+    {
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $from = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => $attributes['from'],
+        ]);
+        $to = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => $attributes['to'],
+        ]);
+
+        $debit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $from->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -1 * $attributes['amount'],
+            'classification' => BankTransaction::CLASSIFICATION_TRANSFER,
+            'posted_at' => $attributes['posted_at'],
+            'description' => 'Transfer',
+        ]);
+        $credit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $to->id,
+            'import_batch_id' => $batch->id,
+            'amount' => $attributes['amount'],
+            'classification' => BankTransaction::CLASSIFICATION_TRANSFER,
+            'posted_at' => $attributes['posted_at'],
+            'description' => 'Transfer',
+        ]);
+
+        $metadata = ['source' => 'auto'];
+
+        if (isset($attributes['kind'])) {
+            $metadata['kind'] = $attributes['kind'];
+        }
+
+        return TransactionTransferLink::query()->create([
+            'user_id' => $user->id,
+            'debit_transaction_id' => $debit->id,
+            'credit_transaction_id' => $credit->id,
+            'transfer_group_id' => (string) Str::uuid(),
+            'match_confidence' => 90,
+            'status' => $attributes['status'] ?? TransactionTransferLink::STATUS_CONFIRMED,
+            'metadata' => $metadata,
         ]);
     }
 
