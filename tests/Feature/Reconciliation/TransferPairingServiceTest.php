@@ -9,6 +9,7 @@ use App\Models\TransactionTransferLink;
 use App\Models\User;
 use App\Services\Reconciliation\TransferPairingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class TransferPairingServiceTest extends TestCase
@@ -63,7 +64,7 @@ class TransferPairingServiceTest extends TestCase
         ]);
     }
 
-    public function test_suggests_same_day_transfer_like_pair_without_identical_memo(): void
+    public function test_skips_same_day_pair_without_identical_memo(): void
     {
         [$user, $checkingA, $checkingB, $batch] = $this->setupAccounts();
 
@@ -92,10 +93,8 @@ class TransferPairingServiceTest extends TestCase
         $result = app(TransferPairingService::class)->pairForUser($user->id);
 
         $this->assertSame(0, $result['confirmed']);
-        $this->assertSame(1, $result['suggested']);
-        $this->assertDatabaseHas('transaction_transfer_links', [
-            'status' => TransactionTransferLink::STATUS_SUGGESTED,
-        ]);
+        $this->assertSame(0, $result['suggested']);
+        $this->assertDatabaseCount('transaction_transfer_links', 0);
     }
 
     public function test_suggests_identical_memo_on_different_posted_dates(): void
@@ -173,7 +172,7 @@ class TransferPairingServiceTest extends TestCase
         $this->assertSame(BankTransaction::CLASSIFICATION_TRANSFER, $debit->fresh()->classification);
     }
 
-    public function test_suggests_exact_pair_without_transfer_description(): void
+    public function test_skips_amount_and_date_pair_without_identical_memo(): void
     {
         [$user, $checkingA, $checkingB, $batch] = $this->setupAccounts();
 
@@ -202,18 +201,14 @@ class TransferPairingServiceTest extends TestCase
         $result = app(TransferPairingService::class)->pairForUser($user->id);
 
         $this->assertSame(0, $result['confirmed']);
-        $this->assertSame(1, $result['suggested']);
+        $this->assertSame(0, $result['suggested']);
 
         $debit->refresh();
         $credit->refresh();
 
         $this->assertSame('unmatched', $debit->status);
         $this->assertNull($debit->classification);
-        $this->assertDatabaseHas('transaction_transfer_links', [
-            'debit_transaction_id' => $debit->id,
-            'credit_transaction_id' => $credit->id,
-            'status' => TransactionTransferLink::STATUS_SUGGESTED,
-        ]);
+        $this->assertDatabaseCount('transaction_transfer_links', 0);
     }
 
     public function test_skips_when_multiple_credit_candidates_exist_without_identical_memos(): void
@@ -382,8 +377,8 @@ class TransferPairingServiceTest extends TestCase
             'account_id' => $checkingA->id,
             'amount' => -40.00,
             'posted_at' => '2026-08-01',
-            'description' => 'MOVE MONEY',
-            'normalized_description' => 'move money',
+            'description' => 'TRANSFER FROM X6218 TO X1758 MOVE MONEY',
+            'normalized_description' => 'transfer from x6218 to x1758 move money',
             'status' => 'unmatched',
         ]);
 
@@ -393,8 +388,8 @@ class TransferPairingServiceTest extends TestCase
             'account_id' => $checkingB->id,
             'amount' => 40.00,
             'posted_at' => '2026-08-02',
-            'description' => 'MONEY ARRIVED',
-            'normalized_description' => 'money arrived',
+            'description' => 'TRANSFER FROM X6218 TO X1758 MOVE MONEY',
+            'normalized_description' => 'transfer from x6218 to x1758 move money',
             'status' => 'unmatched',
         ]);
 
@@ -417,8 +412,8 @@ class TransferPairingServiceTest extends TestCase
             'account_id' => $checkingA->id,
             'amount' => -15.00,
             'posted_at' => '2026-08-03',
-            'description' => 'MOVE AGAIN',
-            'normalized_description' => 'move again',
+            'description' => 'TRANSFER FROM X6218 TO X1758 MOVE AGAIN',
+            'normalized_description' => 'transfer from x6218 to x1758 move again',
             'status' => 'unmatched',
         ]);
 
@@ -428,8 +423,8 @@ class TransferPairingServiceTest extends TestCase
             'account_id' => $checkingB->id,
             'amount' => 15.00,
             'posted_at' => '2026-08-04',
-            'description' => 'ARRIVED AGAIN',
-            'normalized_description' => 'arrived again',
+            'description' => 'TRANSFER FROM X6218 TO X1758 MOVE AGAIN',
+            'normalized_description' => 'transfer from x6218 to x1758 move again',
             'status' => 'unmatched',
         ]);
 
@@ -445,6 +440,162 @@ class TransferPairingServiceTest extends TestCase
         $this->assertSame(TransactionTransferLink::STATUS_REJECTED, $rejected->status);
         $this->assertSame('unmatched', $debitB->status);
         $this->assertNull($debitB->classification);
+        $this->assertDatabaseMissing('transaction_transfer_links', [
+            'debit_transaction_id' => $debitB->id,
+            'credit_transaction_id' => $creditB->id,
+            'status' => TransactionTransferLink::STATUS_SUGGESTED,
+        ]);
+    }
+
+    public function test_waits_for_identical_memo_counterparts_instead_of_suggesting_amount_twins(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $bills = Account::factory()->create([
+            'name' => 'Bills Account',
+            'account_type' => Account::CHECKING,
+            'last_four' => '1758',
+            'is_active' => true,
+        ]);
+        $spending = Account::factory()->create([
+            'name' => 'Spending Account',
+            'account_type' => Account::CHECKING,
+            'last_four' => '6218',
+            'is_active' => true,
+        ]);
+        $aaron = Account::factory()->create([
+            'name' => "Aaron's Account",
+            'account_type' => Account::CHECKING,
+            'last_four' => '8955',
+            'is_active' => true,
+        ]);
+        $service = app(TransferPairingService::class);
+
+        $revertCredit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $bills->id,
+            'amount' => 1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X8955 TO X1758  REVERT',
+            'normalized_description' => 'transfer from x8955 to x1758 revert',
+            'status' => 'unmatched',
+        ]);
+        $daycareDebit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $spending->id,
+            'amount' => -1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X6218 TO X8955  DAYCARE BORROW BACK',
+            'normalized_description' => 'transfer from x6218 to x8955 daycare borrow back',
+            'status' => 'unmatched',
+        ]);
+
+        $this->assertSame(
+            ['confirmed' => 0, 'suggested' => 0],
+            $service->pairForUser($user->id),
+        );
+
+        $daycareCredit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $aaron->id,
+            'amount' => 1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X6218 TO X8955  DAYCARE BORROW BACK',
+            'normalized_description' => 'transfer from x6218 to x8955 daycare borrow back',
+            'status' => 'unmatched',
+        ]);
+        $revertDebit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $aaron->id,
+            'amount' => -1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X8955 TO X1758  REVERT',
+            'normalized_description' => 'transfer from x8955 to x1758 revert',
+            'status' => 'unmatched',
+        ]);
+
+        $result = $service->pairForUser($user->id);
+
+        $this->assertSame(2, $result['confirmed']);
+        $this->assertSame(0, $result['suggested']);
+        $this->assertDatabaseHas('transaction_transfer_links', [
+            'debit_transaction_id' => $daycareDebit->id,
+            'credit_transaction_id' => $daycareCredit->id,
+            'status' => TransactionTransferLink::STATUS_CONFIRMED,
+        ]);
+        $this->assertDatabaseHas('transaction_transfer_links', [
+            'debit_transaction_id' => $revertDebit->id,
+            'credit_transaction_id' => $revertCredit->id,
+            'status' => TransactionTransferLink::STATUS_CONFIRMED,
+        ]);
+    }
+
+    public function test_rejected_wrong_pair_does_not_block_identical_memo_counterpart(): void
+    {
+        [$user, $checkingA, $checkingB, $batch] = $this->setupAccounts();
+        $checkingC = Account::factory()->create([
+            'account_type' => Account::CHECKING,
+            'last_four' => '8955',
+            'is_active' => true,
+        ]);
+        $service = app(TransferPairingService::class);
+
+        $debit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $checkingA->id,
+            'amount' => -1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X6218 TO X8955 DAYCARE BORROW BACK',
+            'normalized_description' => 'transfer from x6218 to x8955 daycare borrow back',
+            'status' => 'unmatched',
+        ]);
+        $wrongCredit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $checkingB->id,
+            'amount' => 1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X8955 TO X1758 REVERT',
+            'normalized_description' => 'transfer from x8955 to x1758 revert',
+            'status' => 'unmatched',
+        ]);
+
+        $wrongLink = TransactionTransferLink::query()->create([
+            'user_id' => $user->id,
+            'debit_transaction_id' => $debit->id,
+            'credit_transaction_id' => $wrongCredit->id,
+            'transfer_group_id' => (string) Str::uuid(),
+            'match_confidence' => 80,
+            'status' => TransactionTransferLink::STATUS_SUGGESTED,
+            'metadata' => ['source' => 'auto'],
+        ]);
+
+        $correctCredit = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $checkingC->id,
+            'amount' => 1558.60,
+            'posted_at' => '2026-06-17',
+            'description' => 'TRANSFER FROM X6218 TO X8955 DAYCARE BORROW BACK',
+            'normalized_description' => 'transfer from x6218 to x8955 daycare borrow back',
+            'status' => 'unmatched',
+        ]);
+
+        $service->rejectLink($wrongLink);
+
+        $this->assertSame(TransactionTransferLink::STATUS_REJECTED, $wrongLink->fresh()->status);
+        $this->assertDatabaseHas('transaction_transfer_links', [
+            'debit_transaction_id' => $debit->id,
+            'credit_transaction_id' => $correctCredit->id,
+            'status' => TransactionTransferLink::STATUS_CONFIRMED,
+        ]);
+        $this->assertSame(BankTransaction::CLASSIFICATION_TRANSFER, $debit->fresh()->classification);
+        $this->assertSame('unmatched', $wrongCredit->fresh()->status);
     }
 
     /**

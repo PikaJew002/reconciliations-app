@@ -44,11 +44,18 @@ class TransferPairingService
         $credits = $transactions->filter(fn (BankTransaction $txn): bool => (float) $txn->amount > 0)->values();
 
         $usedCreditIds = [];
+        $rejectedCreditIdsByDebit = $this->rejectedCreditIdsByDebit($userId);
 
         foreach ($debits as $debit) {
+            $rejectedCreditIds = $rejectedCreditIdsByDebit[$debit->id] ?? [];
+
             $candidates = $credits
-                ->filter(function (BankTransaction $credit) use ($debit, $usedCreditIds): bool {
+                ->filter(function (BankTransaction $credit) use ($debit, $usedCreditIds, $rejectedCreditIds): bool {
                     if (isset($usedCreditIds[$credit->id])) {
+                        return false;
+                    }
+
+                    if (isset($rejectedCreditIds[$credit->id])) {
                         return false;
                     }
 
@@ -122,6 +129,8 @@ class TransferPairingService
         $link->update([
             'status' => TransactionTransferLink::STATUS_REJECTED,
         ]);
+
+        $this->pairForUser((int) $link->user_id);
     }
 
     public function unpairLink(TransactionTransferLink $link): void
@@ -143,9 +152,27 @@ class TransferPairingService
                 ]);
             }
 
-            // Delete so unique debit/credit constraints do not block correct re-pairing.
+            // Delete so a later run can pair these legs with different counterparts.
             $link->delete();
         });
+    }
+
+    /**
+     * @return array<int, array<int, true>>
+     */
+    protected function rejectedCreditIdsByDebit(int $userId): array
+    {
+        $rejected = [];
+
+        TransactionTransferLink::query()
+            ->where('user_id', $userId)
+            ->where('status', TransactionTransferLink::STATUS_REJECTED)
+            ->get(['debit_transaction_id', 'credit_transaction_id'])
+            ->each(function (TransactionTransferLink $link) use (&$rejected): void {
+                $rejected[(int) $link->debit_transaction_id][(int) $link->credit_transaction_id] = true;
+            });
+
+        return $rejected;
     }
 
     /**
@@ -258,11 +285,7 @@ class TransferPairingService
         BankTransaction $debit,
         Collection $candidates,
     ): ?BankTransaction {
-        if ($candidates->count() === 1) {
-            return $candidates->first();
-        }
-
-        if ($candidates->count() < 2) {
+        if ($candidates->isEmpty()) {
             return null;
         }
 
