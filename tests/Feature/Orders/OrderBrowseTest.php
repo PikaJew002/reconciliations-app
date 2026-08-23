@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\Merchant;
 use App\Models\Order;
+use App\Models\OrderComponent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -341,6 +342,66 @@ class OrderBrowseTest extends TestCase
                 ->has('orders', 1)
                 ->where('orders.0.id', $amazonOrder->id)
                 ->where('orders.0.order_number', 'AMZ-1'));
+    }
+
+    public function test_show_flags_unbalanced_orders(): void
+    {
+        $user = User::factory()->create();
+
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+
+        $balanced = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'order_number' => 'BALANCED',
+            'ordered_at' => '2026-07-02 00:00:00',
+            'total' => 10.00,
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $balanced->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 10.00,
+            'category_id' => null,
+        ]);
+
+        $unbalanced = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'order_number' => 'UNBALANCED',
+            'ordered_at' => '2026-07-03 00:00:00',
+            'total' => 42.30,
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $unbalanced->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 36.80,
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', 'amazon'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Show')
+                ->has('orders', 2)
+                ->where('orders.0.id', $unbalanced->id)
+                ->where('orders.0.components_balanced', false)
+                ->where('orders.0.component_sum', 36.8)
+                ->where('orders.0.gap', 5.5)
+                ->where('orders.1.id', $balanced->id)
+                ->where('orders.1.components_balanced', true)
+                ->where('orders.1.component_sum', 10)
+                ->where('orders.1.gap', 0));
     }
 
     public function test_show_search_filters_orders_by_number(): void

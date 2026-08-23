@@ -174,6 +174,14 @@
                         >
                             Near bank import edge — multi-tx matching skipped
                         </p>
+                        <p
+                            v-if="!order.components_balanced"
+                            class="mt-1 text-amber-800"
+                        >
+                            Unbalanced — components
+                            {{ formatMoney(order.component_sum) }}, gap
+                            {{ formatMoney(order.gap) }}
+                        </p>
                     </div>
                     <p class="font-medium">{{ formatMoney(order.total) }}</p>
                 </Link>

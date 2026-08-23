@@ -123,6 +123,16 @@
             </div>
         </div>
 
+        <p
+            v-if="!order.components_balanced"
+            class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+            Components do not add up to the order total (components
+            {{ formatMoney(order.component_sum) }}, gap
+            {{ formatMoney(order.gap) }}). This often means the scrape imported
+            the order incorrectly. Remove it below to re-import.
+        </p>
+
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div class="rounded border px-4 py-3 text-sm">
                 <p class="text-neutral-600">Subtotal</p>
@@ -145,6 +155,19 @@
             <div class="rounded border px-4 py-3 text-sm">
                 <p class="text-neutral-600">Discount</p>
                 <p class="font-medium">{{ formatMoney(order.discount) }}</p>
+            </div>
+            <div
+                class="rounded border px-4 py-3 text-sm"
+                :class="
+                    order.components_balanced
+                        ? ''
+                        : 'border-amber-200 bg-amber-50'
+                "
+            >
+                <p class="text-neutral-600">Components</p>
+                <p class="font-medium">
+                    {{ formatMoney(order.component_sum) }}
+                </p>
             </div>
             <div class="rounded border px-4 py-3 text-sm">
                 <p class="text-neutral-600">Total</p>
@@ -215,6 +238,10 @@
                 <p class="text-sm text-neutral-600">
                     Reconciliation breakdown: product lines plus tax, delivery,
                     tip, and discount.
+                    <template v-if="!order.components_balanced">
+                        Sum {{ formatMoney(order.component_sum) }} vs total
+                        {{ formatMoney(order.total) }}.
+                    </template>
                 </p>
             </div>
             <p v-if="components.length === 0" class="text-sm text-neutral-600">
@@ -250,6 +277,13 @@
                     Use this when {{ merchant.name }} imported the order
                     incorrectly. Deleting it lets the scraper import the same
                     order number again.
+                </p>
+                <p
+                    v-if="!order.components_balanced"
+                    class="mt-2 text-sm text-amber-800"
+                >
+                    Unbalanced components are a common sign the scrape missed
+                    items or fees. Removing the order lets you import it again.
                 </p>
                 <p
                     v-if="has_allocations"
