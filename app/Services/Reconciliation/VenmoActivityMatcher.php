@@ -147,11 +147,15 @@ class VenmoActivityMatcher
         }
 
         if ($requireLastFour && $lastFour !== null) {
-            $query->where(function ($builder) use ($lastFour): void {
-                $builder
-                    ->where('card_last_four', $lastFour)
-                    ->orWhereHas('account', fn ($accountQuery) => $accountQuery->where('last_four', $lastFour));
-            });
+            if ($activity->isCardFunded()) {
+                $query->where(function ($builder) use ($lastFour): void {
+                    $builder
+                        ->where('card_last_four', $lastFour)
+                        ->orWhereHas('account', fn ($accountQuery) => $accountQuery->where('last_four', $lastFour));
+                });
+            } else {
+                $query->whereHas('account', fn ($accountQuery) => $accountQuery->where('last_four', $lastFour));
+            }
         }
 
         $targetDate = $occurredAt->toDateString();
@@ -310,7 +314,7 @@ class VenmoActivityMatcher
     {
         $amount = round((float) $activity->amount, 2);
 
-        if ($activity->isPayment() && $amount < 0) {
+        if ($activity->isDirectBankDebit()) {
             return $amount;
         }
 

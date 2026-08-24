@@ -57,6 +57,118 @@ class VenmoActivityMatcherTest extends TestCase
         $this->assertSame('Tyler Adams · Extreme', $bank->fresh()->venmoSummary());
     }
 
+    public function test_confirms_unique_bank_funded_merchant_transaction_to_checking_debit(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+            'last_four' => '6218',
+            'is_active' => true,
+        ]);
+
+        $bank = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'amount' => -15.30,
+            'posted_at' => '2026-07-27',
+            'description' => 'VENMO PURCHASE 1051937135825',
+            'normalized_description' => 'venmo purchase 1051937135825',
+            'card_last_four' => null,
+            'status' => 'unmatched',
+        ]);
+
+        $activity = VenmoActivity::factory()->bankFundedMerchant('6218', -15.30)->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'occurred_at' => '2026-07-23 16:27:03',
+            'from_name' => 'Haley Eisenberg',
+            'to_name' => "McDonald's Corporation",
+            'note' => null,
+        ]);
+
+        $result = app(VenmoActivityMatcher::class)->matchForUser($user->id);
+
+        $this->assertSame(1, $result['confirmed']);
+        $this->assertSame(0, $result['suggested']);
+        $activity->refresh();
+        $this->assertSame(VenmoActivity::STATUS_CONFIRMED, $activity->match_status);
+        $this->assertSame($bank->id, $activity->bank_transaction_id);
+        $this->assertSame("McDonald's Corporation", $bank->fresh()->venmoSummary());
+    }
+
+    public function test_bank_funded_merchant_does_not_match_wrong_last_four_or_non_venmo_description(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $wrongAccount = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+            'last_four' => '9999',
+            'is_active' => true,
+        ]);
+        $cardOnlyAccount = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CREDIT_CARD,
+            'last_four' => '1111',
+            'is_active' => true,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $wrongAccount->id,
+            'amount' => -15.30,
+            'posted_at' => '2026-07-27',
+            'description' => 'VENMO PURCHASE',
+            'normalized_description' => 'venmo purchase',
+            'card_last_four' => null,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $cardOnlyAccount->id,
+            'amount' => -15.30,
+            'posted_at' => '2026-07-27',
+            'description' => 'VENMO PURCHASE',
+            'normalized_description' => 'venmo purchase',
+            'card_last_four' => '6218',
+        ]);
+
+        $sameAccountWrongMerchant = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+            'last_four' => '6218',
+            'is_active' => true,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $sameAccountWrongMerchant->id,
+            'amount' => -15.30,
+            'posted_at' => '2026-07-27',
+            'description' => 'WALMART',
+            'normalized_description' => 'walmart',
+            'card_last_four' => null,
+        ]);
+
+        $activity = VenmoActivity::factory()->bankFundedMerchant('6218', -15.30)->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'occurred_at' => '2026-07-23 16:27:03',
+        ]);
+
+        $result = app(VenmoActivityMatcher::class)->matchForUser($user->id);
+
+        $this->assertSame(0, $result['confirmed']);
+        $this->assertSame(VenmoActivity::STATUS_UNMATCHED, $activity->fresh()->match_status);
+        $this->assertNull($activity->fresh()->bank_transaction_id);
+    }
+
     public function test_matches_standard_transfer_to_bank_credit_and_groups_cashout(): void
     {
         $user = User::factory()->create();

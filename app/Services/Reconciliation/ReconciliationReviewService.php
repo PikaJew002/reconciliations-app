@@ -403,21 +403,7 @@ class ReconciliationReviewService
     {
         return VenmoActivity::query()
             ->where('user_id', $userId)
-            ->where(function ($query): void {
-                $query
-                    ->where(function ($payment): void {
-                        $payment
-                            ->where('type', VenmoActivity::TYPE_PAYMENT)
-                            ->where('amount', '<', 0)
-                            ->whereNotNull('funding_last_four');
-                    })
-                    ->orWhere(function ($transfer): void {
-                        $transfer
-                            ->where('type', 'like', '%transfer%')
-                            ->where('amount', '<', 0)
-                            ->whereNotNull('destination_last_four');
-                    });
-            });
+            ->bankFacing();
     }
 
     protected function unmatchedTransactionsQuery(int $userId)
