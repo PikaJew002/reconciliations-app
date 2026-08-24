@@ -265,6 +265,74 @@ class TransactionCategorizationTest extends TestCase
         $this->assertSame('unmatched', $transaction->status);
     }
 
+    public function test_order_import_merchant_can_be_categorized_as_a_one_off(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'supports_order_import' => true,
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $transaction = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -40,
+            'description' => 'WALMART.COM',
+            'normalized_description' => 'walmart.com',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $transaction), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_ONCE,
+            ])
+            ->assertRedirect(route('reconciliation.unmatched-transactions'))
+            ->assertSessionHas('success');
+
+        $transaction->refresh();
+        $this->assertSame('ignored', $transaction->status);
+        $this->assertSame(BankTransaction::CLASSIFICATION_EXPENSE, $transaction->classification);
+        $this->assertSame($category->id, $transaction->category_id);
+        $this->assertDatabaseCount('transaction_categorization_rules', 0);
+        $this->assertDatabaseCount('categorization_runs', 0);
+        Queue::assertNotPushed(ApplyCategorizationRun::class);
+    }
+
+    public function test_zero_amount_transactions_are_ignored_even_without_rules(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $zero = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => 0,
+            'description' => 'INTEREST RATE CHANGE',
+            'normalized_description' => 'interest rate change',
+            'status' => 'unmatched',
+            'classification' => null,
+        ]);
+        $keep = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -12.50,
+            'description' => 'COFFEE',
+            'status' => 'unmatched',
+            'classification' => null,
+        ]);
+
+        $result = app(TransactionCategorizationService::class)->categorizeForUser($user->id);
+
+        $this->assertSame(0, $result['applied']);
+        $this->assertSame('ignored', $zero->fresh()->status);
+        $this->assertNull($zero->fresh()->classification);
+        $this->assertSame('unmatched', $keep->fresh()->status);
+    }
+
     public function test_user_can_categorize_order_component_and_sticky_product(): void
     {
         $user = User::factory()->create();

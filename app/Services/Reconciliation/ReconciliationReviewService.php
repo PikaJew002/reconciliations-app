@@ -14,6 +14,7 @@ class ReconciliationReviewService
         protected OrderPaymentResolutionService $paymentResolution,
         protected ReimbursementGroupService $reimbursementGroups,
         protected VenmoActivityMatcher $venmoMatcher,
+        protected TransactionCategorizationService $transactionCategorization,
         protected int $listLimit = 50,
         protected int $unmatchedTransactionsLimit = 250,
     ) {}
@@ -28,6 +29,8 @@ class ReconciliationReviewService
      */
     public function summaryForUser(int $userId, ?array $needsReviewPayload = null): array
     {
+        $this->transactionCategorization->ignoreZeroAmountForUser($userId);
+
         $unbalancedOrders = $needsReviewPayload['unbalancedOrders']
             ?? $this->unbalancedOrders($userId);
         $paymentReviewOrders = $needsReviewPayload['paymentReviewOrders']
@@ -121,6 +124,8 @@ class ReconciliationReviewService
      */
     public function unmatchedTransactionsForUser(int $userId): array
     {
+        $this->transactionCategorization->ignoreZeroAmountForUser($userId);
+
         return [
             'unmatchedTransactions' => $this->unmatchedTransactions($userId),
             'openReimbursementGroups' => $this->reimbursementGroupsPayload($userId, ReimbursementGroup::STATUS_OPEN),
@@ -433,10 +438,9 @@ class ReconciliationReviewService
             'status' => $transaction->status,
             'merchant' => $transaction->merchant?->name,
             'supports_order_import' => (bool) ($transaction->merchant?->supports_order_import),
-            'can_categorize' => $canCategorizeBase && (
-                $isCredit
-                || ($isDebit && ! (bool) ($transaction->merchant?->supports_order_import))
-            ),
+            'can_categorize' => $canCategorizeBase && ($isCredit || $isDebit),
+            'one_off_categorize_only' => $isDebit
+                && (bool) ($transaction->merchant?->supports_order_import),
             'venmo_summary' => $transaction->venmoSummary(),
         ];
 

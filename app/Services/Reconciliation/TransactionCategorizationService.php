@@ -19,6 +19,8 @@ class TransactionCategorizationService
         $applied = 0;
         $ambiguous = 0;
 
+        $this->ignoreZeroAmountForUser($userId);
+
         $rules = TransactionCategorizationRule::query()
             ->where('user_id', $userId)
             ->where('is_active', true)
@@ -109,8 +111,11 @@ class TransactionCategorizationService
             throw new InvalidArgumentException('Category kind must match classification.');
         }
 
-        if ($transaction->merchant?->supports_order_import) {
-            throw new InvalidArgumentException('Order-import merchant transactions cannot be categorized at the transaction level.');
+        if (
+            $transaction->merchant?->supports_order_import
+            && $matchMode !== TransactionCategorizationRule::MATCH_ONCE
+        ) {
+            throw new InvalidArgumentException('Order-import merchant transactions can only be categorized as a one-off.');
         }
 
         if (! in_array($matchMode, TransactionCategorizationRule::allMatchModes(), true)) {
@@ -188,6 +193,16 @@ class TransactionCategorizationService
         }
 
         return implode(' ', $tokens);
+    }
+
+    public function ignoreZeroAmountForUser(int $userId): void
+    {
+        BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('status', 'unmatched')
+            ->whereNull('classification')
+            ->where('amount', 0)
+            ->update(['status' => 'ignored']);
     }
 
     protected function categorizeIncome(
