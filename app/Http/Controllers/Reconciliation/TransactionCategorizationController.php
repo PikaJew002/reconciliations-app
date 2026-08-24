@@ -76,7 +76,13 @@ class TransactionCategorizationController extends Controller
         $transaction->loadMissing('merchant');
 
         if (! $isIncome) {
-            abort_unless(! $transaction->merchant?->supports_order_import, 422, 'Order-import merchant transactions wait for real orders.');
+            if ($transaction->merchant?->supports_order_import) {
+                abort_unless(
+                    $validated['match_mode'] === TransactionCategorizationRule::MATCH_ONCE,
+                    422,
+                    'Order-import merchant transactions can only be categorized as a one-off.',
+                );
+            }
 
             if (
                 in_array($validated['match_mode'], TransactionCategorizationRule::billOnlyMatchModes(), true)

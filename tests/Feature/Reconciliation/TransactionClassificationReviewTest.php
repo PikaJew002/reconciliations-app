@@ -5,6 +5,7 @@ namespace Tests\Feature\Reconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Models\ImportBatch;
+use App\Models\Merchant;
 use App\Models\TransactionTransferLink;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -118,9 +119,93 @@ class TransactionClassificationReviewTest extends TestCase
                     return $byId[$credit->id]['can_categorize'] === true
                         && $byId[$credit->id]['account_default_classification'] === 'income'
                         && $byId[$debit->id]['can_categorize'] === true
+                        && $byId[$debit->id]['one_off_categorize_only'] === false
                         && ! array_key_exists('can_mark_income', $byId[$credit->id]);
                 })
             );
+    }
+
+    public function test_unmatched_order_import_debit_can_be_categorized_as_a_one_off(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create([
+            'account_type' => Account::CHECKING,
+            'is_active' => true,
+        ]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'supports_order_import' => true,
+        ]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'amount' => -42.10,
+            'posted_at' => '2026-08-01',
+            'description' => 'WALMART.COM',
+            'status' => 'unmatched',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.unmatched-transactions'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reconciliation/UnmatchedTransactions')
+                ->has('unmatchedTransactions', 1)
+                ->where('unmatchedTransactions.0.id', $transaction->id)
+                ->where('unmatchedTransactions.0.can_categorize', true)
+                ->where('unmatchedTransactions.0.one_off_categorize_only', true)
+                ->where('unmatchedTransactions.0.supports_order_import', true)
+            );
+    }
+
+    public function test_zero_amount_transactions_are_ignored_and_hidden_from_unmatched(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create([
+            'account_type' => Account::SAVINGS,
+            'is_active' => true,
+        ]);
+
+        $zero = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'amount' => 0.00,
+            'posted_at' => '2026-08-01',
+            'description' => 'INTEREST RATE CHANGE',
+            'status' => 'unmatched',
+            'classification' => null,
+        ]);
+        $keep = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'amount' => 1.25,
+            'posted_at' => '2026-08-01',
+            'description' => 'INTEREST PAYMENT',
+            'status' => 'unmatched',
+            'classification' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.unmatched-transactions'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Reconciliation/UnmatchedTransactions')
+                ->has('unmatchedTransactions', 1)
+                ->where('unmatchedTransactions.0.id', $keep->id)
+                ->where('summary.unmatched_transactions', 1)
+            );
+
+        $this->assertSame('ignored', $zero->fresh()->status);
+        $this->assertNull($zero->fresh()->classification);
+        $this->assertSame('unmatched', $keep->fresh()->status);
     }
 
     public function test_user_can_confirm_and_reject_transfer(): void

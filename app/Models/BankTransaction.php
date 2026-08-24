@@ -175,6 +175,7 @@ class BankTransaction extends Model
         return $query
             ->where('status', 'unmatched')
             ->whereNull('classification')
+            ->where('amount', '!=', 0)
             ->whereDoesntHave(
                 'debitTransferLink',
                 fn ($linkQuery) => $linkQuery->whereIn('status', $activeStatuses),

@@ -272,7 +272,15 @@
         return expenseCategories.value;
     }
 
+    function isOneOffCategorizeOnly(transaction) {
+        return Boolean(transaction?.one_off_categorize_only);
+    }
+
     function matchModesForClassification(classification, transaction = null) {
+        if (isOneOffCategorizeOnly(transaction)) {
+            return ['once'];
+        }
+
         if (classification === 'income') {
             return incomeMatchModes;
         }
@@ -719,6 +727,7 @@
                             "
                             data-tour="categorize-match"
                             class="w-full rounded border px-2"
+                            :disabled="isOneOffCategorizeOnly(transaction)"
                             @change="onCategorizeMatchModeChange(transaction)"
                         >
                             <option
@@ -786,7 +795,15 @@
                         </button>
                     </div>
                     <p
-                        v-if="showsMatchPrefix(transaction)"
+                        v-if="isOneOffCategorizeOnly(transaction)"
+                        class="text-xs text-neutral-500 sm:col-span-2 lg:col-span-4"
+                    >
+                        No imported order for this charge? Categorize it as a
+                        one-off. This will not wait for an order or learn a
+                        rule.
+                    </p>
+                    <p
+                        v-else-if="showsMatchPrefix(transaction)"
                         class="text-xs text-neutral-500 sm:col-span-2 lg:col-span-3"
                     >
                         Matches other bills that start with this text and have
