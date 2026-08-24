@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -22,6 +23,8 @@ class VenmoActivity extends Model
     public const STATUS_WALLET_ONLY = 'wallet_only';
 
     public const TYPE_PAYMENT = 'payment';
+
+    public const TYPE_MERCHANT_TRANSACTION = 'merchant_transaction';
 
     protected $fillable = [
         'user_id',
@@ -94,8 +97,7 @@ class VenmoActivity extends Model
 
     public function isDirectBankDebit(): bool
     {
-        return $this->isPayment()
-            && (float) $this->amount < 0
+        return (float) $this->amount < 0
             && $this->funding_last_four !== null;
     }
 
@@ -109,6 +111,35 @@ class VenmoActivity extends Model
     public function isBankFacing(): bool
     {
         return $this->isDirectBankDebit() || $this->isTransferToBank();
+    }
+
+    public function isCardFunded(): bool
+    {
+        $source = strtolower((string) $this->funding_source);
+
+        if ($source === '') {
+            return false;
+        }
+
+        return (bool) preg_match('/visa|mastercard|amex|american express|discover/', $source);
+    }
+
+    public function scopeBankFacing(Builder $query): Builder
+    {
+        return $query->where(function (Builder $builder): void {
+            $builder
+                ->where(function (Builder $debit): void {
+                    $debit
+                        ->where('amount', '<', 0)
+                        ->whereNotNull('funding_last_four');
+                })
+                ->orWhere(function (Builder $transfer): void {
+                    $transfer
+                        ->where('type', 'like', '%transfer%')
+                        ->where('amount', '<', 0)
+                        ->whereNotNull('destination_last_four');
+                });
+        });
     }
 
     public function isConfirmed(): bool

@@ -48,6 +48,18 @@ class VenmoActivityFactory extends Factory
         ]);
     }
 
+    public function bankFundedMerchant(string $lastFour = '6218', float $amount = -15.30): static
+    {
+        return $this->state(fn (): array => [
+            'type' => VenmoActivity::TYPE_MERCHANT_TRANSACTION,
+            'amount' => $amount,
+            'funding_source' => "CUMBERLAND VALLEY NATIONAL BANK Personal Checking *{$lastFour}",
+            'funding_last_four' => $lastFour,
+            'destination' => null,
+            'destination_last_four' => null,
+        ]);
+    }
+
     public function incomingPayment(float $amount = 10.00): static
     {
         return $this->state(fn (): array => [

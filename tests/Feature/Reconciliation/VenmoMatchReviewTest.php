@@ -60,6 +60,45 @@ class VenmoMatchReviewTest extends TestCase
         $this->assertContains($bank->id, $activity->rejectedBankTransactionIds());
     }
 
+    public function test_needs_review_includes_unmatched_bank_funded_merchant_transactions(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+            'last_four' => '6218',
+            'is_active' => true,
+        ]);
+        $bank = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'amount' => -15.30,
+            'posted_at' => '2026-07-27',
+            'description' => 'VENMO PURCHASE',
+            'normalized_description' => 'venmo purchase',
+            'card_last_four' => null,
+        ]);
+        $activity = VenmoActivity::factory()->bankFundedMerchant('6218', -15.30)->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'occurred_at' => '2026-07-23 16:27:03',
+            'to_name' => "McDonald's Corporation",
+            'note' => null,
+            'match_status' => VenmoActivity::STATUS_UNMATCHED,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.needs-review'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('unmatchedVenmoActivities', 1)
+                ->where('unmatchedVenmoActivities.0.id', $activity->id)
+                ->where('unmatchedVenmoActivities.0.candidates.0.id', $bank->id)
+                ->where('unmatchedVenmoActivities.0.label', "McDonald's Corporation"));
+    }
+
     public function test_user_can_assign_an_unmatched_venmo_activity_to_a_bank_transaction(): void
     {
         $user = User::factory()->create();
