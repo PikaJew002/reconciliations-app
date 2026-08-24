@@ -22,6 +22,7 @@ class OrderBrowseService
     ];
 
     public function __construct(
+        protected int $preCoverageLookbackDays = 10,
         protected int $listLimit = 50,
     ) {}
 
@@ -403,8 +404,9 @@ class OrderBrowseService
     {
         $min = Carbon::parse($bankCoverage['min'])->startOfDay();
         $max = Carbon::parse($bankCoverage['max'])->startOfDay();
+        $earliestAllowed = $min->copy()->subDays($this->preCoverageLookbackDays);
 
-        return $orderDate->lt($min) || $orderDate->gt($max);
+        return $orderDate->lt($earliestAllowed) || $orderDate->gt($max);
     }
 
     protected function orderDate(Order $order): ?Carbon

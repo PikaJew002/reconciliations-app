@@ -260,6 +260,17 @@ class OrderBrowseTest extends TestCase
             'status' => 'imported',
         ]);
 
+        $beforeCoverageOrder = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'order_number' => 'BEFORE-1',
+            'ordered_at' => '2026-05-29 00:00:00',
+            'delivered_at' => '2026-05-30 00:00:00',
+            'total' => 25.00,
+            'payment_last_four' => '2525',
+            'status' => 'imported',
+        ]);
+
         Order::factory()->create([
             'user_id' => $user->id,
             'merchant_id' => $target->id,
@@ -289,14 +300,16 @@ class OrderBrowseTest extends TestCase
                 ->where('filters.q', '')
                 ->where('bankCoverage.min', '2026-06-01')
                 ->where('bankCoverage.max', '2026-08-06')
-                ->where('orderCoverage.min', '2026-07-01')
+                ->where('orderCoverage.min', '2026-05-29')
                 ->where('orderCoverage.max', '2026-08-08')
                 ->where('nearImportEdge', true)
-                ->has('orders', 2)
+                ->has('orders', 3)
                 ->where('orders.0.id', $outsideCoverageOrder->id)
                 ->where('orders.0.near_import_edge', true)
                 ->where('orders.1.id', $safeOrder->id)
-                ->where('orders.1.near_import_edge', false));
+                ->where('orders.1.near_import_edge', false)
+                ->where('orders.2.id', $beforeCoverageOrder->id)
+                ->where('orders.2.near_import_edge', false));
     }
 
     public function test_show_lists_amazon_orders(): void

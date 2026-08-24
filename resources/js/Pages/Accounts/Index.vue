@@ -91,8 +91,8 @@
                 {{ formatDate(bankCoverage.max) }}
             </p>
             <p class="mt-1 text-neutral-600">
-                Multi-transaction matches skip orders outside this posted-date
-                range.
+                Multi-transaction matches skip orders more than 10 days before
+                this range starts, or after it ends.
             </p>
         </div>
         <p v-else class="text-sm text-neutral-600">
@@ -137,7 +137,7 @@
                             </p>
                         </div>
                         <div class="text-right text-sm">
-                            <p>{{ account.transaction_count }} txs</p>
+                            <p>{{ account.transaction_count }} transactions</p>
                             <p class="text-neutral-600">
                                 {{ formatDate(account.min_posted_at) }} →
                                 {{ formatDate(account.max_posted_at) }}

@@ -13,6 +13,7 @@ class ReconciliationService
 {
     public function __construct(
         protected int $dateWindowDays = 7,
+        protected int $preCoverageLookbackDays = 10,
         protected int $subsetCandidateCap = 12,
     ) {}
 
@@ -347,7 +348,9 @@ class ReconciliationService
             return true;
         }
 
-        return $orderDate->lt($range['min']) || $orderDate->gt($range['max']);
+        $earliestAllowed = $range['min']->copy()->subDays($this->preCoverageLookbackDays);
+
+        return $orderDate->lt($earliestAllowed) || $orderDate->gt($range['max']);
     }
 
     protected function orderRemainingAmount(Order $order): float

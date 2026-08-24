@@ -319,7 +319,7 @@ class ReconciliationServiceTest extends TestCase
         $this->assertEqualsWithDelta(50.00, (float) $order->fresh()->allocated_amount, 0.01);
     }
 
-    public function test_skips_multi_match_when_order_is_outside_bank_coverage(): void
+    public function test_reconciles_unique_multi_transaction_when_order_is_before_bank_coverage(): void
     {
         $user = User::factory()->create();
         $merchant = Merchant::factory()->create([
@@ -366,6 +366,67 @@ class ReconciliationServiceTest extends TestCase
             'account_id' => $account->id,
             'merchant_id' => $merchant->id,
             'posted_at' => '2026-07-05',
+            'amount' => -20.00,
+            'card_last_four' => '2195',
+            'status' => 'unmatched',
+        ]);
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(2, $matched);
+        $this->assertSame('matched', $first->fresh()->status);
+        $this->assertSame('matched', $second->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+        $this->assertEqualsWithDelta(50.00, (float) $order->fresh()->allocated_amount, 0.01);
+    }
+
+    public function test_skips_multi_match_when_order_is_after_bank_coverage(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $this->createRangeAnchorTransactions($user, $account, $batch, '2026-07-01', '2026-08-15');
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-08-16',
+            'total' => 50.00,
+            'payment_last_four' => '2195',
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 50.00,
+            'category_id' => null,
+        ]);
+
+        $first = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-08-14',
+            'amount' => -30.00,
+            'card_last_four' => '2195',
+            'status' => 'unmatched',
+        ]);
+
+        $second = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-08-15',
             'amount' => -20.00,
             'card_last_four' => '2195',
             'status' => 'unmatched',
