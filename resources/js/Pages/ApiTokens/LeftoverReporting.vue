@@ -27,8 +27,9 @@
     });
 
     let sampleResponse = `{
-  "remaining": 2700,
-  "days_remaining": 10
+  "remaining": "$2,700.00",
+  "days_remaining": 10,
+  "next_paycheck": "Sep 1"
 }`;
 
     let submit = () => {
@@ -78,8 +79,8 @@
                 <h2 class="text-lg font-semibold">Widget request</h2>
                 <p class="text-sm text-neutral-600">
                     <code>GET {{ endpoint }}</code>
-                    returns remaining to spend and days until the next
-                    paycheck. Both are
+                    returns remaining to spend as a dollar string, days until
+                    the next paycheck, and that date. All are
                     <code>null</code>
                     when there are no paycheck plans.
                 </p>

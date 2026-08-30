@@ -113,6 +113,8 @@ Route::middleware('auth')->group(function () {
         ->name('budgets.years.current');
 
     Route::get('/plans', [PlannedTemplateController::class, 'index'])->name('plans.index');
+    Route::put('/plans/leftover-origin', [PlannedTemplateController::class, 'updateLeftoverOrigin'])
+        ->name('plans.leftover-origin.update');
     Route::post('/plans', [PlannedTemplateController::class, 'store'])->name('plans.store');
     Route::patch('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'update'])->name('plans.update');
     Route::put('/plans/{plannedTemplate}/assignments', [PlannedTemplateController::class, 'updateAssignments'])

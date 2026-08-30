@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Plans;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Plans\StorePlannedTemplateRequest;
+use App\Http\Requests\Plans\UpdateLeftoverOriginRequest;
 use App\Http\Requests\Plans\UpdatePlannedTemplateAssignmentsRequest;
 use App\Http\Requests\Plans\UpdatePlannedTemplateRequest;
 use App\Jobs\MatchPlannedOccurrences;
@@ -15,6 +16,7 @@ use App\Models\PlannedOccurrence;
 use App\Models\PlannedOccurrenceMatchRun;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
+use App\Services\Plans\LeftoverOriginService;
 use App\Services\Plans\PaycheckBillAssignmentService;
 use App\Services\Plans\PlannedOccurrenceGenerator;
 use App\Services\Reconciliation\TransactionMatchEvaluator;
@@ -33,6 +35,7 @@ class PlannedTemplateController extends Controller
         Request $request,
         PlannedOccurrenceGenerator $generator,
         PaycheckBillAssignmentService $assignments,
+        LeftoverOriginService $origin,
     ): Response {
         $userId = $request->user()->id;
         $generator->ensureForUser($userId);
@@ -147,12 +150,14 @@ class PlannedTemplateController extends Controller
             'active_match_runs' => $this->activeMatchRunsPayload($userId),
             'month_in_budget_year' => $this->monthInBudgetYear($userId, $monthStart),
             'month_beyond_occurrence_horizon' => PlannedOccurrenceGenerator::isBeyondHorizon($monthStart),
+            'leftover_origin' => $origin->payload($userId),
         ]);
     }
 
     public function store(
         StorePlannedTemplateRequest $request,
         PlannedOccurrenceGenerator $generator,
+        LeftoverOriginService $origin,
     ): RedirectResponse {
         $template = PlannedTemplate::query()->create([
             'user_id' => $request->user()->id,
@@ -160,6 +165,11 @@ class PlannedTemplateController extends Controller
         ]);
 
         $generator->syncTemplate($template);
+
+        if ($template->classification === BankTransaction::CLASSIFICATION_INCOME) {
+            $origin->ensureForUser($template->user_id);
+        }
+
         $this->dispatchMatchJob($template);
 
         return redirect()
@@ -215,6 +225,17 @@ class PlannedTemplateController extends Controller
         return redirect()
             ->route('plans.index', array_filter(['month' => $request->string('month')->toString() ?: null]))
             ->with('success', 'Bills assigned.');
+    }
+
+    public function updateLeftoverOrigin(
+        UpdateLeftoverOriginRequest $request,
+        LeftoverOriginService $origin,
+    ): RedirectResponse {
+        $origin->setMonth($request->user(), $request->month());
+
+        return redirect()
+            ->route('plans.index', array_filter(['month' => $request->viewMonth()]))
+            ->with('success', 'Leftover tracking start updated.');
     }
 
     /**

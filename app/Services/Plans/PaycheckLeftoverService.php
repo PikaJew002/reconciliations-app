@@ -22,6 +22,7 @@ class PaycheckLeftoverService
         protected PaycheckBillAssignmentService $assignments,
         protected CategorySpendQuery $spendQuery,
         protected PlannedOccurrenceGenerator $generator,
+        protected LeftoverOriginService $origin,
     ) {}
 
     /**
@@ -78,6 +79,21 @@ class PaycheckLeftoverService
                 return (int) $left['occurrence']->id <=> (int) $right['occurrence']->id;
             })
             ->values();
+
+        $startsOn = $this->origin->ensureForUser($userId);
+
+        if ($startsOn !== null) {
+            $starts = $starts
+                ->filter(fn (array $item) => ! $item['occurrence']->expected_date
+                    ->copy()
+                    ->startOfDay()
+                    ->lt($startsOn))
+                ->values();
+        }
+
+        if ($starts->isEmpty()) {
+            return [];
+        }
 
         $assignedBillTemplateIds = $paychecks
             ->flatMap(fn (PlannedTemplate $paycheck) => $paycheck->assignedBills->pluck('id'))

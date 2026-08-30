@@ -397,6 +397,8 @@ brought forward + planned leftover − unassigned spend in the window
 
 Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Remaining leftover carries into the next window.
 
+Windows start at a leftover origin: the first paycheck occurrence on or after `users.leftover_starts_on`. That date defaults to the current calendar month the first time leftover is computed (or a paycheck plan is created) and then stays put. Brought forward is $0 at that origin paycheck; spend before it is ignored. The start month can be changed on Plans.
+
 Credit-card **payments** are transfers, not leftover spend. There is no account-balance ledger; debt payoff is not subtracted as its own concept.
 
 ---

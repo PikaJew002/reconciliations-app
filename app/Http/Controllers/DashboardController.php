@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Category;
 use App\Services\Budgets\BudgetProgressService;
+use App\Services\Plans\LeftoverOriginService;
 use App\Services\Plans\PaycheckBillAssignmentService;
 use App\Services\Plans\PaycheckLeftoverService;
 use App\Services\Plans\PlannedOccurrenceGenerator;
@@ -22,6 +23,7 @@ class DashboardController extends Controller
         PlannedOccurrenceGenerator $generator,
         PaycheckBillAssignmentService $assignments,
         PaycheckLeftoverService $leftover,
+        LeftoverOriginService $origin,
     ): Response {
         $userId = $request->user()->id;
 
@@ -158,6 +160,7 @@ class DashboardController extends Controller
             'months_elapsed' => $monthsElapsed,
             'paycheck_plans' => $paycheckPlans,
             'paycheck_leftover' => $leftover->current($userId),
+            'leftover_origin' => $origin->payload($userId),
         ]);
     }
 
