@@ -9,6 +9,7 @@ use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Services\Orders\OrderCategorizationBrowseService;
+use App\Services\Orders\OrderInstanceCategorizationService;
 use App\Services\Reconciliation\ProductMatchingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -59,14 +60,37 @@ class OrderCategorizationController extends Controller
             abort(404);
         }
 
-        return redirect()
-            ->back(fallback: route('orders.categorize'))
-            ->with(
-                'success',
-                $updated === 0
-                    ? 'Nothing left to categorize on this order.'
-                    : sprintf('Categorized %d %s on this order.', $updated, $updated === 1 ? 'line' : 'lines'),
-            );
+        return $this->categorizeAllRedirect($updated);
+    }
+
+    public function categorizeAllThisTime(
+        Request $request,
+        Order $order,
+        OrderInstanceCategorizationService $instances,
+    ): RedirectResponse {
+        abort_unless($order->user_id === $request->user()->id, 403);
+
+        $validated = $request->validate([
+            'category_id' => [
+                'required',
+                'integer',
+                Rule::exists('categories', 'id')->where(fn ($query) => $query
+                    ->where('user_id', $request->user()->id)
+                    ->where('kind', Category::KIND_EXPENSE)),
+            ],
+        ]);
+
+        $order->loadMissing(['merchant', 'items.product', 'items.components']);
+
+        abort_unless($order->merchant?->normalized_name === 'walmart', 404);
+
+        $updated = $this->categorizeWalmartOrderThisTime(
+            $order,
+            (int) $validated['category_id'],
+            $instances,
+        );
+
+        return $this->categorizeAllRedirect($updated);
     }
 
     protected function categorizeWalmartOrder(
@@ -115,6 +139,44 @@ class OrderCategorizationController extends Controller
         }
 
         return $updated;
+    }
+
+    protected function categorizeWalmartOrderThisTime(
+        Order $order,
+        int $categoryId,
+        OrderInstanceCategorizationService $instances,
+    ): int {
+        $updated = 0;
+
+        foreach ($order->items as $item) {
+            if ($this->walmartItemAlreadyCategorized($item)) {
+                continue;
+            }
+
+            $product = $item->product;
+
+            if ($item->product_id !== null && $product !== null && $product->category_id !== null) {
+                continue;
+            }
+
+            if ($instances->categorizeItem($item, $categoryId)) {
+                $updated++;
+            }
+        }
+
+        return $updated;
+    }
+
+    protected function categorizeAllRedirect(int $updated): RedirectResponse
+    {
+        return redirect()
+            ->back(fallback: route('orders.categorize'))
+            ->with(
+                'success',
+                $updated === 0
+                    ? 'Nothing left to categorize on this order.'
+                    : sprintf('Categorized %d %s on this order.', $updated, $updated === 1 ? 'line' : 'lines'),
+            );
     }
 
     protected function categorizeAmazonOrder(Order $order, int $categoryId): int

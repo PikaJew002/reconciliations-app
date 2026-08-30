@@ -186,8 +186,29 @@
         }
     };
 
+    let dismissOrderThisTime = (order) => {
+        for (let line of order.lines) {
+            if (line.kind === 'component') {
+                dismissComponent(line.id);
+            } else {
+                dismissItem(line.id);
+            }
+        }
+    };
+
+    let orderSavingKey = (order) => `order:${order.id}`;
+
+    let orderThisTimeSavingKey = (order) => `order-once:${order.id}`;
+
+    let orderIsBusy = (order) => {
+        return (
+            savingKey.value === orderSavingKey(order) ||
+            savingKey.value === orderThisTimeSavingKey(order)
+        );
+    };
+
     let submitOrderCategory = (order) => {
-        let key = `order:${order.id}`;
+        let key = orderSavingKey(order);
         let categoryId = orderCategorySelections[order.id];
 
         if (!categoryId || savingKey.value) {
@@ -199,6 +220,32 @@
 
         router.post(
             `/orders/${order.id}/categorize-all`,
+            { category_id: Number(categoryId) },
+            {
+                ...reloadOptions,
+                onFinish: () => {
+                    savingKey.value = null;
+                },
+                onError: () => {
+                    router.reload(reloadOptions);
+                },
+            },
+        );
+    };
+
+    let submitOrderThisTimeOnly = (order) => {
+        let key = orderThisTimeSavingKey(order);
+        let categoryId = orderCategorySelections[order.id];
+
+        if (!categoryId || savingKey.value) {
+            return;
+        }
+
+        savingKey.value = key;
+        dismissOrderThisTime(order);
+
+        router.post(
+            `/orders/${order.id}/categorize-all-this-time`,
             { category_id: Number(categoryId) },
             {
                 ...reloadOptions,
@@ -400,9 +447,10 @@
             </p>
             <h1 class="text-2xl font-semibold">Categorize order lines</h1>
             <p class="text-sm text-neutral-600">
-                Walmart Save updates the shared product. This time only
-                categorizes this line and leaves later matches uncategorized.
-                Amazon lines are always one-off.
+                Walmart Save and Categorize remaining update the shared
+                product. This time only categorizes leftover lines on this
+                order and leaves later matches uncategorized. Amazon lines
+                are always one-off.
             </p>
         </div>
 
@@ -494,13 +542,30 @@
                                 class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                 :disabled="
                                     !orderCategorySelections[order.id] ||
-                                    savingKey === `order:${order.id}`
+                                    orderIsBusy(order)
                                 "
                             >
                                 {{
-                                    savingKey === `order:${order.id}`
+                                    savingKey === orderSavingKey(order)
                                         ? 'Saving…'
                                         : 'Categorize remaining'
+                                }}
+                            </button>
+                            <button
+                                v-if="order.mode === 'items'"
+                                type="button"
+                                class="btn rounded border px-3 text-sm disabled:opacity-50"
+                                :disabled="
+                                    !orderCategorySelections[order.id] ||
+                                    orderIsBusy(order)
+                                "
+                                @click="submitOrderThisTimeOnly(order)"
+                            >
+                                {{
+                                    savingKey ===
+                                    orderThisTimeSavingKey(order)
+                                        ? 'Saving…'
+                                        : 'This time only'
                                 }}
                             </button>
                         </form>

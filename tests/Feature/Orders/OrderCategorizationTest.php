@@ -830,6 +830,164 @@ class OrderCategorizationTest extends TestCase
         $this->assertSame($groceries->id, $groceryProduct->fresh()->category_id);
     }
 
+    public function test_categorize_all_this_time_is_one_off_for_remaining_walmart_lines(): void
+    {
+        $user = User::factory()->create();
+        $gift = Category::factory()->for($user)->expense()->create(['name' => 'Gifts']);
+        $groceries = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $later = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $giftProduct = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'TOY-1',
+            'normalized_name' => 'toy',
+        ]);
+        $milk = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'MILK-1',
+            'normalized_name' => 'milk',
+        ]);
+        $eggs = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'EGG-1',
+            'normalized_name' => 'eggs',
+        ]);
+        $giftItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $giftProduct->id,
+            'line_number' => 1,
+        ]);
+        $milkItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $milk->id,
+            'line_number' => 2,
+        ]);
+        $eggsItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $eggs->id,
+            'line_number' => 3,
+        ]);
+        $unlinked = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => null,
+            'line_number' => 4,
+            'sku' => 'BUTTER-1',
+            'description' => 'Butter',
+            'normalized_description' => 'butter',
+        ]);
+        $laterMilk = OrderItem::factory()->create([
+            'order_id' => $later->id,
+            'product_id' => $milk->id,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $giftItem->id,
+            'type' => 'product',
+            'category_id' => $gift->id,
+            'is_user_modified' => true,
+        ]);
+        $milkComponent = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $milkItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+        $eggsComponent = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $eggsItem->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+        $laterMilkComponent = OrderComponent::factory()->create([
+            'order_id' => $later->id,
+            'order_item_id' => $laterMilk->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.categorize-all-this-time', $order), [
+                'category_id' => $groceries->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->assertNull($giftProduct->fresh()->category_id);
+        $this->assertNull($milk->fresh()->category_id);
+        $this->assertNull($eggs->fresh()->category_id);
+        $this->assertSame($gift->id, $giftItem->components()->first()?->category_id);
+        $this->assertSame($groceries->id, $milkComponent->fresh()->category_id);
+        $this->assertSame($groceries->id, $eggsComponent->fresh()->category_id);
+        $this->assertNull($laterMilkComponent->fresh()->category_id);
+        $this->assertNotNull($unlinked->fresh()->product_id);
+        $this->assertNull($unlinked->fresh()->product?->category_id);
+        $this->assertSame(
+            $groceries->id,
+            $unlinked->fresh()->components()->where('type', 'product')->first()?->category_id,
+        );
+        $this->assertDatabaseHas('products', [
+            'user_id' => $user->id,
+            'sku' => 'BUTTER-1',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.categorize'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Categorize')
+                ->has('orders', 1)
+                ->where('orders.0.id', $later->id)
+                ->where('orders.0.lines.0.id', $laterMilk->id));
+    }
+
+    public function test_cannot_categorize_all_this_time_for_amazon_order(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('orders.categorize-all-this-time', $order), [
+                'category_id' => $category->id,
+            ])
+            ->assertNotFound();
+    }
+
     public function test_queue_hides_one_off_walmart_line_but_keeps_same_product_elsewhere(): void
     {
         $user = User::factory()->create();
