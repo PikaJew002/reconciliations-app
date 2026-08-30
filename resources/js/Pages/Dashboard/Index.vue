@@ -59,6 +59,10 @@
             type: Object,
             default: null,
         },
+        leftover_origin: {
+            type: Object,
+            default: null,
+        },
     });
 
     let queryBase = () => {
@@ -386,6 +390,19 @@
             >
                 {{ formatMoney(unassignedBillsAmount) }} of unplanned bills in
                 this window
+            </p>
+            <p
+                v-if="leftover_origin"
+                class="text-sm text-neutral-600"
+            >
+                Tracking since
+                {{
+                    formatDay(
+                        leftover_origin.paycheck?.date ||
+                            leftover_origin.starts_on,
+                    )
+                }}.
+                <Link href="/plans" class="underline">Change on Plans</Link>
             </p>
         </section>
 

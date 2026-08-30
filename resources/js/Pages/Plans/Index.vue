@@ -71,6 +71,10 @@
             type: Boolean,
             default: false,
         },
+        leftover_origin: {
+            type: Object,
+            default: null,
+        },
     });
 
     let page = usePage();
@@ -344,6 +348,17 @@
             style: 'currency',
             currency: 'USD',
         }).format(amount);
+    };
+
+    let formatDay = (date) => {
+        if (!date) {
+            return '—';
+        }
+
+        return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+        });
     };
 
     let planMatchSummary = (template) => {
@@ -708,6 +723,48 @@
             },
         );
     };
+
+    let leftoverOriginPaycheckDate = computed(
+        () =>
+            props.leftover_origin?.paycheck?.date ||
+            props.leftover_origin?.starts_on,
+    );
+
+    let leftoverOriginMonthLabel = (month) => {
+        let option = (props.leftover_origin?.months ?? []).find(
+            (item) => item.value === month,
+        );
+
+        return option?.label ?? month;
+    };
+
+    let onLeftoverOriginChange = (event) => {
+        let month = event.target.value;
+
+        if (!props.leftover_origin || month === props.leftover_origin.month) {
+            return;
+        }
+
+        let label = leftoverOriginMonthLabel(month);
+
+        if (
+            !window.confirm(
+                `Restart leftover from the first paycheck in ${label}? Brought forward will be $0 at that paycheck.`,
+            )
+        ) {
+            event.target.value = props.leftover_origin.month;
+            return;
+        }
+
+        router.put(
+            '/plans/leftover-origin',
+            {
+                month,
+                view_month: props.month,
+            },
+            { preserveScroll: true },
+        );
+    };
 </script>
 
 <template>
@@ -748,6 +805,42 @@
                 </button>
             </div>
         </div>
+
+        <section
+            v-if="leftover_origin"
+            class="space-y-2 rounded border px-4 py-3"
+        >
+            <p class="text-sm font-medium">Leftover tracking</p>
+            <p class="text-sm text-neutral-600">
+                Starts at the
+                {{ formatDay(leftoverOriginPaycheckDate) }}
+                <template v-if="leftover_origin.paycheck?.name">
+                    {{ leftover_origin.paycheck.name }}
+                </template>
+                paycheck. Brought forward is $0 there. Spend before that
+                paycheck is ignored.
+            </p>
+            <label class="block text-sm sm:max-w-xs">
+                <span class="text-neutral-600">Start month</span>
+                <select
+                    :value="leftover_origin.month"
+                    class="mt-1 w-full rounded border px-3"
+                    @change="onLeftoverOriginChange"
+                >
+                    <option
+                        v-for="option in leftover_origin.months"
+                        :key="option.value"
+                        :value="option.value"
+                    >
+                        {{ option.label }}
+                        <template v-if="option.paycheck_date">
+                            — first paycheck
+                            {{ formatDay(option.paycheck_date) }}
+                        </template>
+                    </option>
+                </select>
+            </label>
+        </section>
 
         <div
             v-if="showCreate === 'paycheck' && categories.length === 0"
