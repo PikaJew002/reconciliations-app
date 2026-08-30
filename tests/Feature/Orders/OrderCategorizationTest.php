@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Orders;
 
+use App\Models\Account;
+use App\Models\BankTransaction;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
@@ -9,6 +11,7 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\TransactionAllocation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -454,6 +457,140 @@ class OrderCategorizationTest extends TestCase
 
         $this->assertDatabaseMissing('order_items', ['id' => $firstItem->id]);
         $this->assertDatabaseHas('products', ['id' => $product->id]);
+    }
+
+    public function test_removing_zero_dollar_item_from_reconciled_order_leaves_order_reconciled(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'name' => 'Apple Music ad',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'status' => 'reconciled',
+            'total' => 10.00,
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'description' => 'Apple Music ad',
+            'extended_price' => 0,
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'category_id' => null,
+            'amount' => 0,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+            'amount' => 10.00,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->delete(route('orders.items.destroy', $item))
+            ->assertRedirect(route('orders.categorize'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('order_items', ['id' => $item->id]);
+        $this->assertDatabaseMissing('order_components', ['id' => $component->id]);
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+        $this->assertSame('reconciled', $order->fresh()->status);
+    }
+
+    public function test_removing_allocated_item_reopens_reconciled_order_and_unwinds_match(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'name' => 'Bogus fee',
+        ]);
+        $account = Account::factory()->create(['is_active' => true]);
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'merchant_id' => $walmart->id,
+            'amount' => -10.00,
+            'status' => 'matched',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'status' => 'reconciled',
+            'total' => 10.00,
+        ]);
+        $bogusItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'line_number' => 1,
+            'description' => 'Bogus fee',
+            'extended_price' => 2.00,
+        ]);
+        $bogusComponent = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $bogusItem->id,
+            'type' => 'product',
+            'category_id' => null,
+            'amount' => 2.00,
+        ]);
+        $keepComponent = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+            'amount' => 8.00,
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $transaction->id,
+            'order_component_id' => $bogusComponent->id,
+            'allocated_amount' => 2.00,
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $transaction->id,
+            'order_component_id' => $keepComponent->id,
+            'allocated_amount' => 8.00,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->delete(route('orders.items.destroy', $bogusItem))
+            ->assertRedirect(route('orders.categorize'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('order_items', ['id' => $bogusItem->id]);
+        $this->assertDatabaseMissing('order_components', ['id' => $bogusComponent->id]);
+        $this->assertDatabaseHas('order_components', ['id' => $keepComponent->id]);
+        $this->assertSame('imported', $order->fresh()->status);
+        $this->assertSame('partial', $transaction->fresh()->status);
+        $this->assertDatabaseMissing('transaction_allocations', [
+            'order_component_id' => $bogusComponent->id,
+        ]);
+        $this->assertDatabaseHas('transaction_allocations', [
+            'order_component_id' => $keepComponent->id,
+        ]);
     }
 
     public function test_categorize_all_applies_category_to_walmart_order_lines(): void

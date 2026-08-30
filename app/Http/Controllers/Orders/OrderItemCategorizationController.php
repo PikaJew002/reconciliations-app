@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Services\Orders\OrderRemovalService;
 use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\ProductMatchingService;
 use Illuminate\Http\RedirectResponse;
@@ -111,8 +112,11 @@ class OrderItemCategorizationController extends Controller
             ->with('success', 'Line categorized for this order only.');
     }
 
-    public function destroy(Request $request, OrderItem $item): RedirectResponse
-    {
+    public function destroy(
+        Request $request,
+        OrderItem $item,
+        OrderRemovalService $removal,
+    ): RedirectResponse {
         $item->loadMissing(['order', 'product', 'components.allocations']);
 
         $order = $item->order;
@@ -121,39 +125,35 @@ class OrderItemCategorizationController extends Controller
             throw new NotFoundHttpException;
         }
 
-        abort_if($order->status === 'reconciled', 422, 'Reconciled orders cannot be edited.');
-
-        abort_if(
-            $item->components->contains(
-                fn (OrderComponent $component): bool => $component->allocations->isNotEmpty(),
-            ),
-            422,
-            'Allocated line items cannot be removed.',
-        );
-
         $hadProduct = $item->product_id !== null;
         $productId = $item->product_id;
         $deletedProduct = false;
+        $transactionIds = $item->components
+            ->flatMap(fn (OrderComponent $component) => $component->allocations->pluck('bank_transaction_id'))
+            ->unique()
+            ->filter()
+            ->values();
 
-        DB::transaction(function () use ($item, $productId, &$deletedProduct): void {
+        DB::transaction(function () use ($item, $order, $productId, $transactionIds, $removal, &$deletedProduct): void {
             OrderComponent::query()
                 ->where('order_item_id', $item->id)
                 ->delete();
 
             $item->delete();
 
-            if ($productId === null) {
-                return;
+            if ($productId !== null) {
+                $stillLinked = OrderItem::query()
+                    ->where('product_id', $productId)
+                    ->exists();
+
+                if (! $stillLinked) {
+                    Product::query()->whereKey($productId)->delete();
+                    $deletedProduct = true;
+                }
             }
 
-            $stillLinked = OrderItem::query()
-                ->where('product_id', $productId)
-                ->exists();
-
-            if (! $stillLinked) {
-                Product::query()->whereKey($productId)->delete();
-                $deletedProduct = true;
-            }
+            $removal->reopenIfUnbalanced($order);
+            $removal->refreshTransactionsAfterLineRemoval($transactionIds);
         });
 
         $message = match (true) {
