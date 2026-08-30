@@ -7,8 +7,8 @@ use App\Models\Category;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Services\Orders\OrderInstanceCategorizationService;
 use App\Services\Orders\OrderRemovalService;
-use App\Services\Reconciliation\OrderComponentGenerator;
 use App\Services\Reconciliation\ProductMatchingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,53 +58,14 @@ class OrderItemCategorizationController extends Controller
     public function storeInstance(
         Request $request,
         OrderItem $item,
-        ProductMatchingService $productMatching,
-        OrderComponentGenerator $componentGenerator,
+        OrderInstanceCategorizationService $instances,
     ): RedirectResponse {
         $this->authorizeWalmartItem($request, $item);
 
         $categoryId = $this->validatedExpenseCategoryId($request);
 
-        $result = $productMatching->linkOrCreateForItem($item);
-
-        if ($result === null) {
+        if (! $instances->categorizeItem($item, $categoryId)) {
             throw new NotFoundHttpException;
-        }
-
-        $item->refresh();
-        $item->loadMissing('order');
-
-        $order = $item->order;
-
-        if ($order === null) {
-            throw new NotFoundHttpException;
-        }
-
-        if (! $order->components()->exists()) {
-            $componentGenerator->generateForOrder($order);
-        }
-
-        $updated = OrderComponent::query()
-            ->where('order_item_id', $item->id)
-            ->where('type', 'product')
-            ->update([
-                'category_id' => $categoryId,
-                'category_confidence' => 100,
-                'is_user_modified' => true,
-            ]);
-
-        if ($updated === 0) {
-            OrderComponent::create([
-                'order_id' => $order->id,
-                'order_item_id' => $item->id,
-                'type' => 'product',
-                'description' => $item->description,
-                'amount' => $item->extended_price,
-                'category_id' => $categoryId,
-                'category_confidence' => 100,
-                'is_user_modified' => true,
-                'metadata' => [],
-            ]);
         }
 
         return redirect()

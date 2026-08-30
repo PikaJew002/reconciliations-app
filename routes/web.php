@@ -150,6 +150,8 @@ Route::middleware('auth')->group(function () {
         ->name('orders.categorize');
     Route::post('/orders/{order}/categorize-all', [OrderCategorizationController::class, 'categorizeAll'])
         ->name('orders.categorize-all');
+    Route::post('/orders/{order}/categorize-all-this-time', [OrderCategorizationController::class, 'categorizeAllThisTime'])
+        ->name('orders.categorize-all-this-time');
     Route::post('/orders/items/{item}/categorize-as-product', [OrderItemCategorizationController::class, 'store'])
         ->name('orders.items.categorize-as-product');
     Route::post('/orders/items/{item}/categorize-this-time', [OrderItemCategorizationController::class, 'storeInstance'])
