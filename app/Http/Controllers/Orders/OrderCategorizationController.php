@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Models\OrderItem;
 use App\Models\Product;
 use App\Services\Orders\OrderCategorizationBrowseService;
 use App\Services\Reconciliation\ProductMatchingService;
@@ -45,7 +46,7 @@ class OrderCategorizationController extends Controller
         ]);
 
         $categoryId = (int) $validated['category_id'];
-        $order->loadMissing(['merchant', 'items.product']);
+        $order->loadMissing(['merchant', 'items.product', 'items.components']);
 
         $normalized = $order->merchant?->normalized_name;
         $updated = 0;
@@ -77,6 +78,10 @@ class OrderCategorizationController extends Controller
         $categorizedProductIds = [];
 
         foreach ($order->items as $item) {
+            if ($this->walmartItemAlreadyCategorized($item)) {
+                continue;
+            }
+
             if ($item->product_id === null) {
                 $result = $productMatching->linkOrCreateForItem($item);
 
@@ -123,6 +128,14 @@ class OrderCategorizationController extends Controller
                 'category_confidence' => 100,
                 'is_user_modified' => true,
             ]);
+    }
+
+    protected function walmartItemAlreadyCategorized(OrderItem $item): bool
+    {
+        return $item->components->contains(
+            fn (OrderComponent $component): bool => $component->type === 'product'
+                && $component->category_id !== null,
+        );
     }
 
     protected function applyProductCategory(Product $product, int $categoryId): void

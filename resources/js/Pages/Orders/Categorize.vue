@@ -136,6 +136,21 @@
     let needsCategoryLines = (order) =>
         order.lines.filter((line) => line.status === 'needs_category');
 
+    let lineAmount = (line) => {
+        if (line.kind === 'component') {
+            return Number(line.amount) || 0;
+        }
+
+        return Number(line.extended_price) || 0;
+    };
+
+    let remainingTotal = (order) => {
+        return order.lines.reduce(
+            (sum, line) => sum + lineAmount(line),
+            0,
+        );
+    };
+
     let reloadOptions = {
         preserveScroll: true,
         only: ['orders', 'ordersTruncated'],
@@ -447,7 +462,10 @@
                     </div>
                     <div class="flex flex-wrap items-end gap-3">
                         <p class="text-sm font-medium">
-                            {{ formatMoney(order.total) }}
+                            {{ formatMoney(remainingTotal(order)) }}
+                            <span class="font-normal text-neutral-600">
+                                uncategorized
+                            </span>
                         </p>
                         <form
                             class="flex flex-wrap items-end gap-2"
@@ -455,7 +473,7 @@
                         >
                             <label class="block text-sm">
                                 <span class="text-neutral-600"
-                                    >Whole order</span
+                                    >Remaining</span
                                 >
                                 <select
                                     v-model="orderCategorySelections[order.id]"
@@ -482,7 +500,7 @@
                                 {{
                                     savingKey === `order:${order.id}`
                                         ? 'Saving…'
-                                        : 'Categorize all'
+                                        : 'Categorize remaining'
                                 }}
                             </button>
                         </form>
