@@ -569,6 +569,130 @@ class OrderCategorizationTest extends TestCase
         $this->assertSame($previous, $already->fresh()->category_id);
     }
 
+    public function test_queue_amazon_lines_are_only_uncategorized_product_components(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'A-MIXED',
+            'total' => 50.00,
+            'ordered_at' => '2026-08-20 00:00:00',
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+            'description' => 'Apples',
+            'amount' => 10.00,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => null,
+            'description' => 'Bananas',
+            'amount' => 5.00,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'category_id' => $category->id,
+            'description' => 'Gift wrap',
+            'amount' => 20.00,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tax',
+            'category_id' => null,
+            'description' => 'Tax',
+            'amount' => 15.00,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.categorize'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Categorize')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'A-MIXED')
+                ->where('orders.0.total', 50)
+                ->has('orders.0.lines', 2)
+                ->where('orders.0.lines.0.description', 'Apples')
+                ->where('orders.0.lines.0.amount', 10)
+                ->where('orders.0.lines.1.description', 'Bananas')
+                ->where('orders.0.lines.1.amount', 5));
+    }
+
+    public function test_categorize_all_skips_walmart_this_time_only_lines(): void
+    {
+        $user = User::factory()->create();
+        $gift = Category::factory()->for($user)->expense()->create(['name' => 'Gifts']);
+        $groceries = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+        ]);
+        $giftProduct = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'TOY-1',
+            'normalized_name' => 'toy',
+        ]);
+        $groceryProduct = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => null,
+            'sku' => 'MILK-1',
+            'normalized_name' => 'milk',
+        ]);
+        $giftItem = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $giftProduct->id,
+            'line_number' => 1,
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $groceryProduct->id,
+            'line_number' => 2,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $giftItem->id,
+            'type' => 'product',
+            'category_id' => $gift->id,
+            'is_user_modified' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.categorize'))
+            ->post(route('orders.categorize-all', $order), [
+                'category_id' => $groceries->id,
+            ])
+            ->assertRedirect(route('orders.categorize'));
+
+        $this->assertNull($giftProduct->fresh()->category_id);
+        $this->assertSame($gift->id, $giftItem->components()->first()?->category_id);
+        $this->assertSame($groceries->id, $groceryProduct->fresh()->category_id);
+    }
+
     public function test_queue_hides_one_off_walmart_line_but_keeps_same_product_elsewhere(): void
     {
         $user = User::factory()->create();
