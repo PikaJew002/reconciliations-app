@@ -15,7 +15,7 @@ class LeftoverController extends Controller
         $window = $leftover->current($request->user()->id) ?? [];
 
         return response()->json([
-            'remaining' => $this->formatRemaining($window['remaining'] ?? null),
+            'remaining' => $this->formatRemaining($window['paycheck_remaining'] ?? null),
             'days_remaining' => $window['days_remaining'] ?? null,
             'next_paycheck' => $this->formatNextPaycheck($window['ends_before'] ?? null),
         ]);

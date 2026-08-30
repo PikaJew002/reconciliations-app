@@ -389,17 +389,27 @@ planned leftover = paycheck amount − assigned bill expected amounts
 
 Resolved paychecks/bills use the posted bank amount when present.
 
-Dashboard leftover windows run from this paycheck’s start (posted date if resolved, otherwise expected date) until the next paycheck. Remaining leftover is:
+Dashboard leftover windows run from this paycheck’s start (posted date if resolved, otherwise expected date) until the next paycheck.
+
+This paycheck (hero and leftover widget):
 
 ```
-brought forward + planned leftover − unassigned spend in the window
+paycheck remaining = planned leftover − unassigned spend − allocated transfers
 ```
 
-Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Remaining leftover carries into the next window.
+Year check-in (chained remaining):
+
+```
+remaining = brought forward + paycheck remaining
+```
+
+Brought forward is the previous window’s chained remaining. The dashboard also shows the previous window’s paycheck remaining as “last paycheck leftover.”
+
+Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Credit-card **payments** and checking↔savings transfers are allocated (they leave or return checking cash) and are not category spend. Card charges are spend. Remaining leftover carries into the next window for the year check-in only.
 
 Windows start at a leftover origin: the first paycheck occurrence on or after `users.leftover_starts_on`. That date defaults to the current calendar month the first time leftover is computed (or a paycheck plan is created) and then stays put. Brought forward is $0 at that origin paycheck; spend before it is ignored. The start month can be changed on Plans.
 
-Credit-card **payments** are transfers, not leftover spend. There is no account-balance ledger; debt payoff is not subtracted as its own concept.
+There is no account-balance ledger.
 
 ---
 

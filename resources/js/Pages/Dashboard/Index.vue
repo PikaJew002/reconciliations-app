@@ -137,6 +137,32 @@
         );
     });
 
+    let paycheckRemaining = computed(() => {
+        if (!props.paycheck_leftover) {
+            return null;
+        }
+
+        if (props.paycheck_leftover.paycheck_remaining !== undefined) {
+            return Number(props.paycheck_leftover.paycheck_remaining);
+        }
+
+        return Number(props.paycheck_leftover.remaining);
+    });
+
+    let previousPaycheckRemaining = computed(() => {
+        let value = props.paycheck_leftover?.previous_paycheck_remaining;
+
+        return value === null || value === undefined ? null : Number(value);
+    });
+
+    let yearRemaining = computed(() => {
+        if (!props.paycheck_leftover) {
+            return null;
+        }
+
+        return Number(props.paycheck_leftover.remaining);
+    });
+
     let roundMoney = (amount) => {
         return Math.round(Number(amount) * 100) / 100;
     };
@@ -342,23 +368,20 @@
         >
             <p class="text-sm text-neutral-600">Leftover until next paycheck</p>
             <p
-                v-if="paycheck_leftover.remaining >= 0"
+                v-if="paycheckRemaining >= 0"
                 class="text-2xl font-semibold tabular-nums"
-                :class="differenceClass(paycheck_leftover.remaining)"
+                :class="differenceClass(paycheckRemaining)"
             >
-                {{ formatMoney(paycheck_leftover.remaining) }} remaining
+                {{ formatMoney(paycheckRemaining) }} remaining
             </p>
             <p
                 v-else
                 class="text-2xl font-semibold tabular-nums text-red-700"
             >
-                {{ formatMoney(-paycheck_leftover.remaining) }} into the next
-                paycheck
+                {{ formatMoney(-paycheckRemaining) }} into the next paycheck
             </p>
             <p class="text-sm text-neutral-600">
-                Brought forward
-                {{ formatMoney(paycheck_leftover.brought_forward) }}
-                + {{ paycheck_leftover.paycheck.name }} leftover
+                {{ paycheck_leftover.paycheck.name }} leftover
                 {{ formatMoney(paycheck_leftover.planned_leftover) }}
                 − spent {{ formatMoney(paycheck_leftover.spent) }}
                 <template v-if="(paycheck_leftover.allocated ?? 0) > 0">
@@ -369,6 +392,14 @@
                     + from savings
                     {{ formatMoney(-paycheck_leftover.allocated) }}
                 </template>
+            </p>
+            <p
+                v-if="previousPaycheckRemaining !== null"
+                class="text-sm tabular-nums"
+                :class="differenceClass(previousPaycheckRemaining)"
+            >
+                Last paycheck leftover
+                {{ formatMoney(previousPaycheckRemaining) }}
             </p>
             <p
                 v-if="paycheck_leftover.next_paycheck"
@@ -392,17 +423,27 @@
                 this window
             </p>
             <p
-                v-if="leftover_origin"
+                v-if="yearRemaining !== null"
                 class="text-sm text-neutral-600"
             >
-                Tracking since
-                {{
-                    formatDay(
-                        leftover_origin.paycheck?.date ||
-                            leftover_origin.starts_on,
-                    )
-                }}.
-                <Link href="/plans" class="underline">Change on Plans</Link>
+                Year check-in:
+                <template v-if="yearRemaining > 0">
+                    {{ formatMoney(yearRemaining) }} ahead
+                </template>
+                <template v-else-if="yearRemaining < 0">
+                    {{ formatMoney(-yearRemaining) }} behind
+                </template>
+                <template v-else> even </template>
+                <template v-if="leftover_origin">
+                    since
+                    {{
+                        formatDay(
+                            leftover_origin.paycheck?.date ||
+                                leftover_origin.starts_on,
+                        )
+                    }}.
+                    <Link href="/plans" class="underline">Change on Plans</Link>
+                </template>
             </p>
         </section>
 

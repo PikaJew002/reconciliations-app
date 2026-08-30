@@ -104,9 +104,11 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(3000, $july['planned_leftover']);
         $this->assertEquals(0, $july['spent']);
         $this->assertEquals(0, $july['allocated']);
+        $this->assertEquals(3000, $july['paycheck_remaining']);
         $this->assertEquals(3000, $july['remaining']);
         $this->assertEquals(3000, $august['brought_forward']);
         $this->assertEquals(3000, $august['planned_leftover']);
+        $this->assertEquals(3000, $august['paycheck_remaining']);
         $this->assertEquals(6000, $august['remaining']);
         $this->assertSame('2026-09-01', $august['next_paycheck']['date']);
     }
@@ -123,9 +125,35 @@ class PaycheckLeftoverTest extends TestCase
         $august = $this->windowStarting($windows, '2026-08-01');
 
         $this->assertEquals(5000, $july['spent']);
+        $this->assertEquals(-2000, $july['paycheck_remaining']);
         $this->assertEquals(-2000, $july['remaining']);
         $this->assertEquals(-2000, $august['brought_forward']);
+        $this->assertEquals(3000, $august['paycheck_remaining']);
         $this->assertEquals(1000, $august['remaining']);
+    }
+
+    public function test_widget_reports_this_paycheck_remaining_not_the_year_chain(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $this->expense($user, 5000, '2026-07-10');
+
+        $this->actingAsLeftoverReporter($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJson([
+                'remaining' => '$3,000.00',
+                'days_remaining' => 17,
+                'next_paycheck' => 'Sep 1',
+            ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(3000, $leftover['paycheck_remaining']);
+        $this->assertEquals(1000, $leftover['remaining']);
+        $this->assertEquals(-2000, $leftover['previous_paycheck_remaining']);
+        $this->assertSame('Acme paycheck', $leftover['previous_paycheck']['name']);
+        $this->assertSame('2026-07-01', $leftover['previous_paycheck']['date']);
     }
 
     public function test_expenses_in_the_current_window_reduce_remaining(): void
@@ -222,6 +250,7 @@ class PaycheckLeftoverTest extends TestCase
         $leftover = $this->leftoverCurrent($user);
 
         $this->assertEquals(50, $leftover['spent']);
+        $this->assertEquals(2950, $leftover['paycheck_remaining']);
         $this->assertEquals(2950, $leftover['remaining']);
     }
 
@@ -313,6 +342,7 @@ class PaycheckLeftoverTest extends TestCase
 
         $this->assertEquals(0, $leftover['brought_forward']);
         $this->assertEquals(400, $leftover['spent']);
+        $this->assertEquals(2600, $leftover['paycheck_remaining']);
         $this->assertEquals(2600, $leftover['remaining']);
     }
 
@@ -520,8 +550,10 @@ class PaycheckLeftoverTest extends TestCase
                 ->component('Dashboard/Index')
                 ->where('paycheck_leftover.starts_on', '2026-08-01')
                 ->where('paycheck_leftover.spent', 400)
+                ->where('paycheck_leftover.paycheck_remaining', 2600)
                 ->where('paycheck_leftover.remaining', 2600)
                 ->where('paycheck_leftover.brought_forward', 0)
+                ->where('paycheck_leftover.previous_paycheck_remaining', null)
                 ->where('leftover_origin.month', '2026-08')
                 ->where('leftover_origin.paycheck.date', '2026-08-01')
                 ->has('summary.leftover_income')
