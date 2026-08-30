@@ -71,31 +71,42 @@ class OrderComponentControllerTest extends TestCase
         $this->assertDatabaseMissing('order_components', ['id' => $component->id]);
     }
 
-    public function test_cannot_delete_allocated_component(): void
+    public function test_deleting_allocated_component_unwinds_match_and_reopens_order(): void
     {
         $user = User::factory()->create();
         $merchant = Merchant::factory()->create(['user_id' => $user->id]);
         $order = Order::factory()->create([
             'user_id' => $user->id,
             'merchant_id' => $merchant->id,
-            'status' => 'imported',
+            'status' => 'reconciled',
+            'total' => 10.00,
         ]);
         $component = OrderComponent::factory()->create([
             'order_id' => $order->id,
             'amount' => 5.00,
             'order_item_id' => null,
         ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'amount' => 5.00,
+            'order_item_id' => null,
+        ]);
 
-        TransactionAllocation::factory()->create([
+        $allocation = TransactionAllocation::factory()->create([
             'order_component_id' => $component->id,
             'allocated_amount' => 5.00,
         ]);
+        $allocation->bankTransaction->update(['status' => 'matched']);
 
         $this->actingAs($user)
+            ->from(route('reconciliation.needs-review'))
             ->delete(route('reconciliation.orders.components.destroy', [$order, $component]))
-            ->assertStatus(422);
+            ->assertRedirect(route('reconciliation.needs-review'));
 
-        $this->assertDatabaseHas('order_components', ['id' => $component->id]);
+        $this->assertDatabaseMissing('order_components', ['id' => $component->id]);
+        $this->assertDatabaseMissing('transaction_allocations', ['id' => $allocation->id]);
+        $this->assertSame('imported', $order->fresh()->status);
+        $this->assertSame('unmatched', $allocation->bankTransaction->fresh()->status);
     }
 
     public function test_cannot_edit_another_users_order(): void

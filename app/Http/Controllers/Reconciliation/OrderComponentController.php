@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Reconciliation\StoreOrderComponentRequest;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Services\Orders\OrderRemovalService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class OrderComponentController extends Controller
 {
@@ -34,14 +36,23 @@ class OrderComponentController extends Controller
             ->with('success', 'Component added. Re-run reconciliation when ready.');
     }
 
-    public function destroy(Request $request, Order $order, OrderComponent $component): RedirectResponse
-    {
+    public function destroy(
+        Request $request,
+        Order $order,
+        OrderComponent $component,
+        OrderRemovalService $removal,
+    ): RedirectResponse {
         abort_unless($order->user_id === $request->user()->id, 403);
         abort_unless($component->order_id === $order->id, 404);
-        abort_if($order->status === 'reconciled', 422, 'Reconciled orders cannot be edited.');
-        abort_if($component->allocations()->exists(), 422, 'Allocated components cannot be deleted.');
 
-        $component->delete();
+        $component->loadMissing('allocations');
+        $transactionIds = $component->allocations->pluck('bank_transaction_id');
+
+        DB::transaction(function () use ($order, $component, $transactionIds, $removal): void {
+            $component->delete();
+            $removal->reopenIfUnbalanced($order);
+            $removal->refreshTransactionsAfterLineRemoval($transactionIds);
+        });
 
         return redirect()
             ->back(fallback: route('reconciliation.needs-review'))
