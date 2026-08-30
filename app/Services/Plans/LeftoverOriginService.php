@@ -72,10 +72,7 @@ class LeftoverOriginService
 
         $occurrences = $this->incomeOccurrences($userId);
         $originOccurrence = $occurrences->first(
-            fn (PlannedOccurrence $occurrence) => ! $occurrence->expected_date
-                ->copy()
-                ->startOfDay()
-                ->lt($startsOn),
+            fn (PlannedOccurrence $occurrence) => ! $occurrence->periodDate()->lt($startsOn),
         );
 
         return [
@@ -111,6 +108,7 @@ class LeftoverOriginService
             ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
             ->whereNotNull('template_id')
             ->with('template:id,name')
+            ->orderBy('scheduled_date')
             ->orderBy('expected_date')
             ->orderBy('id')
             ->get();
@@ -126,7 +124,7 @@ class LeftoverOriginService
         ?PlannedOccurrence $originOccurrence,
     ): array {
         $options = $occurrences
-            ->groupBy(fn (PlannedOccurrence $occurrence) => $occurrence->expected_date->format('Y-m'))
+            ->groupBy(fn (PlannedOccurrence $occurrence) => $occurrence->periodDate()->format('Y-m'))
             ->map(function (Collection $monthOccurrences, string $month) {
                 $first = $monthOccurrences->first();
 

@@ -120,6 +120,8 @@ Route::middleware('auth')->group(function () {
     Route::put('/plans/{plannedTemplate}/assignments', [PlannedTemplateController::class, 'updateAssignments'])
         ->name('plans.assignments.update');
     Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
+    Route::patch('/plans/occurrences/{plannedOccurrence}', [PlannedOccurrenceController::class, 'update'])
+        ->name('plans.occurrences.update');
     Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
         ->name('plans.occurrences.link');
 

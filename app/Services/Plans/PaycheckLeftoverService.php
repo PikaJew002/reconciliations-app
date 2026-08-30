@@ -84,10 +84,7 @@ class PaycheckLeftoverService
 
         if ($startsOn !== null) {
             $starts = $starts
-                ->filter(fn (array $item) => ! $item['occurrence']->expected_date
-                    ->copy()
-                    ->startOfDay()
-                    ->lt($startsOn))
+                ->filter(fn (array $item) => ! $item['occurrence']->periodDate()->lt($startsOn))
                 ->values();
         }
 
@@ -154,7 +151,7 @@ class PaycheckLeftoverService
             $contribution = $this->assignments->contributionForPaycheck(
                 $paycheck,
                 $occurrence,
-                $occurrence->expected_date,
+                $occurrence->periodDate(),
                 $occurrencesByTemplateId,
             );
 

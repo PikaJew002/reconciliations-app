@@ -48,15 +48,15 @@ class PlannedOccurrenceGenerator
         }
 
         $months = $this->monthsInHorizon();
-        $keepDates = [];
+        $keepMonths = [];
 
         foreach ($months as $month) {
-            $expectedDate = PlannedOccurrence::expectedDateForMonth($month, (int) $template->expected_day);
-            $keepDates[] = $expectedDate->toDateString();
+            $scheduledDate = PlannedOccurrence::expectedDateForMonth($month, (int) $template->expected_day);
+            $keepMonths[] = $month->format('Y-m');
 
             $existing = PlannedOccurrence::query()
                 ->where('template_id', $template->id)
-                ->whereDate('expected_date', $expectedDate->toDateString())
+                ->forPeriod($month)
                 ->first();
 
             if ($existing?->isResolved()) {
@@ -67,25 +67,40 @@ class PlannedOccurrenceGenerator
                 'user_id' => $template->user_id,
                 'template_id' => $template->id,
                 'status' => PlannedOccurrence::STATUS_PLANNED,
-                'expected_date' => $expectedDate->toDateString(),
+                'scheduled_date' => $scheduledDate->toDateString(),
                 ...$template->matchAttributes(),
             ];
 
             if ($existing !== null) {
+                if ($existing->amount_customized) {
+                    unset($attributes['expected_amount']);
+                }
+
+                if (! $existing->date_customized) {
+                    $attributes['expected_date'] = $scheduledDate->toDateString();
+                }
+
                 $existing->update($attributes);
 
                 continue;
             }
 
-            PlannedOccurrence::query()->create($attributes);
+            PlannedOccurrence::query()->create([
+                ...$attributes,
+                'expected_date' => $scheduledDate->toDateString(),
+                'date_customized' => false,
+                'amount_customized' => false,
+            ]);
         }
 
         PlannedOccurrence::query()
             ->where('template_id', $template->id)
             ->where('status', PlannedOccurrence::STATUS_PLANNED)
             ->get()
-            ->each(function (PlannedOccurrence $occurrence) use ($keepDates): void {
-                if (! in_array($occurrence->expected_date->toDateString(), $keepDates, true)) {
+            ->each(function (PlannedOccurrence $occurrence) use ($keepMonths): void {
+                $period = $occurrence->scheduled_date ?? $occurrence->expected_date;
+
+                if (! in_array($period->format('Y-m'), $keepMonths, true)) {
                     $occurrence->delete();
                 }
             });

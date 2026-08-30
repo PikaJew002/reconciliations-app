@@ -72,13 +72,14 @@ class PlannedTemplateController extends Controller
 
         $occurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
-            ->where('expected_date', '>=', $monthStart)
-            ->where('expected_date', '<', $monthEnd)
+            ->where('scheduled_date', '>=', $monthStart)
+            ->where('scheduled_date', '<', $monthEnd)
             ->with([
                 'template:id,name',
                 'category:id,name',
                 'bankTransaction:id,posted_at,amount,description',
             ])
+            ->orderBy('scheduled_date')
             ->orderBy('expected_date')
             ->orderBy('id')
             ->get();
@@ -309,7 +310,11 @@ class PlannedTemplateController extends Controller
                 'name' => $occurrence->category->name,
             ] : null,
             'expected_date' => $occurrence->expected_date?->toDateString(),
+            'scheduled_date' => $occurrence->scheduled_date?->toDateString()
+                ?? $occurrence->expected_date?->toDateString(),
             'expected_amount' => (float) $occurrence->expected_amount,
+            'date_customized' => (bool) $occurrence->date_customized,
+            'amount_customized' => (bool) $occurrence->amount_customized,
             'amount' => $actualAmount,
             'leftover' => $leftover,
             'status' => $occurrence->status,

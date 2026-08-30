@@ -155,8 +155,8 @@ class PaycheckBillAssignmentService
 
         $occurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
-            ->where('expected_date', '>=', $monthStart)
-            ->where('expected_date', '<', $monthStart->copy()->addMonths(2))
+            ->where('scheduled_date', '>=', $monthStart)
+            ->where('scheduled_date', '<', $monthStart->copy()->addMonths(2))
             ->whereNotNull('template_id')
             ->with('bankTransaction:id,amount')
             ->get()
@@ -228,7 +228,7 @@ class PaycheckBillAssignmentService
         }
 
         return $occurrences->first(
-            fn (PlannedOccurrence $occurrence) => $occurrence->expected_date->isSameMonth($month),
+            fn (PlannedOccurrence $occurrence) => $occurrence->belongsToMonth($month),
         );
     }
 }
