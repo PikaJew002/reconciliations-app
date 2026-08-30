@@ -83,7 +83,7 @@ Bank descriptions are normalized and matched to a `Merchant` with user-owned mat
 
 **Plans** are recurring income and bill templates. Each template generates monthly **occurrences** and tries to match them to posted bank transactions.
 
-Assign bills to a paycheck. Planned leftover is paycheck amount minus those assigned bills. The dashboard leftover window then subtracts unassigned spend between this paycheck and the next, and carries remaining leftover forward.
+Assign bills to a paycheck. Planned leftover is paycheck amount minus those assigned bills. The dashboard leftover hero subtracts spend and checking transfers in this paycheck window (not leftover carried from earlier paychecks). Remaining leftover still carries forward for a year check-in.
 
 Debt payoff and credit-card balance tracking are not modeled as a ledger yet. Card payments are paired as transfers so they are not double-counted as spend.
 

@@ -84,10 +84,7 @@ class PaycheckLeftoverService
 
         if ($startsOn !== null) {
             $starts = $starts
-                ->filter(fn (array $item) => ! $item['occurrence']->expected_date
-                    ->copy()
-                    ->startOfDay()
-                    ->lt($startsOn))
+                ->filter(fn (array $item) => ! $item['occurrence']->periodDate()->lt($startsOn))
                 ->values();
         }
 
@@ -154,7 +151,7 @@ class PaycheckLeftoverService
             $contribution = $this->assignments->contributionForPaycheck(
                 $paycheck,
                 $occurrence,
-                $occurrence->expected_date,
+                $occurrence->periodDate(),
                 $occurrencesByTemplateId,
             );
 
@@ -190,7 +187,8 @@ class PaycheckLeftoverService
                 2,
             );
 
-            $remaining = round($broughtForward + $contribution['leftover'] - $spent - $allocated, 2);
+            $paycheckRemaining = round($contribution['leftover'] - $spent - $allocated, 2);
+            $remaining = round($broughtForward + $paycheckRemaining, 2);
             $nextPaycheck = $next !== null
                 ? $this->paycheckPayload($paychecks->get($next['occurrence']->template_id), $next['occurrence'], $next['start'])
                 : null;
@@ -207,6 +205,7 @@ class PaycheckLeftoverService
                 'credit_card_payments' => $creditCardPayments,
                 'savings_transfers' => $savingsTransfers,
                 'allocations' => $windowAllocations->all(),
+                'paycheck_remaining' => $paycheckRemaining,
                 'remaining' => $remaining,
                 ...$this->dayCounts($start, $end),
                 'bills' => array_map(function (array $bill): array {
@@ -239,19 +238,34 @@ class PaycheckLeftoverService
             return null;
         }
 
-        foreach ($windows as $window) {
+        foreach ($windows as $index => $window) {
             if ($this->containsDate($window, $today)) {
-                return $window;
+                return $this->withPreviousWindow($windows, $index);
             }
         }
 
-        foreach ($windows as $window) {
+        foreach ($windows as $index => $window) {
             if ($today->lt(Carbon::parse($window['starts_on'])->startOfDay())) {
-                return $window;
+                return $this->withPreviousWindow($windows, $index);
             }
         }
 
-        return $windows[array_key_last($windows)];
+        return $this->withPreviousWindow($windows, (int) array_key_last($windows));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $windows
+     * @return array<string, mixed>
+     */
+    protected function withPreviousWindow(array $windows, int $index): array
+    {
+        $window = $windows[$index];
+        $previous = $index > 0 ? ($windows[$index - 1] ?? null) : null;
+
+        $window['previous_paycheck'] = $previous['paycheck'] ?? null;
+        $window['previous_paycheck_remaining'] = $previous['paycheck_remaining'] ?? null;
+
+        return $window;
     }
 
     /**

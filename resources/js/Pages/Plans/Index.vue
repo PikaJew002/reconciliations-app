@@ -285,6 +285,7 @@
     let editingId = ref(null);
     let linkForId = ref(null);
     let linkTransactionId = ref('');
+    let editingOccurrenceId = ref(null);
     let paycheckSourceId = ref('');
     let billSourceId = ref('');
 
@@ -319,6 +320,11 @@
     let createPaycheckForm = useForm(emptyPaycheckForm());
     let createBillForm = useForm(emptyBillForm());
     let editForm = useForm(emptyPaycheckForm());
+    let occurrenceForm = useForm({
+        expected_date: '',
+        expected_amount: '',
+        month: '',
+    });
 
     let matchModeLabel = (mode) => {
         return (
@@ -434,6 +440,8 @@
     };
 
     let shiftMonth = (delta) => {
+        editingOccurrenceId.value = null;
+        linkForId.value = null;
         let [year, month] = props.month.split('-').map(Number);
         let date = new Date(year, month - 1 + delta, 1);
         let next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -722,6 +730,34 @@
                 },
             },
         );
+    };
+
+    let startLink = (occurrence) => {
+        editingOccurrenceId.value = null;
+        linkForId.value = occurrence.id;
+    };
+
+    let startEditOccurrence = (occurrence) => {
+        if (editingOccurrenceId.value === occurrence.id) {
+            editingOccurrenceId.value = null;
+            return;
+        }
+
+        linkForId.value = null;
+        editingOccurrenceId.value = occurrence.id;
+        occurrenceForm.expected_date = occurrence.expected_date;
+        occurrenceForm.expected_amount = occurrence.expected_amount;
+        occurrenceForm.month = props.month;
+        occurrenceForm.clearErrors();
+    };
+
+    let saveOccurrence = (occurrence) => {
+        occurrenceForm.patch(`/plans/occurrences/${occurrence.id}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                editingOccurrenceId.value = null;
+            },
+        });
     };
 
     let leftoverOriginPaycheckDate = computed(
@@ -1280,7 +1316,39 @@
                                 class="border-b last:border-0"
                             >
                                 <td class="px-3 py-2 tabular-nums">
-                                    {{ occurrence.expected_date }}
+                                    <template
+                                        v-if="
+                                            editingOccurrenceId ===
+                                            occurrence.id
+                                        "
+                                    >
+                                        <input
+                                            v-model="
+                                                occurrenceForm.expected_date
+                                            "
+                                            type="date"
+                                            class="rounded border px-2"
+                                        />
+                                        <span
+                                            v-if="
+                                                occurrenceForm.errors
+                                                    .expected_date
+                                            "
+                                            class="mt-1 block text-xs text-red-700"
+                                            >{{
+                                                occurrenceForm.errors
+                                                    .expected_date
+                                            }}</span
+                                        >
+                                    </template>
+                                    <template v-else>
+                                        {{ occurrence.expected_date }}
+                                        <span
+                                            v-if="occurrence.date_customized"
+                                            class="ml-1 text-xs font-normal text-neutral-500"
+                                            >adjusted</span
+                                        >
+                                    </template>
                                 </td>
                                 <td class="px-3 py-2">
                                     {{ occurrence.template_name || 'One-off' }}
@@ -1289,7 +1357,41 @@
                                     {{ occurrence.status }}
                                 </td>
                                 <td class="px-3 py-2 tabular-nums">
-                                    {{ formatMoney(occurrence.amount) }}
+                                    <template
+                                        v-if="
+                                            editingOccurrenceId ===
+                                            occurrence.id
+                                        "
+                                    >
+                                        <input
+                                            v-model="
+                                                occurrenceForm.expected_amount
+                                            "
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            class="w-28 rounded border px-2"
+                                        />
+                                        <span
+                                            v-if="
+                                                occurrenceForm.errors
+                                                    .expected_amount
+                                            "
+                                            class="mt-1 block text-xs text-red-700"
+                                            >{{
+                                                occurrenceForm.errors
+                                                    .expected_amount
+                                            }}</span
+                                        >
+                                    </template>
+                                    <template v-else>
+                                        {{ formatMoney(occurrence.amount) }}
+                                        <span
+                                            v-if="occurrence.amount_customized"
+                                            class="ml-1 text-xs font-normal text-neutral-500"
+                                            >adjusted</span
+                                        >
+                                    </template>
                                 </td>
                                 <td
                                     class="px-3 py-2 tabular-nums"
@@ -1319,60 +1421,138 @@
                                     <span v-else>—</span>
                                 </td>
                                 <td class="px-3 py-2">
-                                    <template
-                                        v-if="
-                                            occurrence.status === 'planned' &&
-                                            paycheck_link_candidates.length > 0
-                                        "
+                                    <div
+                                        v-if="occurrence.status === 'planned'"
+                                        class="flex flex-col items-start gap-2"
                                     >
+                                        <p
+                                            v-if="
+                                                editingOccurrenceId ===
+                                                occurrence.id
+                                            "
+                                            class="text-xs text-neutral-500"
+                                        >
+                                            This paycheck only. The plan stays
+                                            the same.
+                                        </p>
                                         <div
-                                            v-if="linkForId === occurrence.id"
                                             class="flex flex-wrap items-center gap-2"
                                         >
-                                            <select
-                                                v-model="linkTransactionId"
-                                                class="rounded border px-2"
-                                            >
-                                                <option value="">
-                                                    Select credit
-                                                </option>
-                                                <option
-                                                    v-for="candidate in paycheck_link_candidates"
-                                                    :key="candidate.id"
-                                                    :value="
-                                                        String(candidate.id)
-                                                    "
-                                                >
-                                                    {{ candidate.posted_at }}
-                                                    ·
-                                                    {{
-                                                        formatMoney(
-                                                            candidate.amount,
-                                                        )
-                                                    }}
-                                                    ·
-                                                    {{ candidate.description }}
-                                                </option>
-                                            </select>
-                                            <button
-                                                type="button"
-                                                class="btn rounded border px-2 text-xs"
-                                                @click="
-                                                    linkOccurrence(occurrence)
+                                            <template
+                                                v-if="
+                                                    editingOccurrenceId ===
+                                                    occurrence.id
                                                 "
                                             >
-                                                Link
+                                                <button
+                                                    type="button"
+                                                    class="btn rounded border px-2 text-xs"
+                                                    :disabled="
+                                                        occurrenceForm.processing
+                                                    "
+                                                    @click="
+                                                        saveOccurrence(
+                                                            occurrence,
+                                                        )
+                                                    "
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="text-xs underline"
+                                                    @click="
+                                                        editingOccurrenceId = null
+                                                    "
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </template>
+                                            <button
+                                                v-else
+                                                type="button"
+                                                class="text-xs underline"
+                                                @click="
+                                                    startEditOccurrence(
+                                                        occurrence,
+                                                    )
+                                                "
+                                            >
+                                                Adjust
                                             </button>
+                                            <template
+                                                v-if="
+                                                    editingOccurrenceId !==
+                                                        occurrence.id &&
+                                                    paycheck_link_candidates.length >
+                                                        0
+                                                "
+                                            >
+                                                <div
+                                                    v-if="
+                                                        linkForId ===
+                                                        occurrence.id
+                                                    "
+                                                    class="flex flex-wrap items-center gap-2"
+                                                >
+                                                    <select
+                                                        v-model="
+                                                            linkTransactionId
+                                                        "
+                                                        class="rounded border px-2"
+                                                    >
+                                                        <option value="">
+                                                            Select credit
+                                                        </option>
+                                                        <option
+                                                            v-for="candidate in paycheck_link_candidates"
+                                                            :key="candidate.id"
+                                                            :value="
+                                                                String(
+                                                                    candidate.id,
+                                                                )
+                                                            "
+                                                        >
+                                                            {{
+                                                                candidate.posted_at
+                                                            }}
+                                                            ·
+                                                            {{
+                                                                formatMoney(
+                                                                    candidate.amount,
+                                                                )
+                                                            }}
+                                                            ·
+                                                            {{
+                                                                candidate.description
+                                                            }}
+                                                        </option>
+                                                    </select>
+                                                    <button
+                                                        type="button"
+                                                        class="btn rounded border px-2 text-xs"
+                                                        @click="
+                                                            linkOccurrence(
+                                                                occurrence,
+                                                            )
+                                                        "
+                                                    >
+                                                        Link
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    v-else
+                                                    type="button"
+                                                    class="text-xs underline"
+                                                    @click="
+                                                        startLink(occurrence)
+                                                    "
+                                                >
+                                                    Link transaction
+                                                </button>
+                                            </template>
                                         </div>
-                                        <button
-                                            v-else
-                                            type="button"
-                                            class="text-xs underline"
-                                            @click="linkForId = occurrence.id"
-                                        >
-                                            Link transaction
-                                        </button>
-                                    </template>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>
@@ -1410,7 +1590,39 @@
                                 class="border-b last:border-0"
                             >
                                 <td class="px-3 py-2 tabular-nums">
-                                    {{ occurrence.expected_date }}
+                                    <template
+                                        v-if="
+                                            editingOccurrenceId ===
+                                            occurrence.id
+                                        "
+                                    >
+                                        <input
+                                            v-model="
+                                                occurrenceForm.expected_date
+                                            "
+                                            type="date"
+                                            class="rounded border px-2"
+                                        />
+                                        <span
+                                            v-if="
+                                                occurrenceForm.errors
+                                                    .expected_date
+                                            "
+                                            class="mt-1 block text-xs text-red-700"
+                                            >{{
+                                                occurrenceForm.errors
+                                                    .expected_date
+                                            }}</span
+                                        >
+                                    </template>
+                                    <template v-else>
+                                        {{ occurrence.expected_date }}
+                                        <span
+                                            v-if="occurrence.date_customized"
+                                            class="ml-1 text-xs font-normal text-neutral-500"
+                                            >adjusted</span
+                                        >
+                                    </template>
                                 </td>
                                 <td class="px-3 py-2">
                                     {{ occurrence.template_name || 'One-off' }}
@@ -1419,7 +1631,41 @@
                                     {{ occurrence.status }}
                                 </td>
                                 <td class="px-3 py-2 tabular-nums">
-                                    {{ formatMoney(occurrence.amount) }}
+                                    <template
+                                        v-if="
+                                            editingOccurrenceId ===
+                                            occurrence.id
+                                        "
+                                    >
+                                        <input
+                                            v-model="
+                                                occurrenceForm.expected_amount
+                                            "
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            class="w-28 rounded border px-2"
+                                        />
+                                        <span
+                                            v-if="
+                                                occurrenceForm.errors
+                                                    .expected_amount
+                                            "
+                                            class="mt-1 block text-xs text-red-700"
+                                            >{{
+                                                occurrenceForm.errors
+                                                    .expected_amount
+                                            }}</span
+                                        >
+                                    </template>
+                                    <template v-else>
+                                        {{ formatMoney(occurrence.amount) }}
+                                        <span
+                                            v-if="occurrence.amount_customized"
+                                            class="ml-1 text-xs font-normal text-neutral-500"
+                                            >adjusted</span
+                                        >
+                                    </template>
                                 </td>
                                 <td class="px-3 py-2 text-neutral-600">
                                     <template
@@ -1438,62 +1684,140 @@
                                     <span v-else>—</span>
                                 </td>
                                 <td class="px-3 py-2">
-                                    <template
-                                        v-if="
-                                            occurrence.status === 'planned' &&
-                                            bill_link_candidates.length > 0
-                                        "
+                                    <div
+                                        v-if="occurrence.status === 'planned'"
+                                        class="flex flex-col items-start gap-2"
                                     >
+                                        <p
+                                            v-if="
+                                                editingOccurrenceId ===
+                                                occurrence.id
+                                            "
+                                            class="text-xs text-neutral-500"
+                                        >
+                                            This bill only. The plan stays the
+                                            same.
+                                        </p>
                                         <div
-                                            v-if="linkForId === occurrence.id"
                                             class="flex flex-wrap items-center gap-2"
                                         >
-                                            <select
-                                                v-model="linkTransactionId"
-                                                class="rounded border px-2"
-                                            >
-                                                <option value="">
-                                                    Select debit
-                                                </option>
-                                                <option
-                                                    v-for="candidate in bill_link_candidates"
-                                                    :key="candidate.id"
-                                                    :value="
-                                                        String(candidate.id)
-                                                    "
-                                                >
-                                                    {{ candidate.posted_at }}
-                                                    ·
-                                                    {{
-                                                        formatMoney(
-                                                            Math.abs(
-                                                                candidate.amount,
-                                                            ),
-                                                        )
-                                                    }}
-                                                    ·
-                                                    {{ candidate.description }}
-                                                </option>
-                                            </select>
-                                            <button
-                                                type="button"
-                                                class="btn rounded border px-2 text-xs"
-                                                @click="
-                                                    linkOccurrence(occurrence)
+                                            <template
+                                                v-if="
+                                                    editingOccurrenceId ===
+                                                    occurrence.id
                                                 "
                                             >
-                                                Link
+                                                <button
+                                                    type="button"
+                                                    class="btn rounded border px-2 text-xs"
+                                                    :disabled="
+                                                        occurrenceForm.processing
+                                                    "
+                                                    @click="
+                                                        saveOccurrence(
+                                                            occurrence,
+                                                        )
+                                                    "
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="text-xs underline"
+                                                    @click="
+                                                        editingOccurrenceId = null
+                                                    "
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </template>
+                                            <button
+                                                v-else
+                                                type="button"
+                                                class="text-xs underline"
+                                                @click="
+                                                    startEditOccurrence(
+                                                        occurrence,
+                                                    )
+                                                "
+                                            >
+                                                Adjust
                                             </button>
+                                            <template
+                                                v-if="
+                                                    editingOccurrenceId !==
+                                                        occurrence.id &&
+                                                    bill_link_candidates.length >
+                                                        0
+                                                "
+                                            >
+                                                <div
+                                                    v-if="
+                                                        linkForId ===
+                                                        occurrence.id
+                                                    "
+                                                    class="flex flex-wrap items-center gap-2"
+                                                >
+                                                    <select
+                                                        v-model="
+                                                            linkTransactionId
+                                                        "
+                                                        class="rounded border px-2"
+                                                    >
+                                                        <option value="">
+                                                            Select debit
+                                                        </option>
+                                                        <option
+                                                            v-for="candidate in bill_link_candidates"
+                                                            :key="candidate.id"
+                                                            :value="
+                                                                String(
+                                                                    candidate.id,
+                                                                )
+                                                            "
+                                                        >
+                                                            {{
+                                                                candidate.posted_at
+                                                            }}
+                                                            ·
+                                                            {{
+                                                                formatMoney(
+                                                                    Math.abs(
+                                                                        candidate.amount,
+                                                                    ),
+                                                                )
+                                                            }}
+                                                            ·
+                                                            {{
+                                                                candidate.description
+                                                            }}
+                                                        </option>
+                                                    </select>
+                                                    <button
+                                                        type="button"
+                                                        class="btn rounded border px-2 text-xs"
+                                                        @click="
+                                                            linkOccurrence(
+                                                                occurrence,
+                                                            )
+                                                        "
+                                                    >
+                                                        Link
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    v-else
+                                                    type="button"
+                                                    class="text-xs underline"
+                                                    @click="
+                                                        startLink(occurrence)
+                                                    "
+                                                >
+                                                    Link transaction
+                                                </button>
+                                            </template>
                                         </div>
-                                        <button
-                                            v-else
-                                            type="button"
-                                            class="text-xs underline"
-                                            @click="linkForId = occurrence.id"
-                                        >
-                                            Link transaction
-                                        </button>
-                                    </template>
+                                    </div>
                                 </td>
                             </tr>
                         </tbody>

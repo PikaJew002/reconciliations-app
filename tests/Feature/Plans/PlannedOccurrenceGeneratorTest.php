@@ -121,6 +121,35 @@ class PlannedOccurrenceGeneratorTest extends TestCase
         $this->assertSame([], $this->occurrenceDates($otherTemplate));
     }
 
+    public function test_sync_keeps_customized_date_and_amount(): void
+    {
+        $user = User::factory()->create();
+        $template = $this->templateFor($user);
+
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
+
+        $occurrence = PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('scheduled_date', '2026-03-01')
+            ->firstOrFail();
+
+        $occurrence->update([
+            'expected_date' => '2026-02-28',
+            'expected_amount' => 2875.5,
+            'date_customized' => true,
+            'amount_customized' => true,
+        ]);
+
+        $template->update(['expected_amount' => 3100]);
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template->fresh());
+
+        $occurrence->refresh();
+        $this->assertSame('2026-02-28', $occurrence->expected_date->toDateString());
+        $this->assertSame('2026-03-01', $occurrence->scheduled_date->toDateString());
+        $this->assertSame(2875.5, (float) $occurrence->expected_amount);
+        $this->assertContains('2026-02-28', $this->occurrenceDates($template));
+    }
+
     public function test_occurrence_generation_is_scheduled_on_the_first_of_the_month(): void
     {
         $this->artisan('schedule:list')

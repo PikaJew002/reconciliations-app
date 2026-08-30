@@ -24,7 +24,7 @@ use Illuminate\Support\Collection;
  * - Transactions in any reimbursement group are excluded from those raw totals.
  * - Closed under-reimbursed groups contribute their positive net to remainder_category_id.
  * - Ungrouped categorized income credits count toward their category_id.
- * - Income linked to a planned occurrence is attributed by the occurrence expected_date, not posted_at.
+ * - Income linked to a planned occurrence is attributed by the occurrence scheduled_date, not posted_at.
  * - Still-planned income occurrences count expected_amount toward their category_id.
  * - Ungrouped income with no category_id, plus closed over-reimbursed |net|, counts as uncategorized income.
  * - Open positive nets are exposed separately as awaiting reimbursement (not category spend).
@@ -32,7 +32,7 @@ use Illuminate\Support\Collection;
  * - Resolved and cancelled pending spend do not count; posted bank spend is unchanged.
  *
  * Optional $from / $to use a half-open window [from, to) on unmatched bank posted_at, occurrence
- * expected_date, order ordered_at, reimbursement group closed_at, and pending spent_at.
+ * scheduled_date, order ordered_at, reimbursement group closed_at, and pending spent_at.
  * Null bounds mean unbounded on that side (all-time when both null).
  */
 class CategorySpendQuery
@@ -470,7 +470,7 @@ class CategorySpendQuery
 
     /**
      * Ungrouped income credits with a category_id, plus planned/resolved
-     * occurrence amounts attributed by expected_date.
+     * occurrence amounts attributed by scheduled_date.
      *
      * @return array<int, float> category_id => income amount (positive)
      */
@@ -710,7 +710,7 @@ class CategorySpendQuery
                             });
                     });
             })
-            ->tap(fn (Builder $query) => $this->applyExpectedDateRange($query, $from, $to))
+            ->tap(fn (Builder $query) => $this->applyScheduledDateRange($query, $from, $to))
             ->with('bankTransaction')
             ->get();
     }
@@ -739,17 +739,17 @@ class CategorySpendQuery
             ->all();
     }
 
-    protected function applyExpectedDateRange(
+    protected function applyScheduledDateRange(
         Builder $query,
         ?CarbonInterface $from,
         ?CarbonInterface $to,
     ): void {
         if ($from !== null) {
-            $query->where('expected_date', '>=', $from);
+            $query->where('scheduled_date', '>=', $from);
         }
 
         if ($to !== null) {
-            $query->where('expected_date', '<', $to);
+            $query->where('scheduled_date', '<', $to);
         }
     }
 
