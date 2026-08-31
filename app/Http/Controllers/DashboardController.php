@@ -27,12 +27,6 @@ class DashboardController extends Controller
     ): Response {
         $userId = $request->user()->id;
 
-        $view = $request->string('view')->toString();
-
-        if (! in_array($view, ['month', 'ytm'], true)) {
-            $view = 'month';
-        }
-
         $month = $request->string('month')->toString();
         $month = $month !== '' ? $month : null;
 
@@ -40,22 +34,53 @@ class DashboardController extends Controller
             ? $request->integer('budget_year_id')
             : null;
 
+        $generator->ensureForUser($userId);
+
+        $monthReport = $this->reportPayload(
+            $userId,
+            'month',
+            $month,
+            $budgetYearId,
+            $categorySpendQuery,
+            $budgetProgress,
+        );
+        $yearReport = $this->reportPayload(
+            $userId,
+            'ytm',
+            $month,
+            $budgetYearId,
+            $categorySpendQuery,
+            $budgetProgress,
+        );
+
+        return Inertia::render('Dashboard/Index', [
+            'month' => $monthReport['month'],
+            'budget_year' => $yearReport['budget_year'],
+            'budget_years' => $yearReport['budget_years'],
+            'month_report' => $this->publicReport($monthReport),
+            'year_report' => $this->publicReport($yearReport),
+            'paycheck_plans' => $assignments->upcomingCards($userId),
+            'paycheck_leftover' => $leftover->current($userId),
+            'leftover_origin' => $origin->payload($userId),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function reportPayload(
+        int $userId,
+        string $view,
+        ?string $month,
+        ?int $budgetYearId,
+        CategorySpendQuery $categorySpendQuery,
+        BudgetProgressService $budgetProgress,
+    ): array {
         $selectedYear = $budgetProgress->resolveYear($userId, $budgetYearId);
         $resolved = $budgetProgress->resolvePeriod($userId, $view, $month, $selectedYear);
         $from = $resolved['from'];
         $to = $resolved['to'];
         $progress = $budgetProgress->build($userId, $view, $month, $selectedYear?->id);
-        $monthsElapsed = $progress['period']['months_elapsed'];
-
-        $generator->ensureForUser($userId);
-        $paycheckPlans = $view === 'month'
-            ? $assignments->monthCards($userId, $from)
-            : [
-                'paychecks' => [],
-                'income' => 0.0,
-                'bills' => 0.0,
-                'leftover' => 0.0,
-            ];
 
         $spendTotals = $categorySpendQuery->categoryTotalsForUser($userId, $from, $to);
 
@@ -122,8 +147,7 @@ class DashboardController extends Controller
         $totalIncome = round($categorizedIncomeAmount + $uncategorizedIncome, 2);
         $totalSpend = round($billsAmount + $expensesAmount, 2);
 
-        return Inertia::render('Dashboard/Index', [
-            'view' => $progress['view'],
+        return [
             'month' => $progress['month'],
             'budget_year' => $progress['budget_year'],
             'budget_years' => $progress['budget_years'],
@@ -131,6 +155,7 @@ class DashboardController extends Controller
             'total_income' => $totalIncome,
             'total_spend' => $totalSpend,
             'summary' => $progress['summary'],
+            'months_elapsed' => $progress['period']['months_elapsed'],
             'sections' => [
                 'income' => [
                     'amount' => $totalIncome,
@@ -157,11 +182,23 @@ class DashboardController extends Controller
                     ],
                 ],
             ],
-            'months_elapsed' => $monthsElapsed,
-            'paycheck_plans' => $paycheckPlans,
-            'paycheck_leftover' => $leftover->current($userId),
-            'leftover_origin' => $origin->payload($userId),
-        ]);
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return array<string, mixed>
+     */
+    protected function publicReport(array $report): array
+    {
+        return [
+            'period' => $report['period'],
+            'total_income' => $report['total_income'],
+            'total_spend' => $report['total_spend'],
+            'summary' => $report['summary'],
+            'sections' => $report['sections'],
+            'months_elapsed' => $report['months_elapsed'],
+        ];
     }
 
     /**

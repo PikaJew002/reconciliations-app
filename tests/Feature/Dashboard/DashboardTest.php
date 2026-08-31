@@ -14,6 +14,8 @@ use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
+use App\Services\Plans\PaycheckBillAssignmentService;
+use App\Services\Plans\PlannedOccurrenceGenerator;
 use App\Services\Reconciliation\ReimbursementGroupService;
 use App\Services\Reporting\CategorySpendQuery;
 use Carbon\Carbon;
@@ -114,26 +116,25 @@ class DashboardTest extends TestCase
         // Jul–Aug: months_elapsed=2, budget=200, expenses=90
 
         $this->actingAs($user)
-            ->get('/?view=ytm')
+            ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('view', 'ytm')
                 ->where('budget_year.id', $year->id)
                 ->where('budget_year.label', 'Jul 2026 – Jun 2027')
-                ->where('period.from', '2026-07-01')
-                ->where('period.to', '2026-08-31')
-                ->where('months_elapsed', 2)
-                ->where('summary.income', 5000)
-                ->where('summary.bills', 800)
-                ->where('summary.leftover_income', 4200)
-                ->where('summary.expenses', 90)
-                ->where('summary.budget_allowed', 200)
-                ->where('summary.vs_budget_difference', 110)
-                ->where('summary.vs_leftover_difference', 4110)
-                ->where('sections.spending.expenses.categories.0.amount', 90)
-                ->where('sections.spending.expenses.categories.0.budget_allowed', 200)
-                ->missing('sections.spending.expenses.categories.0.vs_leftover_difference'));
+                ->where('year_report.period.from', '2026-07-01')
+                ->where('year_report.period.to', '2026-08-31')
+                ->where('year_report.months_elapsed', 2)
+                ->where('year_report.summary.income', 5000)
+                ->where('year_report.summary.bills', 800)
+                ->where('year_report.summary.leftover_income', 4200)
+                ->where('year_report.summary.expenses', 90)
+                ->where('year_report.summary.budget_allowed', 200)
+                ->where('year_report.summary.vs_budget_difference', 110)
+                ->where('year_report.summary.vs_leftover_difference', 4110)
+                ->where('year_report.sections.spending.expenses.categories.0.amount', 90)
+                ->where('year_report.sections.spending.expenses.categories.0.budget_allowed', 200)
+                ->missing('year_report.sections.spending.expenses.categories.0.vs_leftover_difference'));
     }
 
     public function test_dashboard_completed_plan_ytm_is_full_twelve_months(): void
@@ -163,15 +164,15 @@ class DashboardTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=ytm&budget_year_id='.$year->id)
+            ->get('/?budget_year_id='.$year->id)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('period.from', '2025-07-01')
-                ->where('period.to', '2026-06-30')
-                ->where('months_elapsed', 12)
-                ->where('summary.budget_allowed', 1200)
-                ->where('summary.expenses', 25));
+                ->where('year_report.period.from', '2025-07-01')
+                ->where('year_report.period.to', '2026-06-30')
+                ->where('year_report.months_elapsed', 12)
+                ->where('year_report.summary.budget_allowed', 1200)
+                ->where('year_report.summary.expenses', 25));
     }
 
     public function test_month_outside_any_plan_has_actuals_without_budget(): void
@@ -201,13 +202,13 @@ class DashboardTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-03')
+            ->get('/?month=2026-03')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('sections.spending.expenses.categories.0.amount', 40)
-                ->where('sections.spending.expenses.categories.0.budget_allowed', null)
-                ->where('summary.budget_allowed', 0));
+                ->where('month_report.sections.spending.expenses.categories.0.amount', 40)
+                ->where('month_report.sections.spending.expenses.categories.0.budget_allowed', null)
+                ->where('month_report.summary.budget_allowed', 0));
     }
 
     public function test_month_inside_non_current_plan_uses_that_plans_limits(): void
@@ -249,14 +250,14 @@ class DashboardTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2025-09&budget_year_id='.$current->id)
+            ->get('/?month=2025-09&budget_year_id='.$current->id)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
                 ->where('budget_year.id', $current->id)
-                ->where('sections.spending.expenses.categories.0.amount', 20)
-                ->where('sections.spending.expenses.categories.0.budget_allowed', 50)
-                ->where('sections.spending.expenses.categories.0.vs_budget_difference', 30));
+                ->where('month_report.sections.spending.expenses.categories.0.amount', 20)
+                ->where('month_report.sections.spending.expenses.categories.0.budget_allowed', 50)
+                ->where('month_report.sections.spending.expenses.categories.0.vs_budget_difference', 30));
     }
 
     public function test_dashboard_shows_category_and_uncategorized_spend_for_month(): void
@@ -311,17 +312,16 @@ class DashboardTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/?month=2026-08')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('view', 'month')
                 ->where('month', '2026-08')
-                ->where('total_spend', 75)
-                ->where('summary.expenses', 50)
-                ->where('summary.budget_allowed', 100)
-                ->where('sections.spending.expenses.categories.0.budget_allowed', 100)
-                ->where('sections.spending.expenses.uncategorized.amount', 10));
+                ->where('month_report.total_spend', 75)
+                ->where('month_report.summary.expenses', 50)
+                ->where('month_report.summary.budget_allowed', 100)
+                ->where('month_report.sections.spending.expenses.categories.0.budget_allowed', 100)
+                ->where('month_report.sections.spending.expenses.uncategorized.amount', 10));
     }
 
     public function test_order_component_totals_merge_into_dashboard_category_spend(): void
@@ -364,13 +364,13 @@ class DashboardTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/?month=2026-08')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('sections.spending.expenses.categories.0.amount', 42.5)
-                ->where('sections.spending.expenses.uncategorized.amount', 2.5)
-                ->where('total_spend', 45));
+                ->where('month_report.sections.spending.expenses.categories.0.amount', 42.5)
+                ->where('month_report.sections.spending.expenses.uncategorized.amount', 2.5)
+                ->where('month_report.total_spend', 45));
     }
 
     public function test_dashboard_shows_income_categories_and_omits_zero_amounts(): void
@@ -398,14 +398,14 @@ class DashboardTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/?month=2026-08')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('total_income', 2500)
-                ->where('summary.leftover_income', 2500)
-                ->where('sections.income.categories.0.name', 'Salary')
-                ->where('sections.spending.expenses.categories', []));
+                ->where('month_report.total_income', 2500)
+                ->where('month_report.summary.leftover_income', 2500)
+                ->where('month_report.sections.income.categories.0.name', 'Salary')
+                ->where('month_report.sections.spending.expenses.categories', []));
     }
 
     public function test_dashboard_shows_uncategorized_income_from_over_reimbursement(): void
@@ -458,15 +458,15 @@ class DashboardTest extends TestCase
         );
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/?month=2026-08')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('total_income', 500)
-                ->where('sections.income.uncategorized.amount', 50));
+                ->where('month_report.total_income', 500)
+                ->where('month_report.sections.income.uncategorized.amount', 50));
     }
 
-    public function test_month_dashboard_shows_projected_paycheck_plan_cards(): void
+    public function test_home_shows_current_and_upcoming_paycheck_cards(): void
     {
         $user = User::factory()->create();
         BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
@@ -502,21 +502,25 @@ class DashboardTest extends TestCase
         $paycheck->assignedBills()->sync([$rent->id, $electric->id]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/?month=2026-03')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->has('paycheck_plans.paychecks', 1)
+                ->has('paycheck_plans.paychecks', 2)
                 ->where('paycheck_plans.paychecks.0.name', 'Acme paycheck')
+                ->where('paycheck_plans.paychecks.0.expected_date', '2026-08-01')
+                ->where('paycheck_plans.paychecks.0.is_current', true)
                 ->where('paycheck_plans.paychecks.0.amount', 3000)
                 ->where('paycheck_plans.paychecks.0.bills_amount', 1340)
                 ->where('paycheck_plans.paychecks.0.leftover', 1660)
                 ->where('paycheck_plans.paychecks.0.bills.0.name', 'Rent')
                 ->where('paycheck_plans.paychecks.0.bills.1.name', 'Electric')
-                ->where('paycheck_plans.leftover', 1660));
+                ->where('paycheck_plans.paychecks.1.expected_date', '2026-09-01')
+                ->where('paycheck_plans.paychecks.1.is_current', false)
+                ->where('paycheck_plans.leftover', 3320));
     }
 
-    public function test_month_dashboard_paycheck_cards_use_actuals_when_resolved(): void
+    public function test_home_paycheck_cards_use_actuals_when_resolved(): void
     {
         $user = User::factory()->create();
         BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
@@ -542,7 +546,7 @@ class DashboardTest extends TestCase
         ]);
         $paycheck->assignedBills()->sync([$rent->id]);
 
-        $this->actingAs($user)->get('/?view=month&month=2026-08');
+        $this->actingAs($user)->get('/');
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -579,17 +583,21 @@ class DashboardTest extends TestCase
             ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
+                ->where('paycheck_plans.paychecks.0.expected_date', '2026-08-01')
                 ->where('paycheck_plans.paychecks.0.amount', 2987)
                 ->where('paycheck_plans.paychecks.0.bills.0.amount', 1180)
                 ->where('paycheck_plans.paychecks.0.leftover', 1807)
-                ->where('paycheck_plans.leftover', 1807));
+                ->where('paycheck_plans.paychecks.1.expected_date', '2026-09-01')
+                ->where('paycheck_plans.paychecks.1.amount', 3000)
+                ->where('paycheck_plans.paychecks.1.leftover', 1800)
+                ->where('paycheck_plans.leftover', 3607));
     }
 
-    public function test_month_dashboard_pairs_earlier_bill_day_with_next_month_occurrence(): void
+    public function test_home_paycheck_cards_pair_earlier_bill_day_with_next_month_occurrence(): void
     {
         $user = User::factory()->create();
         BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
@@ -625,31 +633,38 @@ class DashboardTest extends TestCase
         $paycheck->assignedBills()->sync([$tithe->id, $electric->id]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-07')
-            ->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Dashboard/Index')
-                ->where('paycheck_plans.paychecks.0.expected_date', '2026-07-15')
-                ->where('paycheck_plans.paychecks.0.bills.0.name', 'Tithe - JCC')
-                ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-08-01')
-                ->where('paycheck_plans.paychecks.0.bills.0.covers_next_month', true)
-                ->where('paycheck_plans.paychecks.0.bills.1.name', 'Electric')
-                ->where('paycheck_plans.paychecks.0.bills.1.expected_date', '2026-07-20')
-                ->where('paycheck_plans.paychecks.0.bills.1.covers_next_month', false)
-                ->where('paycheck_plans.paychecks.0.bills_amount', 440)
-                ->where('paycheck_plans.paychecks.0.leftover', 2560));
-
-        $this->actingAs($user)
-            ->get('/?view=month&month=2026-08')
+            ->get('/?month=2026-03')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
                 ->where('paycheck_plans.paychecks.0.expected_date', '2026-08-15')
+                ->where('paycheck_plans.paychecks.0.is_current', true)
+                ->where('paycheck_plans.paychecks.0.bills.0.name', 'Tithe - JCC')
                 ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-09-01')
-                ->where('paycheck_plans.paychecks.0.bills.1.expected_date', '2026-08-20'));
+                ->where('paycheck_plans.paychecks.0.bills.0.covers_next_month', true)
+                ->where('paycheck_plans.paychecks.0.bills.1.name', 'Electric')
+                ->where('paycheck_plans.paychecks.0.bills.1.expected_date', '2026-08-20')
+                ->where('paycheck_plans.paychecks.0.bills.1.covers_next_month', false)
+                ->where('paycheck_plans.paychecks.0.bills_amount', 440)
+                ->where('paycheck_plans.paychecks.0.leftover', 2560)
+                ->where('paycheck_plans.paychecks.1.expected_date', '2026-09-15')
+                ->where('paycheck_plans.paychecks.1.bills.0.expected_date', '2026-10-01')
+                ->where('paycheck_plans.paychecks.1.bills.1.expected_date', '2026-09-20'));
+
+        app(PlannedOccurrenceGenerator::class)->ensureForUser($user->id);
+
+        $julyCards = app(PaycheckBillAssignmentService::class)
+            ->upcomingCards($user->id, Carbon::parse('2026-07-20'));
+
+        $this->assertSame('2026-07-15', $julyCards['paychecks'][0]['expected_date']);
+        $this->assertSame('Tithe - JCC', $julyCards['paychecks'][0]['bills'][0]['name']);
+        $this->assertSame('2026-08-01', $julyCards['paychecks'][0]['bills'][0]['expected_date']);
+        $this->assertTrue($julyCards['paychecks'][0]['bills'][0]['covers_next_month']);
+        $this->assertSame('2026-07-20', $julyCards['paychecks'][0]['bills'][1]['expected_date']);
+        $this->assertFalse($julyCards['paychecks'][0]['bills'][1]['covers_next_month']);
     }
 
-    public function test_month_dashboard_uses_next_month_bill_actual_when_resolved(): void
+    public function test_home_paycheck_cards_use_next_month_bill_actual_when_resolved(): void
     {
         $user = User::factory()->create();
         BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
@@ -675,7 +690,7 @@ class DashboardTest extends TestCase
         ]);
         $paycheck->assignedBills()->sync([$tithe->id]);
 
-        $this->actingAs($user)->get('/?view=month&month=2026-07');
+        $this->actingAs($user)->get('/');
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -685,43 +700,47 @@ class DashboardTest extends TestCase
             'import_batch_id' => $batch->id,
             'amount' => -280.0,
             'classification' => BankTransaction::CLASSIFICATION_BILL,
-            'posted_at' => '2026-08-01',
+            'posted_at' => '2026-09-01',
         ]);
 
         PlannedOccurrence::query()
             ->where('template_id', $tithe->id)
-            ->whereDate('expected_date', '2026-08-01')
+            ->whereDate('expected_date', '2026-09-01')
             ->update([
                 'bank_transaction_id' => $titheTx->id,
                 'status' => PlannedOccurrence::STATUS_RESOLVED,
             ]);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-07')
+            ->get('/')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-08-01')
+                ->where('paycheck_plans.paychecks.0.expected_date', '2026-08-15')
+                ->where('paycheck_plans.paychecks.0.bills.0.expected_date', '2026-09-01')
                 ->where('paycheck_plans.paychecks.0.bills.0.amount', 280)
                 ->where('paycheck_plans.paychecks.0.leftover', 2720));
     }
 
-    public function test_ytm_dashboard_omits_paycheck_plan_cards(): void
+    public function test_home_still_shows_paycheck_cards_when_browsing_another_budget_year(): void
     {
         $user = User::factory()->create();
-        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $year = BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
         $salary = Category::factory()->for($user)->income()->create(['name' => 'Salary']);
         PlannedTemplate::factory()->create([
             'user_id' => $user->id,
             'category_id' => $salary->id,
             'expected_amount' => 3000,
+            'expected_day' => 1,
         ]);
 
         $this->actingAs($user)
-            ->get('/?view=ytm')
+            ->get('/?budget_year_id='.$year->id)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('paycheck_plans.paychecks', []));
+                ->has('paycheck_plans.paychecks', 2)
+                ->where('paycheck_plans.paychecks.0.expected_date', '2026-08-01')
+                ->where('paycheck_plans.paychecks.0.is_current', true));
     }
 }
