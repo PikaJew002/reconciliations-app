@@ -226,13 +226,23 @@
                     {{ paycheck_leftover.paycheck.name }} after bills
                     {{ formatMoney(paycheck_leftover.planned_leftover) }}
                     − spent {{ formatMoney(paycheck_leftover.spent) }}
-                    <template v-if="(paycheck_leftover.allocated ?? 0) > 0">
-                        − transferred
-                        {{ formatMoney(paycheck_leftover.allocated) }}
+                    <template
+                        v-if="(paycheck_leftover.credit_card_payments ?? 0) > 0"
+                    >
+                        − card payments
+                        {{ formatMoney(paycheck_leftover.credit_card_payments) }}
                     </template>
-                    <template v-else-if="(paycheck_leftover.allocated ?? 0) < 0">
+                    <template
+                        v-if="(paycheck_leftover.savings_transfers ?? 0) > 0"
+                    >
+                        − to savings
+                        {{ formatMoney(paycheck_leftover.savings_transfers) }}
+                    </template>
+                    <template
+                        v-else-if="(paycheck_leftover.savings_transfers ?? 0) < 0"
+                    >
                         + from savings
-                        {{ formatMoney(-paycheck_leftover.allocated) }}
+                        {{ formatMoney(-paycheck_leftover.savings_transfers) }}
                     </template>
                 </p>
                 <p
