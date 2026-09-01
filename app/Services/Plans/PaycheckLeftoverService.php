@@ -4,8 +4,10 @@ namespace App\Services\Plans;
 
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\TransactionAllocation;
 use App\Models\TransactionTransferLink;
 use App\Services\Reporting\CategorySpendQuery;
 use Carbon\Carbon;
@@ -114,12 +116,18 @@ class PaycheckLeftoverService
 
         $from = $starts->first()['start'];
         $allocationEvents = $this->allocationEventsForUser($userId, $from);
-        $spendEvents = collect($this->spendQuery->spendEventsForUser($userId, $from))
-            ->reject(function (array $event) use ($assignedBillTransactionIds): bool {
+        $spendEvents = collect($this->spendQuery->spendEventsForUser($userId, $from));
+        $creditCardSpend = $this->creditCardSpendKeys($spendEvents);
+        $spendEvents = $spendEvents
+            ->reject(function (array $event) use ($assignedBillTransactionIds, $creditCardSpend): bool {
                 $transactionId = $event['bank_transaction_id'] ?? null;
 
-                return $transactionId !== null
-                    && in_array((int) $transactionId, $assignedBillTransactionIds, true);
+                if ($transactionId !== null
+                    && in_array((int) $transactionId, $assignedBillTransactionIds, true)) {
+                    return true;
+                }
+
+                return $this->isCreditCardSpendEvent($event, $creditCardSpend);
             })
             ->values();
 
@@ -269,12 +277,14 @@ class PaycheckLeftoverService
     }
 
     /**
-     * Credit card payments and checking↔savings transfers change remaining
-     * leftover without counting as discretionary spend.
+     * Credit card charges do not reduce leftover: cash has not left checking
+     * until the card is paid. Card payments and checking↔savings transfers
+     * change remaining leftover without counting as discretionary spend.
      *
      * Allocated is signed because remaining always subtracts it: checking →
-     * savings is positive, savings → checking is negative. Debit rows are
-     * always stored negative, so the sign comes from direction, not abs(debit).
+     * savings and card payments are positive, savings → checking is negative.
+     * Debit rows are always stored negative, so the sign comes from direction,
+     * not abs(debit).
      *
      * @return Collection<int, array{date: string, amount: float, kind: string, name: ?string}>
      */
@@ -356,6 +366,110 @@ class PaycheckLeftoverService
         }
 
         return null;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $events
+     * @return array{
+     *     bank: array<int, true>,
+     *     pending: array<int, true>,
+     *     order_component: array<int, true>
+     * }
+     */
+    protected function creditCardSpendKeys(Collection $events): array
+    {
+        $bankIds = $this->eventIds($events, 'bank_transaction_id');
+        $pendingIds = $this->eventIds($events, 'pending_spend_id');
+        $orderComponentIds = $this->eventIds($events, 'order_component_id');
+
+        $creditCardBankIds = $bankIds === []
+            ? []
+            : BankTransaction::query()
+                ->whereIn('id', $bankIds)
+                ->whereHas(
+                    'account',
+                    fn ($query) => $query->where('account_type', Account::CREDIT_CARD),
+                )
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+        $creditCardPendingIds = $pendingIds === []
+            ? []
+            : PendingSpend::query()
+                ->whereIn('id', $pendingIds)
+                ->where(function ($query): void {
+                    $query
+                        ->where('source', PendingSpend::SOURCE_CREDIT_CARD)
+                        ->orWhereHas(
+                            'account',
+                            fn ($account) => $account->where('account_type', Account::CREDIT_CARD),
+                        );
+                })
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+        $creditCardOrderComponentIds = $orderComponentIds === []
+            ? []
+            : TransactionAllocation::query()
+                ->whereIn('order_component_id', $orderComponentIds)
+                ->whereHas(
+                    'bankTransaction.account',
+                    fn ($query) => $query->where('account_type', Account::CREDIT_CARD),
+                )
+                ->pluck('order_component_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+        return [
+            'bank' => array_fill_keys($creditCardBankIds, true),
+            'pending' => array_fill_keys($creditCardPendingIds, true),
+            'order_component' => array_fill_keys($creditCardOrderComponentIds, true),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $events
+     * @return list<int>
+     */
+    protected function eventIds(Collection $events, string $key): array
+    {
+        return $events
+            ->pluck($key)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     * @param  array{
+     *     bank: array<int, true>,
+     *     pending: array<int, true>,
+     *     order_component: array<int, true>
+     * }  $creditCardSpend
+     */
+    protected function isCreditCardSpendEvent(array $event, array $creditCardSpend): bool
+    {
+        $bankId = $event['bank_transaction_id'] ?? null;
+
+        if ($bankId !== null && isset($creditCardSpend['bank'][(int) $bankId])) {
+            return true;
+        }
+
+        $pendingId = $event['pending_spend_id'] ?? null;
+
+        if ($pendingId !== null && isset($creditCardSpend['pending'][(int) $pendingId])) {
+            return true;
+        }
+
+        $orderComponentId = $event['order_component_id'] ?? null;
+
+        return $orderComponentId !== null
+            && isset($creditCardSpend['order_component'][(int) $orderComponentId]);
     }
 
     protected function windowStart(PlannedOccurrence $occurrence): CarbonInterface

@@ -8,9 +8,12 @@ use App\Models\BankTransaction;
 use App\Models\BudgetYear;
 use App\Models\Category;
 use App\Models\ImportBatch;
+use App\Models\Order;
+use App\Models\OrderComponent;
 use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\TransactionAllocation;
 use App\Models\TransactionCategorizationRule;
 use App\Models\TransactionTransferLink;
 use App\Models\User;
@@ -236,7 +239,10 @@ class PaycheckLeftoverTest extends TestCase
     public function test_pending_spend_counts_in_the_paycheck_window(): void
     {
         [$user] = $this->paycheckSetup();
-        $account = Account::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+        ]);
 
         PendingSpend::factory()->create([
             'user_id' => $user->id,
@@ -503,6 +509,108 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(3200, $leftover['remaining']);
     }
 
+    public function test_savings_to_checking_increases_remaining_the_same_way_a_card_payment_decreases_it(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-08',
+            'from' => Account::SAVINGS,
+            'to' => Account::CHECKING,
+        ]);
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-09',
+            'from' => Account::CHECKING,
+            'to' => Account::CREDIT_CARD,
+            'kind' => PaycheckLeftoverService::ALLOCATION_CREDIT_CARD_PAYMENT,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(0, $leftover['allocated']);
+        $this->assertEquals(200, $leftover['credit_card_payments']);
+        $this->assertEquals(-200, $leftover['savings_transfers']);
+        $this->assertEquals(3000, $leftover['paycheck_remaining']);
+        $this->assertEquals(3000, $leftover['remaining']);
+    }
+
+    public function test_credit_card_charges_do_not_reduce_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->expense($user, 400, '2026-08-10', Account::CREDIT_CARD);
+        $this->expense($user, 75, '2026-08-11', Account::CHECKING);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(75, $leftover['spent']);
+        $this->assertEquals(0, $leftover['allocated']);
+        $this->assertEquals(2925, $leftover['paycheck_remaining']);
+        $this->assertEquals(2925, $leftover['remaining']);
+    }
+
+    public function test_credit_card_pending_spend_does_not_reduce_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $card = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+
+        PendingSpend::factory()->creditCard()->create([
+            'user_id' => $user->id,
+            'account_id' => $card->id,
+            'spent_at' => '2026-08-10 18:00:00',
+            'amount' => 50,
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'status' => PendingSpend::STATUS_PENDING,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(3000, $leftover['remaining']);
+    }
+
+    public function test_order_components_matched_to_a_credit_card_do_not_reduce_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $card = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CREDIT_CARD,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $bank = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $card->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -42.5,
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'posted_at' => '2026-08-10',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'ordered_at' => '2026-08-10',
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'amount' => 42.5,
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $bank->id,
+            'order_component_id' => $component->id,
+            'allocated_amount' => 42.5,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(3000, $leftover['remaining']);
+    }
+
     public function test_checking_to_checking_transfers_do_not_affect_leftover(): void
     {
         [$user] = $this->paycheckSetup();
@@ -542,6 +650,19 @@ class PaycheckLeftoverTest extends TestCase
         [$user] = $this->paycheckSetup();
         BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
         $this->expense($user, 400, '2026-08-10');
+        $this->transferPair($user, [
+            'amount' => 150,
+            'posted_at' => '2026-08-08',
+            'from' => Account::SAVINGS,
+            'to' => Account::CHECKING,
+        ]);
+        $this->transferPair($user, [
+            'amount' => 200,
+            'posted_at' => '2026-08-09',
+            'from' => Account::CHECKING,
+            'to' => Account::CREDIT_CARD,
+            'kind' => PaycheckLeftoverService::ALLOCATION_CREDIT_CARD_PAYMENT,
+        ]);
 
         $this->actingAs($user)
             ->get('/')
@@ -550,8 +671,11 @@ class PaycheckLeftoverTest extends TestCase
                 ->component('Dashboard/Index')
                 ->where('paycheck_leftover.starts_on', '2026-08-01')
                 ->where('paycheck_leftover.spent', 400)
-                ->where('paycheck_leftover.paycheck_remaining', 2600)
-                ->where('paycheck_leftover.remaining', 2600)
+                ->where('paycheck_leftover.credit_card_payments', 200)
+                ->where('paycheck_leftover.savings_transfers', -150)
+                ->where('paycheck_leftover.allocated', 50)
+                ->where('paycheck_leftover.paycheck_remaining', 2550)
+                ->where('paycheck_leftover.remaining', 2550)
                 ->where('paycheck_leftover.brought_forward', 0)
                 ->where('paycheck_leftover.previous_paycheck_remaining', null)
                 ->where('leftover_origin.month', '2026-08')
@@ -695,14 +819,20 @@ class PaycheckLeftoverTest extends TestCase
         ]);
     }
 
-    protected function expense(User $user, float $amount, string $postedAt): BankTransaction
-    {
+    protected function expense(
+        User $user,
+        float $amount,
+        string $postedAt,
+        string $accountType = Account::CHECKING,
+    ): BankTransaction {
         $dining = Category::query()
             ->where('user_id', $user->id)
             ->where('kind', Category::KIND_EXPENSE)
             ->first() ?? Category::factory()->for($user)->expense()->create(['name' => 'Dining']);
 
-        $account = Account::factory()->create();
+        $account = Account::factory()->create([
+            'account_type' => $accountType,
+        ]);
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
 
         return BankTransaction::factory()->create([
