@@ -24,6 +24,7 @@
 
     let navItems = [
         { label: 'Home', href: '/' },
+        { label: 'Review', href: '/review' },
         { label: 'Accounts', href: '/accounts' },
         { label: 'Categories', href: '/categories' },
         { label: 'Budgets', href: '/budgets' },

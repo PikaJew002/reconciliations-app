@@ -31,6 +31,8 @@ use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
 use App\Http\Controllers\Reconciliation\TransferLinkController;
 use App\Http\Controllers\Reconciliation\VenmoMatchController;
+use App\Http\Controllers\Review\ReviewCategorizationController;
+use App\Http\Controllers\Review\ReviewController;
 use App\Http\Controllers\Rules\IncomeClassificationRuleController;
 use App\Http\Controllers\Rules\RuleController;
 use App\Http\Controllers\Venmo\VenmoImportController;
@@ -55,6 +57,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/review', [ReviewController::class, 'show'])->name('review');
+    Route::post('/review/categorize', [ReviewCategorizationController::class, 'store'])
+        ->name('review.categorize');
 
     Route::get('/api-tokens/pending-spend', [ApiTokenController::class, 'pendingSpend'])
         ->name('api-tokens.pending-spend');

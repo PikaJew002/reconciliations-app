@@ -133,6 +133,103 @@ class PaycheckBillAssignmentService
     }
 
     /**
+     * Current paycheck plus later paychecks through the end of next month.
+     * Anchored to today, not a selected calendar month.
+     *
+     * @return array{
+     *     paychecks: list<array<string, mixed>>,
+     *     leftover: float,
+     *     income: float,
+     *     bills: float
+     * }
+     */
+    public function upcomingCards(int $userId, ?CarbonInterface $today = null): array
+    {
+        $today = ($today ?? now())->copy()->startOfDay();
+        $horizonEnd = $today->copy()->addMonth()->endOfMonth()->startOfDay();
+        $loadFrom = $today->copy()->startOfMonth()->subMonth()->startOfDay();
+        $loadUntil = $horizonEnd->copy()->addMonth()->startOfDay();
+
+        $paychecks = PlannedTemplate::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->where('is_active', true)
+            ->with('assignedBills')
+            ->get()
+            ->keyBy('id');
+
+        if ($paychecks->isEmpty()) {
+            return $this->emptyCards();
+        }
+
+        $occurrences = $this->occurrencesByTemplateId($userId, $loadFrom, $loadUntil);
+
+        $incomeOccurrences = PlannedOccurrence::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_INCOME)
+            ->whereIn('template_id', $paychecks->keys())
+            ->where('scheduled_date', '>=', $loadFrom)
+            ->where('scheduled_date', '<=', $horizonEnd)
+            ->orderBy('expected_date')
+            ->orderBy('id')
+            ->get();
+
+        $current = $incomeOccurrences
+            ->filter(fn (PlannedOccurrence $occurrence) => ! $occurrence->expected_date->copy()->startOfDay()->gt($today))
+            ->last();
+
+        if ($current === null) {
+            $current = $incomeOccurrences->first();
+        }
+
+        if ($current === null) {
+            return $this->emptyCards();
+        }
+
+        $from = $current->expected_date->copy()->startOfDay();
+        $cards = [];
+        $totalIncome = 0.0;
+        $totalBills = 0.0;
+
+        foreach ($incomeOccurrences as $occurrence) {
+            $date = $occurrence->expected_date->copy()->startOfDay();
+
+            if ($date->lt($from) || $date->gt($horizonEnd)) {
+                continue;
+            }
+
+            $paycheck = $paychecks->get((int) $occurrence->template_id);
+
+            if ($paycheck === null) {
+                continue;
+            }
+
+            $paycheckMonth = $occurrence->periodDate()->copy()->startOfMonth()->startOfDay();
+            $contribution = $this->contributionForPaycheck(
+                $paycheck,
+                $occurrence,
+                $paycheckMonth,
+                $occurrences,
+            );
+
+            $cards[] = $this->cardPayload(
+                $paycheck,
+                $contribution,
+                id: (int) $occurrence->id,
+                extra: [
+                    'template_id' => (int) $paycheck->id,
+                    'is_current' => (int) $occurrence->id === (int) $current->id,
+                ],
+            );
+
+            $totalIncome += $contribution['amount'];
+            $totalBills += $contribution['bills_amount'];
+        }
+
+        return $this->cardsTotals($cards, $totalIncome, $totalBills);
+    }
+
+    /**
      * @return array{
      *     paychecks: list<array<string, mixed>>,
      *     leftover: float,
@@ -153,14 +250,11 @@ class PaycheckBillAssignmentService
             ->orderBy('name')
             ->get();
 
-        $occurrences = PlannedOccurrence::query()
-            ->where('user_id', $userId)
-            ->where('scheduled_date', '>=', $monthStart)
-            ->where('scheduled_date', '<', $monthStart->copy()->addMonths(2))
-            ->whereNotNull('template_id')
-            ->with('bankTransaction:id,amount')
-            ->get()
-            ->groupBy(fn (PlannedOccurrence $occurrence) => (int) $occurrence->template_id);
+        $occurrences = $this->occurrencesByTemplateId(
+            $userId,
+            $monthStart,
+            $monthStart->copy()->addMonths(2),
+        );
 
         $cards = [];
         $totalIncome = 0.0;
@@ -178,32 +272,13 @@ class PaycheckBillAssignmentService
                 $occurrences,
             );
 
-            $cards[] = [
-                'id' => (int) $paycheck->id,
-                'name' => $paycheck->name,
-                'expected_day' => (int) $paycheck->expected_day,
-                'expected_date' => $contribution['date']->toDateString(),
-                'amount' => $contribution['amount'],
-                'status' => $contribution['status'],
-                'bills' => array_map(function (array $bill): array {
-                    unset($bill['occurrence_id'], $bill['bank_transaction_id']);
-
-                    return $bill;
-                }, $contribution['bills']),
-                'bills_amount' => $contribution['bills_amount'],
-                'leftover' => $contribution['leftover'],
-            ];
+            $cards[] = $this->cardPayload($paycheck, $contribution, id: (int) $paycheck->id);
 
             $totalIncome += $contribution['amount'];
             $totalBills += $contribution['bills_amount'];
         }
 
-        return [
-            'paychecks' => $cards,
-            'income' => round($totalIncome, 2),
-            'bills' => round($totalBills, 2),
-            'leftover' => round($totalIncome - $totalBills, 2),
-        ];
+        return $this->cardsTotals($cards, $totalIncome, $totalBills);
     }
 
     /**
@@ -216,6 +291,92 @@ class PaycheckBillAssignmentService
         }
 
         $paycheck->assignedBills()->sync($billTemplateIds);
+    }
+
+    /**
+     * @return Collection<int, Collection<int, PlannedOccurrence>>
+     */
+    protected function occurrencesByTemplateId(
+        int $userId,
+        CarbonInterface $from,
+        CarbonInterface $until,
+    ): Collection {
+        return PlannedOccurrence::query()
+            ->where('user_id', $userId)
+            ->where('scheduled_date', '>=', $from)
+            ->where('scheduled_date', '<', $until)
+            ->whereNotNull('template_id')
+            ->with('bankTransaction:id,amount')
+            ->get()
+            ->groupBy(fn (PlannedOccurrence $occurrence) => (int) $occurrence->template_id);
+    }
+
+    /**
+     * @param  array{
+     *     amount: float,
+     *     date: CarbonInterface,
+     *     status: string,
+     *     bills: list<array<string, mixed>>,
+     *     bills_amount: float,
+     *     leftover: float
+     * }  $contribution
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    protected function cardPayload(
+        PlannedTemplate $paycheck,
+        array $contribution,
+        int $id,
+        array $extra = [],
+    ): array {
+        return [
+            'id' => $id,
+            'name' => $paycheck->name,
+            'expected_day' => (int) $paycheck->expected_day,
+            'expected_date' => $contribution['date']->toDateString(),
+            'amount' => $contribution['amount'],
+            'status' => $contribution['status'],
+            'bills' => array_map(function (array $bill): array {
+                unset($bill['occurrence_id'], $bill['bank_transaction_id']);
+
+                return $bill;
+            }, $contribution['bills']),
+            'bills_amount' => $contribution['bills_amount'],
+            'leftover' => $contribution['leftover'],
+            ...$extra,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $cards
+     * @return array{
+     *     paychecks: list<array<string, mixed>>,
+     *     leftover: float,
+     *     income: float,
+     *     bills: float
+     * }
+     */
+    protected function cardsTotals(array $cards, float $totalIncome, float $totalBills): array
+    {
+        return [
+            'paychecks' => $cards,
+            'income' => round($totalIncome, 2),
+            'bills' => round($totalBills, 2),
+            'leftover' => round($totalIncome - $totalBills, 2),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     paychecks: list<array<string, mixed>>,
+     *     leftover: float,
+     *     income: float,
+     *     bills: float
+     * }
+     */
+    protected function emptyCards(): array
+    {
+        return $this->cardsTotals([], 0.0, 0.0);
     }
 
     /**

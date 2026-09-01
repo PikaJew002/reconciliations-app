@@ -148,14 +148,14 @@ class PaycheckPlanningTest extends TestCase
         app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-03')
+            ->get('/?month=2026-03')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('summary.income', 3000)
-                ->where('summary.income_planned', 3000)
-                ->where('summary.income_received', 0)
-                ->where('summary.leftover_income', 3000));
+                ->where('month_report.summary.income', 3000)
+                ->where('month_report.summary.income_planned', 3000)
+                ->where('month_report.summary.income_received', 0)
+                ->where('month_report.summary.leftover_income', 3000));
 
         $account = Account::factory()->create();
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
@@ -174,15 +174,15 @@ class PaycheckPlanningTest extends TestCase
         app(PlannedOccurrenceMatcher::class)->matchForUser($user->id);
 
         $this->actingAs($user)
-            ->get('/?view=month&month=2026-03')
+            ->get('/?month=2026-03')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard/Index')
-                ->where('summary.income', 2987)
-                ->where('summary.income_planned', 0)
-                ->where('summary.income_received', 2987)
-                ->where('summary.leftover_income', 2987)
-                ->where('total_income', 2987));
+                ->where('month_report.summary.income', 2987)
+                ->where('month_report.summary.income_planned', 0)
+                ->where('month_report.summary.income_received', 2987)
+                ->where('month_report.summary.leftover_income', 2987)
+                ->where('month_report.total_income', 2987));
     }
 
     public function test_user_can_create_paycheck_plan_and_manually_link_a_credit(): void

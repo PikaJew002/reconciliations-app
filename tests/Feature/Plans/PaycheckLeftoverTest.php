@@ -556,8 +556,9 @@ class PaycheckLeftoverTest extends TestCase
                 ->where('paycheck_leftover.previous_paycheck_remaining', null)
                 ->where('leftover_origin.month', '2026-08')
                 ->where('leftover_origin.paycheck.date', '2026-08-01')
-                ->has('summary.leftover_income')
-                ->has('summary.vs_budget_difference'));
+                ->has('month_report.summary.leftover_income')
+                ->has('month_report.summary.vs_budget_difference')
+                ->has('year_report.summary.leftover_income'));
     }
 
     protected function actingAsLeftoverReporter(User $user): static
