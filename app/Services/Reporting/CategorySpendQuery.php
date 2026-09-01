@@ -326,6 +326,10 @@ class CategorySpendQuery
      *     classification: string,
      *     source: string,
      *     bank_transaction_id: ?int,
+     *     pending_spend_id: ?int,
+     *     order_id: ?int,
+     *     order_component_id: ?int,
+     *     reimbursement_group_id: ?int,
      *     name: ?string,
      *     category_id: ?int
      * }>
@@ -362,6 +366,10 @@ class CategorySpendQuery
                 'classification' => $transaction->classification,
                 'source' => 'bank',
                 'bank_transaction_id' => (int) $transaction->id,
+                'pending_spend_id' => null,
+                'order_id' => null,
+                'order_component_id' => null,
+                'reimbursement_group_id' => null,
                 'name' => $transaction->description,
                 'category_id' => $transaction->category_id !== null ? (int) $transaction->category_id : null,
             ];
@@ -385,6 +393,10 @@ class CategorySpendQuery
                 'classification' => $pending->classification,
                 'source' => 'pending',
                 'bank_transaction_id' => null,
+                'pending_spend_id' => (int) $pending->id,
+                'order_id' => null,
+                'order_component_id' => null,
+                'reimbursement_group_id' => null,
                 'name' => $pending->notes,
                 'category_id' => $pending->category_id !== null ? (int) $pending->category_id : null,
             ];
@@ -393,7 +405,7 @@ class CategorySpendQuery
         $orders = Order::query()
             ->where('user_id', $userId)
             ->tap(fn (Builder $query) => $this->applyOrderedAtRange($query, $from, $to))
-            ->with(['components:id,order_id,amount,category_id'])
+            ->with(['components:id,order_id,amount,category_id,description'])
             ->get(['id', 'ordered_at']);
 
         foreach ($orders as $order) {
@@ -408,7 +420,11 @@ class CategorySpendQuery
                     'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
                     'source' => 'order_component',
                     'bank_transaction_id' => null,
-                    'name' => null,
+                    'pending_spend_id' => null,
+                    'order_id' => (int) $order->id,
+                    'order_component_id' => (int) $component->id,
+                    'reimbursement_group_id' => null,
+                    'name' => $component->description,
                     'category_id' => $component->category_id !== null ? (int) $component->category_id : null,
                 ];
             }
@@ -445,6 +461,10 @@ class CategorySpendQuery
                 'classification' => $group->remainder_classification,
                 'source' => 'reimbursement',
                 'bank_transaction_id' => null,
+                'pending_spend_id' => null,
+                'order_id' => null,
+                'order_component_id' => null,
+                'reimbursement_group_id' => (int) $group->id,
                 'name' => $group->name,
                 'category_id' => $group->remainder_category_id !== null
                     ? (int) $group->remainder_category_id
