@@ -152,6 +152,64 @@ class ReviewLeftoverTest extends TestCase
                 ->where('windows.0.remaining', 1800));
     }
 
+    public function test_accounts_with_transactions_in_the_window_are_listed(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+
+        $julyChecking = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'July Checking',
+            'account_type' => Account::CHECKING,
+            'is_active' => true,
+        ]);
+        $augustCard = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'August Card',
+            'account_type' => Account::CREDIT_CARD,
+            'is_active' => true,
+        ]);
+        $augustChecking = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'August Checking',
+            'account_type' => Account::CHECKING,
+            'is_active' => true,
+        ]);
+        $idle = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Idle Savings',
+            'account_type' => Account::SAVINGS,
+            'is_active' => true,
+        ]);
+
+        $this->expenseOn($user, $julyChecking, 10, '2026-07-10');
+        $this->expenseOn($user, $augustCard, 20, '2026-08-08');
+        $this->expenseOn($user, $augustChecking, 30, '2026-08-20');
+        $this->expenseOn($user, $idle, 40, '2026-09-01');
+
+        $july = $this->occurrenceOn($paycheck, '2026-07-01');
+
+        $this->actingAs($user)
+            ->get('/review?occurrence='.$july->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Review/Leftover')
+                ->has('windows.0.accounts', 1)
+                ->where('windows.0.accounts.0.id', $julyChecking->id)
+                ->where('windows.0.accounts.0.name', 'July Checking')
+                ->where('windows.0.accounts.0.from', '2026-07-01')
+                ->where('windows.0.accounts.0.to', '2026-07-31')
+                ->has('windows.1.accounts', 2)
+                ->where('windows.1.accounts.0.id', $augustCard->id)
+                ->where('windows.1.accounts.0.name', 'August Card')
+                ->where('windows.1.accounts.0.from', '2026-08-01')
+                ->where('windows.1.accounts.0.to', '2026-08-31')
+                ->where('windows.1.accounts.1.id', $augustChecking->id)
+                ->where('windows.1.accounts.1.name', 'August Checking')
+                ->where('windows.1.accounts.1.from', '2026-08-01')
+                ->where('windows.1.accounts.1.to', '2026-08-31'));
+    }
+
     /**
      * @return array{0: User, 1: PlannedTemplate}
      */
@@ -266,14 +324,24 @@ class ReviewLeftoverTest extends TestCase
         string $postedAt,
         string $accountType = Account::CHECKING,
     ): BankTransaction {
+        $account = Account::factory()->create([
+            'account_type' => $accountType,
+        ]);
+
+        return $this->expenseOn($user, $account, $amount, $postedAt);
+    }
+
+    protected function expenseOn(
+        User $user,
+        Account $account,
+        float $amount,
+        string $postedAt,
+    ): BankTransaction {
         $dining = Category::query()
             ->where('user_id', $user->id)
             ->where('kind', Category::KIND_EXPENSE)
             ->first() ?? Category::factory()->for($user)->expense()->create(['name' => 'Dining']);
 
-        $account = Account::factory()->create([
-            'account_type' => $accountType,
-        ]);
         $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
 
         return BankTransaction::factory()->create([

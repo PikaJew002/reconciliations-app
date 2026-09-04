@@ -117,6 +117,7 @@ class PaycheckLeftoverService
             ->all();
 
         $from = $starts->first()['start'];
+        $accountActivity = $this->accountActivityFrom($userId, $from);
         $allocationEvents = $this->allocationEventsForUser($userId, $from);
         $paycheckTransactionIds = $incomeOccurrences
             ->pluck('bank_transaction_id')
@@ -243,6 +244,7 @@ class PaycheckLeftoverService
                     $plannedUnassigned,
                     $billTemplates,
                 ),
+                'accounts' => $this->accountsInWindow($accountActivity, $start, $end),
             ];
 
             $broughtForward = $remaining;
@@ -637,6 +639,79 @@ class PaycheckLeftoverService
         }
 
         return $bills;
+    }
+
+    /**
+     * @return array{
+     *     activity: Collection<int, array{account_id: string, date: string}>,
+     *     accounts: Collection<string, Account>
+     * }
+     */
+    protected function accountActivityFrom(int $userId, CarbonInterface $from): array
+    {
+        $activity = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('account_id')
+            ->whereNotNull('posted_at')
+            ->where('posted_at', '>=', $from->copy()->startOfDay())
+            ->get(['account_id', 'posted_at'])
+            ->map(fn (BankTransaction $transaction): array => [
+                'account_id' => (string) $transaction->account_id,
+                'date' => $transaction->posted_at->toDateString(),
+            ]);
+
+        $accountIds = $activity
+            ->pluck('account_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $accounts = $accountIds === []
+            ? collect()
+            : Account::query()
+                ->where('user_id', $userId)
+                ->whereIn('id', $accountIds)
+                ->orderBy('name')
+                ->orderBy('id')
+                ->get(['id', 'name'])
+                ->keyBy(fn (Account $account): string => (string) $account->id);
+
+        return [
+            'activity' => $activity,
+            'accounts' => $accounts,
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     activity: Collection<int, array{account_id: string, date: string}>,
+     *     accounts: Collection<string, Account>
+     * }  $accountActivity
+     * @return list<array{id: string, name: string, from: string, to: ?string}>
+     */
+    protected function accountsInWindow(
+        array $accountActivity,
+        CarbonInterface $start,
+        ?CarbonInterface $end,
+    ): array {
+        $ids = $accountActivity['activity']
+            ->filter(fn (array $row): bool => $this->dateInWindow($row['date'], $start, $end))
+            ->pluck('account_id')
+            ->unique();
+
+        $from = $start->toDateString();
+        $to = $end?->copy()->subDay()->toDateString();
+
+        return $accountActivity['accounts']
+            ->filter(fn (Account $account): bool => $ids->contains((string) $account->id))
+            ->map(fn (Account $account): array => [
+                'id' => $account->id,
+                'name' => $account->name,
+                'from' => $from,
+                'to' => $to,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

@@ -147,6 +147,22 @@
         });
     };
 
+    let accountTransactionsHref = (account) => {
+        let params = new URLSearchParams();
+
+        if (account.from) {
+            params.set('from', account.from);
+        }
+
+        if (account.to) {
+            params.set('to', account.to);
+        }
+
+        let query = params.toString();
+
+        return `/accounts/${account.id}${query ? `?${query}` : ''}`;
+    };
+
     let differenceClass = (value) => {
         if (value === null || value === undefined) {
             return 'text-neutral-600';
@@ -564,6 +580,35 @@
                                     <span class="tabular-nums">
                                         {{ formatMoney(-event.amount) }}
                                     </span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-medium">Accounts</p>
+                            <ul class="mt-2 space-y-1 text-sm">
+                                <li
+                                    v-if="
+                                        (selectedWindow.accounts ?? [])
+                                            .length === 0
+                                    "
+                                    class="text-neutral-500"
+                                >
+                                    None in this window
+                                </li>
+                                <li
+                                    v-for="account in selectedWindow.accounts ??
+                                        []"
+                                    :key="account.id"
+                                >
+                                    <a
+                                        :href="accountTransactionsHref(account)"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="text-neutral-700 underline"
+                                    >
+                                        {{ account.name }}
+                                    </a>
                                 </li>
                             </ul>
                         </div>
