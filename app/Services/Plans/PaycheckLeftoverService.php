@@ -7,6 +7,8 @@ use App\Models\BankTransaction;
 use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\ReimbursementGroup;
+use App\Models\ReimbursementGroupTransaction;
 use App\Models\TransactionAllocation;
 use App\Models\TransactionTransferLink;
 use App\Services\Reporting\CategorySpendQuery;
@@ -116,6 +118,14 @@ class PaycheckLeftoverService
 
         $from = $starts->first()['start'];
         $allocationEvents = $this->allocationEventsForUser($userId, $from);
+        $paycheckTransactionIds = $incomeOccurrences
+            ->pluck('bank_transaction_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $creditEvents = $this->creditEventsForUser($userId, $from, $paycheckTransactionIds);
         $spendEvents = collect($this->spendQuery->spendEventsForUser($userId, $from));
         $creditCardSpend = $this->creditCardSpendKeys($spendEvents);
         $spendEvents = $spendEvents
@@ -176,12 +186,17 @@ class PaycheckLeftoverService
                 fn (array $event) => $this->dateInWindow($event['date'], $start, $end),
             )->values();
 
+            $windowCredits = $creditEvents->filter(
+                fn (array $event) => $this->dateInWindow($event['date'], $start, $end),
+            )->values();
+
             $spent = round(
                 (float) $windowEvents->sum('amount')
                 + (float) $plannedUnassigned->sum(fn (PlannedOccurrence $bill) => (float) $bill->expected_amount),
                 2,
             );
             $allocated = round((float) $windowAllocations->sum('amount'), 2);
+            $credited = round((float) $windowCredits->sum('amount'), 2);
             $creditCardPayments = round(
                 (float) $windowAllocations
                     ->where('kind', self::ALLOCATION_CREDIT_CARD_PAYMENT)
@@ -195,7 +210,7 @@ class PaycheckLeftoverService
                 2,
             );
 
-            $paycheckRemaining = round($contribution['leftover'] - $spent - $allocated, 2);
+            $paycheckRemaining = round($contribution['leftover'] + $credited - $spent - $allocated, 2);
             $remaining = round($broughtForward + $paycheckRemaining, 2);
             $nextPaycheck = $next !== null
                 ? $this->paycheckPayload($paychecks->get($next['occurrence']->template_id), $next['occurrence'], $next['start'])
@@ -209,6 +224,8 @@ class PaycheckLeftoverService
                 'brought_forward' => $broughtForward,
                 'planned_leftover' => $contribution['leftover'],
                 'spent' => $spent,
+                'credited' => $credited,
+                'credits' => $windowCredits->all(),
                 'allocated' => $allocated,
                 'credit_card_payments' => $creditCardPayments,
                 'savings_transfers' => $savingsTransfers,
@@ -366,6 +383,87 @@ class PaycheckLeftoverService
         }
 
         return null;
+    }
+
+    /**
+     * Credits that are not a paycheck-plan deposit: other income, standalone
+     * reimbursement deposits, and closed over-reimbursement surplus. Grouped
+     * legs are excluded so only the closed surplus counts. Card-account
+     * credits do not add leftover (cash has not hit checking).
+     *
+     * @param  list<int>  $paycheckTransactionIds
+     * @return Collection<int, array{date: string, amount: float, kind: string, name: ?string}>
+     */
+    protected function creditEventsForUser(
+        int $userId,
+        CarbonInterface $from,
+        array $paycheckTransactionIds,
+    ): Collection {
+        $groupedTransactionIds = ReimbursementGroupTransaction::query()
+            ->whereHas('group', fn ($query) => $query->where('user_id', $userId))
+            ->pluck('bank_transaction_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $excludedBankIds = array_values(array_unique([
+            ...$paycheckTransactionIds,
+            ...$groupedTransactionIds,
+        ]));
+
+        $events = [];
+
+        $credits = BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('amount', '>', 0)
+            ->whereIn('classification', [
+                BankTransaction::CLASSIFICATION_INCOME,
+                BankTransaction::CLASSIFICATION_REIMBURSEMENT,
+            ])
+            ->whereNotNull('posted_at')
+            ->where('posted_at', '>=', $from)
+            ->when(
+                $excludedBankIds !== [],
+                fn ($query) => $query->whereNotIn('id', $excludedBankIds),
+            )
+            ->whereHas(
+                'account',
+                fn ($query) => $query->where('account_type', '!=', Account::CREDIT_CARD),
+            )
+            ->get(['id', 'posted_at', 'amount', 'description', 'classification']);
+
+        foreach ($credits as $transaction) {
+            $events[] = [
+                'date' => $transaction->posted_at->toDateString(),
+                'amount' => round((float) $transaction->amount, 2),
+                'kind' => $transaction->classification,
+                'name' => $transaction->description,
+            ];
+        }
+
+        $closedGroups = ReimbursementGroup::query()
+            ->where('user_id', $userId)
+            ->where('status', ReimbursementGroup::STATUS_CLOSED)
+            ->whereNotNull('closed_at')
+            ->where('closed_at', '>=', $from)
+            ->with('legs')
+            ->get();
+
+        foreach ($closedGroups as $group) {
+            $net = $group->net();
+
+            if ($net > -0.01) {
+                continue;
+            }
+
+            $events[] = [
+                'date' => $group->closed_at->toDateString(),
+                'amount' => round(abs($net), 2),
+                'kind' => 'reimbursement_surplus',
+                'name' => $group->name,
+            ];
+        }
+
+        return collect($events)->values();
     }
 
     /**
