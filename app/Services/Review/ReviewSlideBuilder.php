@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Models\PendingSpend;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\ReimbursementGroup;
 use App\Models\TransactionAllocation;
 use App\Services\Reporting\CategorySpendQuery;
 use Carbon\CarbonInterface;
@@ -18,6 +19,14 @@ class ReviewSlideBuilder
     public const PASS_DEFAULT = 'default';
 
     public const PASS_ALL = 'all';
+
+    /**
+     * Order-level fees. They stay in week spend and the order total,
+     * but they are not their own Sunday slides.
+     *
+     * @var list<string>
+     */
+    public const HIDDEN_COMPONENT_TYPES = ['tax', 'delivery', 'tip'];
 
     public function __construct(
         protected CategorySpendQuery $spendQuery,
@@ -47,6 +56,7 @@ class ReviewSlideBuilder
         $pendingById = $this->pendingById($userId, $events);
         $ordersById = $this->ordersById($userId, $events);
         $banksById = $this->banksById($userId, $events);
+        $groupsById = $this->groupsById($userId, $events);
 
         $expectedBillEvents = [];
         $walkEvents = [];
@@ -80,14 +90,10 @@ class ReviewSlideBuilder
             $pendingById,
             $ordersById,
             $banksById,
+            $groupsById,
         );
 
-        $weekSpend = round(
-            (float) collect($walkSlides)
-                ->reject(fn (array $slide): bool => $slide['kind'] === 'order')
-                ->sum('amount'),
-            2,
-        );
+        $weekSpend = round((float) collect($walkEvents)->sum('amount'), 2);
 
         $slides = $pass === self::PASS_ALL && $expectedBillsSlide !== null
             ? [$expectedBillsSlide, ...$walkSlides]
@@ -106,6 +112,7 @@ class ReviewSlideBuilder
      * @param  Collection<int, PendingSpend>  $pendingById
      * @param  Collection<int, Order>  $ordersById
      * @param  Collection<int, BankTransaction>  $banksById
+     * @param  Collection<int, ReimbursementGroup>  $groupsById
      * @return list<array<string, mixed>>
      */
     protected function walkSlides(
@@ -114,6 +121,7 @@ class ReviewSlideBuilder
         Collection $pendingById,
         Collection $ordersById,
         Collection $banksById,
+        Collection $groupsById,
     ): array {
         $orderEvents = [];
         $otherEvents = [];
@@ -131,7 +139,7 @@ class ReviewSlideBuilder
         $groups = [];
 
         foreach ($otherEvents as $event) {
-            $slide = $this->eventSlide($event, $categories, $pendingById, $banksById);
+            $slide = $this->eventSlide($event, $categories, $pendingById, $banksById, $groupsById);
 
             if ($slide === null) {
                 continue;
@@ -198,10 +206,18 @@ class ReviewSlideBuilder
         ?Order $order,
         Collection $categories,
     ): array {
+        $visible = array_values(array_filter(
+            $components,
+            fn (array $event): bool => ! in_array(
+                $event['component_type'] ?? null,
+                self::HIDDEN_COMPONENT_TYPES,
+                true,
+            ),
+        ));
         $amount = round((float) collect($components)->sum('amount'), 2);
         $date = $components[0]['date'];
         $merchantName = $order?->merchant?->name ?? 'Order';
-        $uncategorized = collect($components)->contains(
+        $uncategorized = collect($visible)->contains(
             fn (array $event): bool => $event['category_id'] === null,
         );
 
@@ -225,7 +241,7 @@ class ReviewSlideBuilder
 
         $children = [];
 
-        foreach ($components as $event) {
+        foreach ($visible as $event) {
             $componentId = (int) $event['order_component_id'];
             $category = $this->categoryPayload($categories, $event['category_id']);
 
@@ -256,6 +272,7 @@ class ReviewSlideBuilder
      * @param  Collection<int, Category>  $categories
      * @param  Collection<int, PendingSpend>  $pendingById
      * @param  Collection<int, BankTransaction>  $banksById
+     * @param  Collection<int, ReimbursementGroup>  $groupsById
      * @return array<string, mixed>|null
      */
     protected function eventSlide(
@@ -263,6 +280,7 @@ class ReviewSlideBuilder
         Collection $categories,
         Collection $pendingById,
         Collection $banksById,
+        Collection $groupsById,
     ): ?array {
         $category = $this->categoryPayload($categories, $event['category_id'] ?? null);
 
@@ -318,6 +336,12 @@ class ReviewSlideBuilder
 
         if ($event['source'] === 'reimbursement') {
             $groupId = (int) $event['reimbursement_group_id'];
+            $group = $groupsById->get($groupId);
+            $expenseTotal = $group?->expenseTotal() ?? 0.0;
+            $reimbursementTotal = $group?->reimbursementTotal() ?? 0.0;
+            $net = $group !== null
+                ? $group->net()
+                : round((float) $event['amount'], 2);
 
             return $this->slide(
                 id: 'reimbursement:'.$groupId,
@@ -334,7 +358,13 @@ class ReviewSlideBuilder
                 categorizable: false,
                 allowedKinds: [],
                 sourceId: $groupId,
-                badge: 'Reimbursement',
+                badge: 'Reimbursement remainder',
+                extra: [
+                    'expense_total' => $expenseTotal,
+                    'reimbursement_total' => $reimbursementTotal,
+                    'net' => $net,
+                    'items' => $this->reimbursementItems($group),
+                ],
             );
         }
 
@@ -604,5 +634,55 @@ class ReviewSlideBuilder
             ->with('merchant:id,name')
             ->get()
             ->keyBy('id');
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $events
+     * @return Collection<int, ReimbursementGroup>
+     */
+    protected function groupsById(int $userId, array $events): Collection
+    {
+        $ids = collect($events)
+            ->pluck('reimbursement_group_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return ReimbursementGroup::query()
+            ->where('user_id', $userId)
+            ->whereIn('id', $ids)
+            ->with(['legs.bankTransaction.merchant:id,name'])
+            ->get()
+            ->keyBy('id');
+    }
+
+    /**
+     * @return list<array{role: string, name: string, amount: float}>
+     */
+    protected function reimbursementItems(?ReimbursementGroup $group): array
+    {
+        if ($group === null) {
+            return [];
+        }
+
+        return $group->legs
+            ->map(function ($leg): array {
+                $transaction = $leg->bankTransaction;
+
+                return [
+                    'role' => $leg->role,
+                    'name' => $transaction?->merchant?->name
+                        ?: ($transaction?->description ?: 'Transaction'),
+                    'amount' => round((float) $leg->amount, 2),
+                ];
+            })
+            ->values()
+            ->all();
     }
 }

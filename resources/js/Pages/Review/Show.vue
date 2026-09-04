@@ -655,6 +655,55 @@
                     </li>
                 </ul>
 
+                <div
+                    v-else-if="currentSlide.kind === 'reimbursement'"
+                    class="max-w-3xl space-y-5"
+                >
+                    <p class="text-2xl">
+                        Spent
+                        <span class="tabular-nums">{{
+                            formatMoney(currentSlide.expense_total)
+                        }}</span>
+                        − back
+                        <span class="tabular-nums">{{
+                            formatMoney(currentSlide.reimbursement_total)
+                        }}</span>
+                        =
+                        <span class="tabular-nums font-semibold">{{
+                            formatMoney(currentSlide.net)
+                        }}</span>
+                        leftover
+                    </p>
+                    <p
+                        v-if="currentSlide.category"
+                        class="text-xl text-mute"
+                    >
+                        Booked to {{ currentSlide.category.name }}
+                    </p>
+                    <ul
+                        v-if="currentSlide.items?.length"
+                        class="space-y-2 text-2xl"
+                    >
+                        <li
+                            v-for="(leg, index) in currentSlide.items"
+                            :key="`${leg.role}-${leg.name}-${index}`"
+                            class="flex items-baseline justify-between gap-6"
+                        >
+                            <span>
+                                <span class="text-mute">{{
+                                    leg.role === 'expense'
+                                        ? 'Spent'
+                                        : 'Back'
+                                }}</span>
+                                {{ leg.name }}
+                            </span>
+                            <span class="tabular-nums">{{
+                                formatMoney(leg.amount)
+                            }}</span>
+                        </li>
+                    </ul>
+                </div>
+
                 <button
                     v-if="currentSlide.categorizable"
                     type="button"

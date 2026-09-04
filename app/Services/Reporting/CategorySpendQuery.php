@@ -329,6 +329,7 @@ class CategorySpendQuery
      *     pending_spend_id: ?int,
      *     order_id: ?int,
      *     order_component_id: ?int,
+     *     component_type: ?string,
      *     reimbursement_group_id: ?int,
      *     name: ?string,
      *     category_id: ?int
@@ -405,7 +406,7 @@ class CategorySpendQuery
         $orders = Order::query()
             ->where('user_id', $userId)
             ->tap(fn (Builder $query) => $this->applyOrderedAtRange($query, $from, $to))
-            ->with(['components:id,order_id,amount,category_id,description'])
+            ->with(['components:id,order_id,amount,category_id,description,type'])
             ->get(['id', 'ordered_at']);
 
         foreach ($orders as $order) {
@@ -423,6 +424,7 @@ class CategorySpendQuery
                     'pending_spend_id' => null,
                     'order_id' => (int) $order->id,
                     'order_component_id' => (int) $component->id,
+                    'component_type' => $component->type,
                     'reimbursement_group_id' => null,
                     'name' => $component->description,
                     'category_id' => $component->category_id !== null ? (int) $component->category_id : null,
