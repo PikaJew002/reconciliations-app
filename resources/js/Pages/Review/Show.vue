@@ -1,6 +1,7 @@
 <script setup>
     import ReviewLayout from '../../Layouts/ReviewLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
+    import ReviewShell from '../../Components/Review/ReviewShell.vue';
+    import { router } from '@inertiajs/vue3';
     import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
     defineOptions({ layout: ReviewLayout });
@@ -150,7 +151,7 @@
             item.value = overrides.item;
         }
 
-        router.get('/review', query(overrides), {
+        router.get('/review/sunday', query(overrides), {
             preserveState: true,
             preserveScroll: true,
             replace,
@@ -228,7 +229,7 @@
         }
 
         router.get(
-            '/review',
+            '/review/sunday',
             query({ week, act: 'open', item: undefined }),
             { preserveState: false, replace: false },
         );
@@ -236,7 +237,7 @@
 
     let setPass = (pass) => {
         router.get(
-            '/review',
+            '/review/sunday',
             query({ pass, act: act.value === 'walk' ? 'open' : act.value }),
             { preserveState: false },
         );
@@ -271,7 +272,7 @@
         gridOpen.value = false;
 
         router.post(
-            '/review/categorize',
+            '/review/sunday/categorize',
             {
                 type: slide.kind,
                 id: slide.source_id,
@@ -295,7 +296,7 @@
         lastChange.value = null;
 
         router.post(
-            '/review/categorize',
+            '/review/sunday/categorize',
             {
                 type: change.type,
                 id: change.id,
@@ -447,6 +448,7 @@
 
 <template>
     <div class="flex min-h-screen flex-col px-10 py-8 lg:px-16 lg:py-10">
+        <ReviewShell active-tab="sunday">
         <header class="flex flex-wrap items-baseline justify-between gap-4">
             <div>
                 <p class="text-sm uppercase tracking-wide text-mute">Weekly review</p>
@@ -478,9 +480,6 @@
                 >
                     Close
                 </button>
-                <Link href="/" class="rounded px-2 py-1 text-mute hover:bg-brand-wash hover:text-ink">
-                    Exit
-                </Link>
             </div>
         </header>
 
@@ -814,6 +813,7 @@
             </p>
             <p>{{ week.label }}</p>
         </footer>
+        </ReviewShell>
 
         <div
             v-if="gridOpen"

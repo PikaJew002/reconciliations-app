@@ -51,7 +51,7 @@ class ReviewCategorizationTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post('/review/categorize', [
+            ->post('/review/sunday/categorize', [
                 'type' => 'bank',
                 'id' => $transaction->id,
                 'category_id' => $groceries->id,
@@ -60,7 +60,7 @@ class ReviewCategorizationTest extends TestCase
                 'act' => 'walk',
                 'pass' => 'default',
             ])
-            ->assertRedirect(route('review', [
+            ->assertRedirect(route('review.sunday', [
                 'week' => '2026-08-23',
                 'item' => 'bank:'.$transaction->id,
                 'act' => 'walk',
@@ -86,7 +86,7 @@ class ReviewCategorizationTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post('/review/categorize', [
+            ->post('/review/sunday/categorize', [
                 'type' => 'pending',
                 'id' => $pending->id,
                 'category_id' => $groceries->id,
@@ -124,7 +124,7 @@ class ReviewCategorizationTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post('/review/categorize', [
+            ->post('/review/sunday/categorize', [
                 'type' => 'order_component',
                 'id' => $component->id,
                 'category_id' => $groceries->id,
@@ -155,7 +155,7 @@ class ReviewCategorizationTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post('/review/categorize', [
+            ->post('/review/sunday/categorize', [
                 'type' => 'bank',
                 'id' => $transaction->id,
                 'category_id' => null,
@@ -189,7 +189,7 @@ class ReviewCategorizationTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post('/review/categorize', [
+            ->post('/review/sunday/categorize', [
                 'type' => 'bank',
                 'id' => $transaction->id,
                 'category_id' => $mine->id,

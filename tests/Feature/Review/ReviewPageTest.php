@@ -35,6 +35,37 @@ class ReviewPageTest extends TestCase
     {
         $this->get('/review')
             ->assertRedirect('/login');
+
+        $this->get('/review/sunday')
+            ->assertRedirect('/login');
+    }
+
+    public function test_review_opens_leftover_without_sunday_query_params(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get('/review')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Review/Leftover')
+                ->where('windows', [])
+                ->where('selected_occurrence_id', null)
+                ->where('leftover_origin', null));
+    }
+
+    public function test_sunday_query_on_review_redirects_to_sunday(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get('/review?act=walk&item=bank:1&week=2026-08-23&pass=default')
+            ->assertRedirect(route('review.sunday', [
+                'week' => '2026-08-23',
+                'act' => 'walk',
+                'item' => 'bank:1',
+                'pass' => 'default',
+            ]));
     }
 
     public function test_review_opens_the_last_complete_week_with_walk_slides(): void
@@ -74,7 +105,7 @@ class ReviewPageTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/review')
+            ->get('/review/sunday')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Review/Show')
@@ -119,9 +150,10 @@ class ReviewPageTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get('/review?act=walk&item=pending:'.$lunch->id)
+            ->get('/review/sunday?act=walk&item=pending:'.$lunch->id)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
+                ->component('Review/Show')
                 ->where('act', 'walk')
                 ->where('item', 'pending:'.$lunch->id));
     }

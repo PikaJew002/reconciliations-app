@@ -259,6 +259,9 @@
                     {{ formatMoney(unassignedBillsAmount) }} of unplanned bills
                     in this window
                 </p>
+                <p class="text-sm text-neutral-600">
+                    <Link href="/review" class="underline">See all paychecks</Link>
+                </p>
             </div>
 
             <p v-else class="text-sm text-neutral-600">

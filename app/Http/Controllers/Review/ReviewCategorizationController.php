@@ -50,7 +50,7 @@ class ReviewCategorizationController extends Controller
             'order_component' => $this->categorizeOrderComponent($userId, (int) $validated['id'], $category),
         };
 
-        return redirect()->route('review', [
+        return redirect()->route('review.sunday', [
             'week' => $validated['week'] ?? null,
             'item' => $validated['item'] ?? null,
             'act' => $validated['act'] ?? 'walk',
