@@ -62,11 +62,12 @@ class AccountController extends Controller
     {
         $this->authorize('view', $account);
 
-        $data = $browse->show(
-            $request->user()->id,
-            $account,
-            $request->string('q')->toString() ?: null,
-        );
+        $data = $browse->show($request->user()->id, $account, [
+            'q' => $request->query('q'),
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
+            'page' => $request->integer('page') ?: 1,
+        ]);
 
         return Inertia::render('Accounts/Show', $data);
     }

@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { Link, router } from '@inertiajs/vue3';
-    import { ref, watch } from 'vue';
+    import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -14,8 +14,8 @@
             type: Array,
             required: true,
         },
-        transactionsTruncated: {
-            type: Boolean,
+        pagination: {
+            type: Object,
             required: true,
         },
         filters: {
@@ -25,6 +25,8 @@
     });
 
     let search = ref(props.filters.q ?? '');
+    let fromDate = ref(props.filters.from ?? '');
+    let toDate = ref(props.filters.to ?? '');
 
     watch(
         () => props.filters.q,
@@ -33,15 +35,96 @@
         },
     );
 
-    let submitSearch = () => {
+    watch(
+        () => props.filters.from,
+        (value) => {
+            fromDate.value = value ?? '';
+        },
+    );
+
+    watch(
+        () => props.filters.to,
+        (value) => {
+            toDate.value = value ?? '';
+        },
+    );
+
+    let hasFilters = computed(
+        () =>
+            Boolean(props.filters.q) ||
+            Boolean(props.filters.from) ||
+            Boolean(props.filters.to),
+    );
+
+    let queryParams = (overrides = {}) => {
+        let query = {
+            q: search.value || undefined,
+            from: fromDate.value || undefined,
+            to: toDate.value || undefined,
+            ...overrides,
+        };
+
+        Object.keys(query).forEach((key) => {
+            if (
+                query[key] === '' ||
+                query[key] === null ||
+                query[key] === undefined
+            ) {
+                delete query[key];
+            }
+        });
+
+        if (query.page === 1) {
+            delete query.page;
+        }
+
+        return query;
+    };
+
+    let applyFilters = () => {
+        router.get(`/accounts/${props.account.id}`, queryParams(), {
+            preserveState: true,
+            replace: true,
+        });
+    };
+
+    let clearFilters = () => {
+        search.value = '';
+        fromDate.value = '';
+        toDate.value = '';
+
         router.get(
             `/accounts/${props.account.id}`,
-            { q: search.value || undefined },
+            {},
             {
                 preserveState: true,
                 replace: true,
             },
         );
+    };
+
+    let pageHref = (page) => {
+        let params = new URLSearchParams();
+
+        if (props.filters.q) {
+            params.set('q', props.filters.q);
+        }
+
+        if (props.filters.from) {
+            params.set('from', props.filters.from);
+        }
+
+        if (props.filters.to) {
+            params.set('to', props.filters.to);
+        }
+
+        if (page > 1) {
+            params.set('page', String(page));
+        }
+
+        let qs = params.toString();
+
+        return `/accounts/${props.account.id}${qs ? `?${qs}` : ''}`;
     };
 
     let formatDate = (value) => value || '—';
@@ -229,24 +312,61 @@
             </p>
             <p class="mt-1 text-neutral-600">
                 {{ account.transaction_count }} transactions
+                <template v-if="hasFilters">
+                    · {{ pagination.total }} match these filters
+                </template>
             </p>
         </div>
 
-        <form class="flex flex-wrap gap-2" @submit.prevent="submitSearch">
-            <input
-                v-model="search"
-                type="search"
-                placeholder="Search description or amount"
-                class="min-w-64 flex-1 rounded border px-3 text-sm"
-            />
+        <form
+            class="flex flex-wrap items-end gap-2"
+            @submit.prevent="applyFilters"
+        >
+            <label class="min-w-64 flex-1 text-sm">
+                <span class="mb-1 block text-neutral-600">Search</span>
+                <input
+                    v-model="search"
+                    type="search"
+                    placeholder="Description or amount"
+                    class="w-full rounded border px-3 text-sm"
+                />
+            </label>
+            <label class="text-sm">
+                <span class="mb-1 block text-neutral-600">From</span>
+                <input
+                    v-model="fromDate"
+                    type="date"
+                    class="rounded border px-3 text-sm"
+                    :min="account.min_posted_at ?? undefined"
+                    :max="toDate || account.max_posted_at || undefined"
+                />
+            </label>
+            <label class="text-sm">
+                <span class="mb-1 block text-neutral-600">To</span>
+                <input
+                    v-model="toDate"
+                    type="date"
+                    class="rounded border px-3 text-sm"
+                    :min="fromDate || account.min_posted_at || undefined"
+                    :max="account.max_posted_at ?? undefined"
+                />
+            </label>
             <button type="submit" class="btn rounded border px-4 text-sm">
-                Search
+                Apply
+            </button>
+            <button
+                v-if="hasFilters"
+                type="button"
+                class="btn rounded border px-4 text-sm text-neutral-700"
+                @click="clearFilters"
+            >
+                Clear
             </button>
         </form>
 
         <div v-if="transactions.length === 0" class="text-sm text-neutral-600">
-            <template v-if="filters.q">
-                No transactions match this search.
+            <template v-if="hasFilters">
+                No transactions match these filters.
             </template>
             <template v-else> No transactions imported yet. </template>
         </div>
@@ -318,8 +438,54 @@
             </li>
         </ul>
 
-        <p v-if="transactionsTruncated" class="text-sm text-neutral-600">
-            Showing the newest 50 matching transactions.
-        </p>
+        <div
+            v-if="pagination.total > 0"
+            class="flex flex-wrap items-center justify-between gap-3 text-sm"
+        >
+            <p class="text-neutral-600">
+                Showing {{ pagination.first_item }}–{{ pagination.last_item }}
+                of {{ pagination.total }}
+            </p>
+            <nav
+                v-if="pagination.last_page > 1"
+                class="flex gap-2"
+                aria-label="Pagination"
+            >
+                <Link
+                    :href="pageHref(pagination.current_page - 1)"
+                    class="btn rounded border px-4 text-sm"
+                    :class="{
+                        'pointer-events-none opacity-40':
+                            pagination.current_page <= 1,
+                    }"
+                    :tabindex="pagination.current_page <= 1 ? -1 : undefined"
+                    :aria-disabled="pagination.current_page <= 1"
+                    preserve-scroll
+                    preserve-state
+                >
+                    Previous
+                </Link>
+                <Link
+                    :href="pageHref(pagination.current_page + 1)"
+                    class="btn rounded border px-4 text-sm"
+                    :class="{
+                        'pointer-events-none opacity-40':
+                            pagination.current_page >= pagination.last_page,
+                    }"
+                    :tabindex="
+                        pagination.current_page >= pagination.last_page
+                            ? -1
+                            : undefined
+                    "
+                    :aria-disabled="
+                        pagination.current_page >= pagination.last_page
+                    "
+                    preserve-scroll
+                    preserve-state
+                >
+                    Next
+                </Link>
+            </nav>
+        </div>
     </div>
 </template>

@@ -6,7 +6,6 @@ use App\Models\Account;
 use App\Models\BankTransaction;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 
 class AccountBrowseService
 {
@@ -81,16 +80,27 @@ class AccountBrowseService
     }
 
     /**
+     * @param  array{q?: ?string, from?: ?string, to?: ?string, page?: int}  $filters
      * @return array{
      *     account: array<string, mixed>,
      *     transactions: list<array<string, mixed>>,
-     *     transactionsTruncated: bool,
-     *     filters: array{q: string}
+     *     pagination: array{
+     *         current_page: int,
+     *         last_page: int,
+     *         per_page: int,
+     *         total: int,
+     *         first_item: ?int,
+     *         last_item: ?int
+     *     },
+     *     filters: array{q: string, from: string, to: string}
      * }
      */
-    public function show(int $userId, Account $account, ?string $q = null): array
+    public function show(int $userId, Account $account, array $filters = []): array
     {
-        $q = trim((string) $q);
+        $q = trim((string) ($filters['q'] ?? ''));
+        $from = $this->dateFilter($filters['from'] ?? null);
+        $to = $this->dateFilter($filters['to'] ?? null);
+        $page = max(1, (int) ($filters['page'] ?? 1));
 
         $coverage = BankTransaction::query()
             ->where('user_id', $userId)
@@ -132,15 +142,15 @@ class AccountBrowseService
                         });
                 });
             })
+            ->when($from !== null, fn (Builder $query) => $query->whereDate('posted_at', '>=', $from))
+            ->when($to !== null, fn (Builder $query) => $query->whereDate('posted_at', '<=', $to))
             ->orderByDesc('posted_at')
             ->orderByDesc('id');
 
-        $totalMatching = (clone $transactionsQuery)->count();
-
-        /** @var Collection<int, BankTransaction> $transactions */
-        $transactions = $transactionsQuery
-            ->limit($this->listLimit)
-            ->get();
+        $paginator = $transactionsQuery->paginate(
+            perPage: $this->listLimit,
+            page: $page,
+        );
 
         return [
             'account' => [
@@ -155,7 +165,7 @@ class AccountBrowseService
                 'max_posted_at' => $max,
                 'coverage_span_days' => $this->spanDays($min, $max),
             ],
-            'transactions' => $transactions->map(fn (BankTransaction $transaction): array => [
+            'transactions' => $paginator->getCollection()->map(fn (BankTransaction $transaction): array => [
                 'id' => $transaction->id,
                 'posted_at' => optional($transaction->posted_at)?->toDateString(),
                 'description' => $transaction->description,
@@ -175,9 +185,18 @@ class AccountBrowseService
                 ] : null,
                 'venmo_summary' => $transaction->venmoSummary(),
             ])->values()->all(),
-            'transactionsTruncated' => $totalMatching > $this->listLimit,
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'first_item' => $paginator->firstItem(),
+                'last_item' => $paginator->lastItem(),
+            ],
             'filters' => [
                 'q' => $q,
+                'from' => $from ?? '',
+                'to' => $to ?? '',
             ],
         ];
     }
@@ -214,5 +233,26 @@ class AccountBrowseService
         }
 
         return (int) abs(Carbon::parse($min)->startOfDay()->diffInDays(Carbon::parse($max)->startOfDay(), false));
+    }
+
+    protected function dateFilter(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return null;
+        }
+
+        try {
+            $date = Carbon::createFromFormat('Y-m-d', $value);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($date === false || $date->format('Y-m-d') !== $value) {
+            return null;
+        }
+
+        return $date->toDateString();
     }
 }

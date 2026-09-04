@@ -171,7 +171,11 @@ class AccountBrowseTest extends TestCase
                 ->component('Accounts/Show')
                 ->where('account.id', $account->id)
                 ->where('account.transaction_count', 0)
-                ->has('transactions', 0));
+                ->has('transactions', 0)
+                ->where('pagination.total', 0)
+                ->where('pagination.current_page', 1)
+                ->where('filters.from', '')
+                ->where('filters.to', ''));
     }
 
     public function test_show_forbids_other_users_accounts(): void
@@ -242,7 +246,11 @@ class AccountBrowseTest extends TestCase
                 ->where('transactions.0.description', 'TARGET STORE')
                 ->where('transactions.0.classification', BankTransaction::CLASSIFICATION_EXPENSE)
                 ->where('transactions.0.classification_source', BankTransaction::CLASSIFICATION_SOURCE_MANUAL)
-                ->where('transactionsTruncated', false));
+                ->where('pagination.total', 2)
+                ->where('pagination.current_page', 1)
+                ->where('pagination.last_page', 1)
+                ->where('pagination.per_page', 50)
+                ->missing('transactionsTruncated'));
     }
 
     public function test_show_search_filters_transactions(): void
@@ -276,7 +284,244 @@ class AccountBrowseTest extends TestCase
                 ->component('Accounts/Show')
                 ->has('transactions', 1)
                 ->where('transactions.0.description', 'WALMART.COM ORDER')
-                ->where('filters.q', 'WALMART'));
+                ->where('filters.q', 'WALMART')
+                ->where('filters.from', '')
+                ->where('filters.to', ''));
+    }
+
+    public function test_show_date_filters_are_inclusive_and_echoed_in_props(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-06-30',
+            'description' => 'JUNE',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-07-01',
+            'description' => 'JULY START',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-07-31',
+            'description' => 'JULY END',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-08-01',
+            'description' => 'AUGUST',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', [
+                'account' => $account,
+                'from' => '2026-07-01',
+                'to' => '2026-07-31',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Accounts/Show')
+                ->has('transactions', 2)
+                ->where('transactions.0.description', 'JULY END')
+                ->where('transactions.1.description', 'JULY START')
+                ->where('pagination.total', 2)
+                ->where('filters.from', '2026-07-01')
+                ->where('filters.to', '2026-07-31')
+                ->where('filters.q', ''));
+    }
+
+    public function test_show_from_and_to_can_be_used_independently(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-06-01',
+            'description' => 'JUNE',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-07-15',
+            'description' => 'JULY',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-08-20',
+            'description' => 'AUGUST',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', ['account' => $account, 'from' => '2026-07-15']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 2)
+                ->where('transactions.0.description', 'AUGUST')
+                ->where('transactions.1.description', 'JULY')
+                ->where('filters.from', '2026-07-15')
+                ->where('filters.to', ''));
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', ['account' => $account, 'to' => '2026-07-15']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 2)
+                ->where('transactions.0.description', 'JULY')
+                ->where('transactions.1.description', 'JUNE')
+                ->where('filters.from', '')
+                ->where('filters.to', '2026-07-15'));
+    }
+
+    public function test_show_search_and_date_filters_combine(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-07-10',
+            'description' => 'WALMART JULY',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-08-10',
+            'description' => 'WALMART AUGUST',
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-07-12',
+            'description' => 'TARGET JULY',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', [
+                'account' => $account,
+                'q' => 'WALMART',
+                'from' => '2026-07-01',
+                'to' => '2026-07-31',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 1)
+                ->where('transactions.0.description', 'WALMART JULY')
+                ->where('filters.q', 'WALMART')
+                ->where('filters.from', '2026-07-01')
+                ->where('filters.to', '2026-07-31'));
+    }
+
+    public function test_show_ignores_invalid_date_filters(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-07-15',
+            'description' => 'JULY',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', [
+                'account' => $account,
+                'from' => 'not-a-date',
+                'to' => '2026-13-40',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 1)
+                ->where('filters.from', '')
+                ->where('filters.to', ''));
+    }
+
+    public function test_show_paginates_transactions_and_preserves_filters(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        foreach (range(0, 50) as $offset) {
+            BankTransaction::factory()->create([
+                'user_id' => $user->id,
+                'account_id' => $account->id,
+                'import_batch_id' => $batch->id,
+                'posted_at' => now()->setDate(2026, 1, 1)->addDays($offset)->toDateString(),
+                'description' => "TX {$offset}",
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', [
+                'account' => $account,
+                'from' => '2026-01-01',
+                'to' => '2026-02-28',
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 50)
+                ->where('transactions.0.description', 'TX 50')
+                ->where('pagination.current_page', 1)
+                ->where('pagination.last_page', 2)
+                ->where('pagination.total', 51)
+                ->where('pagination.per_page', 50)
+                ->where('pagination.first_item', 1)
+                ->where('pagination.last_item', 50)
+                ->where('filters.from', '2026-01-01')
+                ->where('filters.to', '2026-02-28'));
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', [
+                'account' => $account,
+                'from' => '2026-01-01',
+                'to' => '2026-02-28',
+                'page' => 2,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('transactions', 1)
+                ->where('transactions.0.description', 'TX 0')
+                ->where('pagination.current_page', 2)
+                ->where('pagination.last_page', 2)
+                ->where('pagination.total', 51)
+                ->where('pagination.first_item', 51)
+                ->where('pagination.last_item', 51)
+                ->where('filters.from', '2026-01-01')
+                ->where('filters.to', '2026-02-28'));
     }
 
     public function test_show_includes_venmo_summary_and_search_matches_statement_note(): void
