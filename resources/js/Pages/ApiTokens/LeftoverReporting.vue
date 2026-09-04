@@ -79,8 +79,10 @@
                 <h2 class="text-lg font-semibold">Widget request</h2>
                 <p class="text-sm text-neutral-600">
                     <code>GET {{ endpoint }}</code>
-                    returns leftover to spend this paycheck as a dollar string,
-                    days until the next paycheck, and that date. All are
+                    returns leftover to spend until the next paycheck as a
+                    dollar string, days until the next paycheck, and that date.
+                    Leftover includes the starting carry-over and each prior
+                    paycheck’s remaining. All are
                     <code>null</code>
                     when there are no paycheck plans.
                 </p>

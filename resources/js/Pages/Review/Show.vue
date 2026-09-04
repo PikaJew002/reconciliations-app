@@ -110,10 +110,6 @@
             return null;
         }
 
-        if (props.paycheck_leftover.paycheck_remaining !== undefined) {
-            return Number(props.paycheck_leftover.paycheck_remaining);
-        }
-
         return Number(props.paycheck_leftover.remaining);
     });
 

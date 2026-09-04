@@ -105,17 +105,7 @@
             return null;
         }
 
-        if (props.paycheck_leftover.paycheck_remaining !== undefined) {
-            return Number(props.paycheck_leftover.paycheck_remaining);
-        }
-
         return Number(props.paycheck_leftover.remaining);
-    });
-
-    let previousPaycheckRemaining = computed(() => {
-        let value = props.paycheck_leftover?.previous_paycheck_remaining;
-
-        return value === null || value === undefined ? null : Number(value);
     });
 
     let runningLeftover = computed(() => {
@@ -223,7 +213,9 @@
                     {{ formatMoney(-paycheckRemaining) }} into the next paycheck
                 </p>
                 <p class="text-sm text-neutral-600">
-                    {{ paycheck_leftover.paycheck.name }} after bills
+                    Brought forward
+                    {{ formatMoney(paycheck_leftover.brought_forward) }}
+                    + {{ paycheck_leftover.paycheck.name }} after bills
                     {{ formatMoney(paycheck_leftover.planned_leftover) }}
                     − spent {{ formatMoney(paycheck_leftover.spent) }}
                     <template
@@ -244,14 +236,6 @@
                         + from savings
                         {{ formatMoney(-paycheck_leftover.savings_transfers) }}
                     </template>
-                </p>
-                <p
-                    v-if="previousPaycheckRemaining !== null"
-                    class="text-sm tabular-nums"
-                    :class="differenceClass(previousPaycheckRemaining)"
-                >
-                    Left from last paycheck
-                    {{ formatMoney(previousPaycheckRemaining) }}
                 </p>
                 <p
                     v-if="paycheck_leftover.next_paycheck"

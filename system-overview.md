@@ -391,23 +391,18 @@ Resolved paychecks/bills use the posted bank amount when present.
 
 Dashboard leftover windows run from this paycheck’s start (posted date if resolved, otherwise expected date) until the next paycheck.
 
-This paycheck (hero and leftover widget):
+This paycheck (hero and leftover widget) is the chained remaining:
 
 ```
 paycheck remaining = planned leftover − unassigned spend − allocated transfers
-```
-
-Year check-in (chained remaining):
-
-```
 remaining = brought forward + paycheck remaining
 ```
 
-Brought forward is the previous window’s chained remaining. The dashboard also shows the previous window’s paycheck remaining as “last paycheck leftover.”
+Brought forward is the leftover origin carry-over on the first window, then the previous window’s chained remaining after that. Spend before the origin paycheck is ignored. Remaining leftover carries into the next window.
 
-Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Credit-card **payments** and checking↔savings transfers are allocated (they leave or return checking cash) and are not category spend. Card charges are spend. Remaining leftover carries into the next window for the year check-in only.
+Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Credit-card **payments** and checking↔savings transfers are allocated (they leave or return checking cash) and are not category spend. Card charges are spend.
 
-Windows start at a leftover origin: the first paycheck occurrence on or after `users.leftover_starts_on`. That date defaults to the current calendar month the first time leftover is computed (or a paycheck plan is created) and then stays put. Brought forward is $0 at that origin paycheck; spend before it is ignored. The start month can be changed on Plans.
+Windows start at a leftover origin: the first paycheck occurrence on or after `users.leftover_starts_on`. That date defaults to the current calendar month the first time leftover is computed (or a paycheck plan is created) and then stays put. Starting carry-over (`users.leftover_carry_over`) is brought forward at that origin paycheck. The start month and carry-over can be changed on Plans.
 
 There is no account-balance ledger.
 

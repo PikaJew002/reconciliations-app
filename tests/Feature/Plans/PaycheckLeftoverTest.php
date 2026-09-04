@@ -135,7 +135,7 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(1000, $august['remaining']);
     }
 
-    public function test_widget_reports_this_paycheck_remaining_not_the_year_chain(): void
+    public function test_widget_reports_chained_remaining(): void
     {
         [$user] = $this->paycheckSetup();
         $this->startLeftoverFrom($user, '2026-07-01');
@@ -145,7 +145,7 @@ class PaycheckLeftoverTest extends TestCase
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJson([
-                'remaining' => '$3,000.00',
+                'remaining' => '$1,000.00',
                 'days_remaining' => 17,
                 'next_paycheck' => 'Sep 1',
             ]);
@@ -154,6 +154,7 @@ class PaycheckLeftoverTest extends TestCase
 
         $this->assertEquals(3000, $leftover['paycheck_remaining']);
         $this->assertEquals(1000, $leftover['remaining']);
+        $this->assertEquals(-2000, $leftover['brought_forward']);
         $this->assertEquals(-2000, $leftover['previous_paycheck_remaining']);
         $this->assertSame('Acme paycheck', $leftover['previous_paycheck']['name']);
         $this->assertSame('2026-07-01', $leftover['previous_paycheck']['date']);
