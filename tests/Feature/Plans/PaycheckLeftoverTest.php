@@ -19,6 +19,7 @@ use App\Models\TransactionTransferLink;
 use App\Models\User;
 use App\Services\Plans\LeftoverOriginService;
 use App\Services\Plans\PaycheckLeftoverService;
+use App\Services\Reconciliation\ReimbursementGroupService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -290,6 +291,8 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertSame('2026-08-02', $leftover['starts_on']);
         $this->assertEquals(2987, $leftover['paycheck']['amount']);
         $this->assertEquals(2987, $leftover['planned_leftover']);
+        $this->assertEquals(0, $leftover['credited']);
+        $this->assertSame([], $leftover['credits']);
     }
 
     public function test_next_paycheck_is_the_next_income_occurrence_of_any_template(): void
@@ -662,6 +665,82 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(2925, $leftover['remaining']);
     }
 
+    public function test_other_income_credits_increase_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->credit($user, 75, '2026-08-10', BankTransaction::CLASSIFICATION_INCOME, 'Venmo');
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(75, $leftover['credited']);
+        $this->assertEquals(3075, $leftover['paycheck_remaining']);
+        $this->assertEquals(3075, $leftover['remaining']);
+        $this->assertSame('Venmo', $leftover['credits'][0]['name']);
+        $this->assertEquals(75, $leftover['credits'][0]['amount']);
+        $this->assertSame(BankTransaction::CLASSIFICATION_INCOME, $leftover['credits'][0]['kind']);
+    }
+
+    public function test_reimbursement_classification_credits_increase_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->credit(
+            $user,
+            400,
+            '2026-08-12',
+            BankTransaction::CLASSIFICATION_REIMBURSEMENT,
+            'Work reimbursement',
+        );
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(400, $leftover['credited']);
+        $this->assertEquals(3400, $leftover['remaining']);
+        $this->assertSame('Work reimbursement', $leftover['credits'][0]['name']);
+        $this->assertSame(BankTransaction::CLASSIFICATION_REIMBURSEMENT, $leftover['credits'][0]['kind']);
+    }
+
+    public function test_over_reimbursement_surplus_increases_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $expense = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -100.0,
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'posted_at' => '2026-08-05',
+            'status' => 'unmatched',
+        ]);
+        $reimbursement = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => 450.0,
+            'classification' => BankTransaction::CLASSIFICATION_INCOME,
+            'posted_at' => '2026-08-08',
+            'status' => 'unmatched',
+            'description' => 'Employer reimburse',
+        ]);
+
+        $service = app(ReimbursementGroupService::class);
+        $group = $service->create($user->id, [$expense->id, $reimbursement->id], 'August travel');
+        $service->close($group, null, BankTransaction::CLASSIFICATION_INCOME);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(350, $leftover['credited']);
+        $this->assertEquals(3350, $leftover['remaining']);
+        $this->assertSame('August travel', $leftover['credits'][0]['name']);
+        $this->assertSame('reimbursement_surplus', $leftover['credits'][0]['kind']);
+        $this->assertEquals(350, $leftover['credits'][0]['amount']);
+    }
+
     public function test_credit_card_pending_spend_does_not_reduce_leftover(): void
     {
         [$user] = $this->paycheckSetup();
@@ -682,6 +761,24 @@ class PaycheckLeftoverTest extends TestCase
         $leftover = $this->leftoverCurrent($user);
 
         $this->assertEquals(0, $leftover['spent']);
+        $this->assertEquals(3000, $leftover['remaining']);
+    }
+
+    public function test_credit_card_income_does_not_increase_leftover(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->credit(
+            $user,
+            80,
+            '2026-08-10',
+            BankTransaction::CLASSIFICATION_INCOME,
+            'Card refund',
+            Account::CREDIT_CARD,
+        );
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(0, $leftover['credited']);
         $this->assertEquals(3000, $leftover['remaining']);
     }
 
@@ -955,6 +1052,31 @@ class PaycheckLeftoverTest extends TestCase
             'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
             'category_id' => $dining->id,
             'posted_at' => $postedAt,
+        ]);
+    }
+
+    protected function credit(
+        User $user,
+        float $amount,
+        string $postedAt,
+        string $classification,
+        string $description,
+        string $accountType = Account::CHECKING,
+    ): BankTransaction {
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => $accountType,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        return BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => $amount,
+            'classification' => $classification,
+            'posted_at' => $postedAt,
+            'description' => $description,
         ]);
     }
 

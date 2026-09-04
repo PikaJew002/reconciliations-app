@@ -321,6 +321,15 @@
                                 {{ formatMoney(selectedWindow.planned_leftover) }}
                             </dd>
                         </div>
+                        <div
+                            v-if="(selectedWindow.credited ?? 0) > 0"
+                            class="flex items-baseline justify-between gap-3"
+                        >
+                            <dt class="text-neutral-600">Other credits</dt>
+                            <dd class="tabular-nums">
+                                {{ formatMoney(selectedWindow.credited) }}
+                            </dd>
+                        </div>
                         <div class="flex items-baseline justify-between gap-3">
                             <dt class="text-neutral-600">Spent</dt>
                             <dd class="tabular-nums">
@@ -451,6 +460,37 @@
                                     </span>
                                     <span class="tabular-nums">
                                         {{ formatMoney(bill.amount) }}
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-medium">Other credits</p>
+                            <ul class="mt-2 space-y-1 text-sm">
+                                <li
+                                    v-if="
+                                        (selectedWindow.credits ?? [])
+                                            .length === 0
+                                    "
+                                    class="text-neutral-500"
+                                >
+                                    None in this window
+                                </li>
+                                <li
+                                    v-for="(event, index) in selectedWindow.credits ??
+                                        []"
+                                    :key="`credit-${event.date}-${index}`"
+                                    class="flex items-baseline justify-between gap-3 text-neutral-700"
+                                >
+                                    <span>
+                                        {{ event.name || 'Credit' }}
+                                        <span class="text-neutral-500">
+                                            {{ formatDay(event.date) }}
+                                        </span>
+                                    </span>
+                                    <span class="tabular-nums">
+                                        {{ formatMoney(event.amount) }}
                                     </span>
                                 </li>
                             </ul>
