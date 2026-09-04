@@ -766,39 +766,93 @@
             props.leftover_origin?.starts_on,
     );
 
-    let leftoverOriginMonthLabel = (month) => {
-        let option = (props.leftover_origin?.months ?? []).find(
-            (item) => item.value === month,
-        );
+    let leftoverCarryOverValue = (value) => {
+        if (value === '' || value === null || value === undefined) {
+            return 0;
+        }
 
-        return option?.label ?? month;
+        let amount = Number(value);
+
+        return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
     };
 
-    let onLeftoverOriginChange = (event) => {
-        let month = event.target.value;
+    let leftoverOriginMonthDraft = ref(props.leftover_origin?.month ?? '');
+    let leftoverCarryOverDraft = ref(
+        leftoverCarryOverValue(props.leftover_origin?.carry_over),
+    );
+    let leftoverOriginSaving = ref(false);
 
-        if (!props.leftover_origin || month === props.leftover_origin.month) {
+    watch(
+        () => [
+            props.leftover_origin?.month,
+            props.leftover_origin?.carry_over,
+        ],
+        () => {
+            leftoverOriginMonthDraft.value = props.leftover_origin?.month ?? '';
+            leftoverCarryOverDraft.value = leftoverCarryOverValue(
+                props.leftover_origin?.carry_over,
+            );
+        },
+    );
+
+    let leftoverOriginDirty = computed(() => {
+        if (!props.leftover_origin) {
+            return false;
+        }
+
+        return (
+            leftoverOriginMonthDraft.value !== props.leftover_origin.month ||
+            leftoverCarryOverValue(leftoverCarryOverDraft.value) !==
+                leftoverCarryOverValue(props.leftover_origin.carry_over)
+        );
+    });
+
+    let onLeftoverOriginMonthDraftChange = () => {
+        if (!props.leftover_origin) {
             return;
         }
 
-        let label = leftoverOriginMonthLabel(month);
+        if (leftoverOriginMonthDraft.value !== props.leftover_origin.month) {
+            leftoverCarryOverDraft.value = 0;
+            return;
+        }
 
+        leftoverCarryOverDraft.value = leftoverCarryOverValue(
+            props.leftover_origin.carry_over,
+        );
+    };
+
+    let discardLeftoverOrigin = () => {
+        leftoverOriginMonthDraft.value = props.leftover_origin?.month ?? '';
+        leftoverCarryOverDraft.value = leftoverCarryOverValue(
+            props.leftover_origin?.carry_over,
+        );
+    };
+
+    let saveLeftoverOrigin = () => {
         if (
-            !window.confirm(
-                `Restart leftover from the first paycheck in ${label}? Brought forward will be $0 at that paycheck.`,
-            )
+            !props.leftover_origin ||
+            leftoverOriginSaving.value ||
+            !leftoverOriginDirty.value
         ) {
-            event.target.value = props.leftover_origin.month;
             return;
         }
+
+        leftoverOriginSaving.value = true;
 
         router.put(
             '/plans/leftover-origin',
             {
-                month,
+                month: leftoverOriginMonthDraft.value,
                 view_month: props.month,
+                carry_over: leftoverCarryOverValue(leftoverCarryOverDraft.value),
             },
-            { preserveScroll: true },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    leftoverOriginSaving.value = false;
+                },
+            },
         );
     };
 </script>
@@ -842,9 +896,10 @@
             </div>
         </div>
 
-        <section
+        <form
             v-if="leftover_origin"
             class="space-y-2 rounded border px-4 py-3"
+            @submit.prevent="saveLeftoverOrigin"
         >
             <p class="text-sm font-medium">Leftover tracking</p>
             <p class="text-sm text-neutral-600">
@@ -853,15 +908,16 @@
                 <template v-if="leftover_origin.paycheck?.name">
                     {{ leftover_origin.paycheck.name }}
                 </template>
-                paycheck. Brought forward is $0 there. Spend before that
-                paycheck is ignored.
+                paycheck. Brought forward is
+                {{ formatMoney(leftover_origin.carry_over ?? 0) }}
+                there. Spend before that paycheck is ignored.
             </p>
             <label class="block text-sm sm:max-w-xs">
                 <span class="text-neutral-600">Start month</span>
                 <select
-                    :value="leftover_origin.month"
+                    v-model="leftoverOriginMonthDraft"
                     class="mt-1 w-full rounded border px-3"
-                    @change="onLeftoverOriginChange"
+                    @change="onLeftoverOriginMonthDraftChange"
                 >
                     <option
                         v-for="option in leftover_origin.months"
@@ -876,7 +932,36 @@
                     </option>
                 </select>
             </label>
-        </section>
+            <label class="block text-sm sm:max-w-xs">
+                <span class="text-neutral-600">Starting carry-over</span>
+                <input
+                    v-model="leftoverCarryOverDraft"
+                    type="number"
+                    step="0.01"
+                    class="mt-1 w-full rounded border px-3"
+                />
+            </label>
+            <div
+                v-if="leftoverOriginDirty"
+                class="flex flex-wrap items-center gap-2"
+            >
+                <button
+                    type="submit"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
+                    :disabled="leftoverOriginSaving"
+                >
+                    Save
+                </button>
+                <button
+                    type="button"
+                    class="btn rounded border px-3 text-sm"
+                    :disabled="leftoverOriginSaving"
+                    @click="discardLeftoverOrigin"
+                >
+                    Discard
+                </button>
+            </div>
+        </form>
 
         <div
             v-if="showCreate === 'paycheck' && categories.length === 0"

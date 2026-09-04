@@ -27,6 +27,7 @@ class ResetUserDataCommandTest extends TestCase
             'onboarding_skipped_steps' => ['import-orders'],
             'onboarding_tours' => ['import-bank' => 'completed'],
             'leftover_starts_on' => '2026-08-01',
+            'leftover_carry_over' => 800,
         ]);
         $other = User::factory()->create();
 
@@ -92,6 +93,7 @@ class ResetUserDataCommandTest extends TestCase
         $this->assertNull($user->onboarding_skipped_steps);
         $this->assertNull($user->onboarding_tours);
         $this->assertNull($user->leftover_starts_on);
+        $this->assertEquals(0, (float) $user->leftover_carry_over);
 
         $this->assertDatabaseCount('accounts', 1);
         $this->assertDatabaseHas('accounts', ['id' => $otherAccount->id]);

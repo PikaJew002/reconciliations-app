@@ -147,7 +147,7 @@ class PaycheckLeftoverService
             ->keyBy('id');
 
         $windows = [];
-        $broughtForward = 0.0;
+        $broughtForward = $this->origin->carryOverForUser($userId);
 
         foreach ($starts as $index => $item) {
             /** @var PlannedOccurrence $occurrence */

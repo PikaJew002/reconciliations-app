@@ -57,6 +57,25 @@ class LeftoverOriginService
         return $startsOn;
     }
 
+    public function setCarryOver(User $user, float $amount): float
+    {
+        $amount = round($amount, 2);
+        $user->forceFill(['leftover_carry_over' => $amount])->save();
+
+        return $amount;
+    }
+
+    public function carryOverForUser(int $userId): float
+    {
+        $user = User::query()->find($userId);
+
+        if ($user === null) {
+            return 0.0;
+        }
+
+        return round((float) ($user->leftover_carry_over ?? 0), 2);
+    }
+
     /**
      * @return array<string, mixed>|null
      */
@@ -78,6 +97,7 @@ class LeftoverOriginService
         return [
             'month' => $startsOn->format('Y-m'),
             'starts_on' => $startsOn->toDateString(),
+            'carry_over' => $this->carryOverForUser($userId),
             'paycheck' => $originOccurrence !== null
                 ? [
                     'id' => (int) $originOccurrence->template_id,
