@@ -19,6 +19,7 @@ class UpdateLeftoverOriginRequest extends FormRequest
         return [
             'month' => ['required', 'date_format:Y-m'],
             'view_month' => ['nullable', 'date_format:Y-m'],
+            'carry_over' => ['sometimes', 'nullable', 'numeric'],
         ];
     }
 
@@ -32,5 +33,15 @@ class UpdateLeftoverOriginRequest extends FormRequest
         $month = $this->validated('view_month') ?? null;
 
         return is_string($month) && $month !== '' ? $month : null;
+    }
+
+    public function hasCarryOver(): bool
+    {
+        return $this->exists('carry_over');
+    }
+
+    public function carryOver(): float
+    {
+        return round((float) ($this->validated('carry_over') ?? 0), 2);
     }
 }

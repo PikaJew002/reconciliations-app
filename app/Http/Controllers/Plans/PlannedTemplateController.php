@@ -232,11 +232,28 @@ class PlannedTemplateController extends Controller
         UpdateLeftoverOriginRequest $request,
         LeftoverOriginService $origin,
     ): RedirectResponse {
-        $origin->setMonth($request->user(), $request->month());
+        $user = $request->user();
+        $user->refresh();
+        $currentMonth = $user->leftover_starts_on?->format('Y-m');
+        $monthChanged = $currentMonth !== $request->month();
+
+        if ($monthChanged) {
+            $origin->setMonth($user, $request->month());
+        }
+
+        if ($request->hasCarryOver()) {
+            $origin->setCarryOver($user, $request->carryOver());
+        } elseif ($monthChanged) {
+            $origin->setCarryOver($user, 0);
+        }
+
+        $message = $monthChanged
+            ? 'Leftover tracking start updated.'
+            : 'Leftover carry-over updated.';
 
         return redirect()
             ->route('plans.index', array_filter(['month' => $request->viewMonth()]))
-            ->with('success', 'Leftover tracking start updated.');
+            ->with('success', $message);
     }
 
     /**

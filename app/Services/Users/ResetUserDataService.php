@@ -83,6 +83,7 @@ class ResetUserDataService
                 'onboarding_skipped_steps' => null,
                 'onboarding_tours' => null,
                 'leftover_starts_on' => null,
+                'leftover_carry_over' => 0,
             ])->save();
         });
 

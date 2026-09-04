@@ -135,7 +135,7 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(1000, $august['remaining']);
     }
 
-    public function test_widget_reports_this_paycheck_remaining_not_the_year_chain(): void
+    public function test_widget_reports_chained_remaining(): void
     {
         [$user] = $this->paycheckSetup();
         $this->startLeftoverFrom($user, '2026-07-01');
@@ -145,7 +145,7 @@ class PaycheckLeftoverTest extends TestCase
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJson([
-                'remaining' => '$3,000.00',
+                'remaining' => '$1,000.00',
                 'days_remaining' => 17,
                 'next_paycheck' => 'Sep 1',
             ]);
@@ -154,6 +154,7 @@ class PaycheckLeftoverTest extends TestCase
 
         $this->assertEquals(3000, $leftover['paycheck_remaining']);
         $this->assertEquals(1000, $leftover['remaining']);
+        $this->assertEquals(-2000, $leftover['brought_forward']);
         $this->assertEquals(-2000, $leftover['previous_paycheck_remaining']);
         $this->assertSame('Acme paycheck', $leftover['previous_paycheck']['name']);
         $this->assertSame('2026-07-01', $leftover['previous_paycheck']['date']);
@@ -427,7 +428,118 @@ class PaycheckLeftoverTest extends TestCase
                 ->where('leftover_origin.starts_on', '2026-08-01')
                 ->where('leftover_origin.paycheck.date', '2026-08-01')
                 ->where('leftover_origin.paycheck.name', 'Acme paycheck')
+                ->where('leftover_origin.carry_over', 0)
                 ->has('leftover_origin.months'));
+    }
+
+    public function test_windows_seed_brought_forward_from_carry_over(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $user->forceFill(['leftover_carry_over' => 800])->save();
+
+        $windows = $this->leftoverWindows($user);
+        $july = $this->windowStarting($windows, '2026-07-01');
+        $august = $this->windowStarting($windows, '2026-08-01');
+
+        $this->assertEquals(800, $july['brought_forward']);
+        $this->assertEquals(3000, $july['paycheck_remaining']);
+        $this->assertEquals(3800, $july['remaining']);
+        $this->assertEquals(3800, $august['brought_forward']);
+        $this->assertEquals(6800, $august['remaining']);
+    }
+
+    public function test_user_can_save_leftover_carry_over(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->leftoverWindows($user);
+
+        $this->actingAs($user)
+            ->from(route('plans.index'))
+            ->put(route('plans.leftover-origin.update'), [
+                'month' => '2026-08',
+                'view_month' => '2026-08',
+                'carry_over' => 800.5,
+            ])
+            ->assertRedirect(route('plans.index', ['month' => '2026-08']));
+
+        $this->assertEquals(800.5, (float) $user->fresh()->leftover_carry_over);
+        $this->assertEquals(800.5, $this->windowStarting($this->leftoverWindows($user), '2026-08-01')['brought_forward']);
+    }
+
+    public function test_negative_carry_over_is_allowed(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->leftoverWindows($user);
+
+        $this->actingAs($user)
+            ->put(route('plans.leftover-origin.update'), [
+                'month' => '2026-08',
+                'carry_over' => -250,
+            ])
+            ->assertRedirect();
+
+        $this->assertEquals(-250, (float) $user->fresh()->leftover_carry_over);
+
+        $august = $this->windowStarting($this->leftoverWindows($user), '2026-08-01');
+
+        $this->assertEquals(-250, $august['brought_forward']);
+        $this->assertEquals(2750, $august['remaining']);
+    }
+
+    public function test_empty_carry_over_defaults_to_zero(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->leftoverWindows($user);
+        $user->forceFill(['leftover_carry_over' => 800])->save();
+
+        $this->actingAs($user)
+            ->put(route('plans.leftover-origin.update'), [
+                'month' => '2026-08',
+                'carry_over' => '',
+            ])
+            ->assertRedirect();
+
+        $this->assertEquals(0, (float) $user->fresh()->leftover_carry_over);
+    }
+
+    public function test_changing_start_month_without_carry_over_resets_it(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->leftoverWindows($user);
+        $user->forceFill(['leftover_carry_over' => 800])->save();
+
+        $this->actingAs($user)
+            ->from(route('plans.index', ['month' => '2026-08']))
+            ->put(route('plans.leftover-origin.update'), [
+                'month' => '2026-07',
+                'view_month' => '2026-08',
+            ])
+            ->assertRedirect(route('plans.index', ['month' => '2026-08']));
+
+        $this->assertSame('2026-07-01', $user->fresh()->leftover_starts_on->toDateString());
+        $this->assertEquals(0, (float) $user->fresh()->leftover_carry_over);
+        $this->assertEquals(0, $this->windowStarting($this->leftoverWindows($user), '2026-07-01')['brought_forward']);
+    }
+
+    public function test_changing_start_month_can_include_a_new_carry_over(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->leftoverWindows($user);
+        $user->forceFill(['leftover_carry_over' => 800])->save();
+
+        $this->actingAs($user)
+            ->from(route('plans.index', ['month' => '2026-08']))
+            ->put(route('plans.leftover-origin.update'), [
+                'month' => '2026-07',
+                'view_month' => '2026-08',
+                'carry_over' => 500,
+            ])
+            ->assertRedirect(route('plans.index', ['month' => '2026-08']));
+
+        $this->assertSame('2026-07-01', $user->fresh()->leftover_starts_on->toDateString());
+        $this->assertEquals(500, (float) $user->fresh()->leftover_carry_over);
+        $this->assertEquals(500, $this->windowStarting($this->leftoverWindows($user), '2026-07-01')['brought_forward']);
     }
 
     public function test_creating_a_paycheck_plan_locks_leftover_to_the_current_month(): void

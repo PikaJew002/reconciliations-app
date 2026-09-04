@@ -38,6 +38,7 @@ class User extends Authenticatable
             'onboarding_skipped_steps' => 'array',
             'onboarding_tours' => 'array',
             'leftover_starts_on' => 'date',
+            'leftover_carry_over' => 'decimal:2',
         ];
     }
 

@@ -14,6 +14,7 @@ use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionAllocation;
 use App\Models\User;
+use App\Services\Reconciliation\ReimbursementGroupService;
 use App\Services\Review\ReviewSlideBuilder;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -124,6 +125,27 @@ class ReviewSlideBuilderTest extends TestCase
             'amount' => 22.5,
             'category_id' => null,
         ]);
+        OrderComponent::factory()->tax()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'description' => 'Sales Tax',
+            'amount' => 3.0,
+            'category_id' => null,
+        ]);
+        OrderComponent::factory()->delivery()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'description' => 'Delivery Fee',
+            'amount' => 5.0,
+            'category_id' => null,
+        ]);
+        OrderComponent::factory()->tip()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'description' => 'Driver Tip',
+            'amount' => 4.0,
+            'category_id' => null,
+        ]);
         TransactionAllocation::factory()->create([
             'bank_transaction_id' => $bank->id,
             'order_component_id' => $paper->id,
@@ -137,8 +159,9 @@ class ReviewSlideBuilderTest extends TestCase
         $this->assertSame(['order', 'order_component', 'order_component'], $kinds);
         $this->assertSame(['Amazon', 'Paper towels', 'Snacks'], $names);
         $this->assertTrue($deck['slides'][0]['uncategorized']);
+        $this->assertSame(54.5, $deck['slides'][0]['amount']);
         $this->assertSame('order:'.$order->id, $deck['slides'][1]['parent_id']);
-        $this->assertSame(42.5, $deck['week_spend']);
+        $this->assertSame(54.5, $deck['week_spend']);
         $this->assertSame($snacks->id, $deck['slides'][2]['source_id']);
     }
 
@@ -242,6 +265,116 @@ class ReviewSlideBuilderTest extends TestCase
         $names = array_column($deck['slides'], 'name');
 
         $this->assertSame(['Needs review', 'Mystery charge', 'Categorized early'], $names);
+    }
+
+    public function test_tax_delivery_and_tip_are_not_walk_slides(): void
+    {
+        [$user, $account, $batch, $dining] = $this->setupUser();
+        $from = Carbon::parse('2026-08-23');
+        $to = Carbon::parse('2026-08-30');
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'supports_order_import' => true,
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'import_batch_id' => $batch->id,
+            'ordered_at' => '2026-08-25',
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Milk',
+            'amount' => 4.0,
+            'category_id' => $dining->id,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tax',
+            'description' => 'Sales Tax',
+            'amount' => 0.32,
+            'category_id' => null,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'delivery',
+            'description' => 'Delivery Fee',
+            'amount' => 7.95,
+            'category_id' => null,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tip',
+            'description' => 'Driver Tip',
+            'amount' => 5.0,
+            'category_id' => null,
+        ]);
+
+        $deck = app(ReviewSlideBuilder::class)->build($user->id, $from, $to);
+        $names = array_column($deck['slides'], 'name');
+
+        $this->assertSame(['Walmart', 'Milk'], $names);
+        $this->assertFalse($deck['slides'][0]['uncategorized']);
+        $this->assertSame(17.27, $deck['week_spend']);
+        $this->assertSame(17.27, $deck['slides'][0]['amount']);
+    }
+
+    public function test_reimbursement_slide_includes_legs_and_net_math(): void
+    {
+        [$user, $account, $batch, $dining] = $this->setupUser();
+        $from = Carbon::parse('2026-08-23');
+        $to = Carbon::parse('2026-08-30');
+
+        $airbnb = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -1200.0,
+            'description' => 'AIRBNB',
+            'posted_at' => '2026-08-24',
+            'status' => 'unmatched',
+            'classification' => null,
+        ]);
+        $friend = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'amount' => 1050.0,
+            'description' => 'VENMO FRIEND',
+            'posted_at' => '2026-08-25',
+            'status' => 'unmatched',
+            'classification' => null,
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-08-26 12:00:00'));
+        $service = app(ReimbursementGroupService::class);
+        $group = $service->create($user->id, [$airbnb->id, $friend->id], 'Cabin trip');
+        $service->close($group, $dining->id, BankTransaction::CLASSIFICATION_EXPENSE);
+        Carbon::setTestNow(Carbon::parse('2026-08-30 15:00:00'));
+
+        $deck = app(ReviewSlideBuilder::class)->build($user->id, $from, $to);
+        $slide = collect($deck['slides'])->firstWhere('kind', 'reimbursement');
+
+        $this->assertNotNull($slide);
+        $this->assertSame('Cabin trip', $slide['name']);
+        $this->assertSame(150.0, $slide['amount']);
+        $this->assertSame(1200.0, $slide['expense_total']);
+        $this->assertSame(1050.0, $slide['reimbursement_total']);
+        $this->assertSame(150.0, $slide['net']);
+        $this->assertSame('Dining', $slide['category']['name']);
+        $this->assertSame(
+            [
+                ['role' => 'expense', 'name' => 'AIRBNB', 'amount' => 1200.0],
+                ['role' => 'reimbursement', 'name' => 'VENMO FRIEND', 'amount' => 1050.0],
+            ],
+            $slide['items'],
+        );
     }
 
     /**
