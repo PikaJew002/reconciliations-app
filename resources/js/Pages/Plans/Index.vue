@@ -75,6 +75,10 @@
             type: Object,
             default: null,
         },
+        vacation_windows: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
@@ -795,6 +799,41 @@
         },
     );
 
+    let vacationWindowForm = useForm({
+        name: '',
+        starts_on: '',
+        ends_on: '',
+        month: props.month,
+    });
+
+    watch(
+        () => props.month,
+        (month) => {
+            vacationWindowForm.month = month;
+        },
+    );
+
+    let addVacationWindow = () => {
+        vacationWindowForm.post('/plans/vacation-windows', {
+            preserveScroll: true,
+            onSuccess: () => {
+                vacationWindowForm.reset('name', 'starts_on', 'ends_on');
+                vacationWindowForm.month = props.month;
+            },
+        });
+    };
+
+    let deleteVacationWindow = (window) => {
+        if (!window?.id) {
+            return;
+        }
+
+        router.delete(`/plans/vacation-windows/${window.id}`, {
+            data: { month: props.month },
+            preserveScroll: true,
+        });
+    };
+
     let leftoverOriginDirty = computed(() => {
         if (!props.leftover_origin) {
             return false;
@@ -961,6 +1000,89 @@
                     Discard
                 </button>
             </div>
+        </form>
+
+        <form
+            class="space-y-3 rounded border px-4 py-3"
+            @submit.prevent="addVacationWindow"
+        >
+            <p class="text-sm font-medium">Vacation windows</p>
+            <p class="text-sm text-neutral-600">
+                Learned vendor rules and Walmart product categories are skipped
+                for spend in these dates. You categorize those by hand. Bills
+                and income still match as usual.
+            </p>
+            <ul
+                v-if="vacation_windows.length > 0"
+                class="divide-y rounded border"
+            >
+                <li
+                    v-for="window in vacation_windows"
+                    :key="window.id"
+                    class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                    <span>
+                        <template v-if="window.name">
+                            {{ window.name }}
+                            ·
+                        </template>
+                        {{ formatDay(window.starts_on) }}
+                        –
+                        {{ formatDay(window.ends_on) }}
+                    </span>
+                    <button
+                        type="button"
+                        class="btn rounded border px-3 text-sm"
+                        @click="deleteVacationWindow(window)"
+                    >
+                        Remove
+                    </button>
+                </li>
+            </ul>
+            <div class="flex flex-wrap items-end gap-3">
+                <label class="block text-sm sm:max-w-xs">
+                    <span class="text-neutral-600">Name (optional)</span>
+                    <input
+                        v-model="vacationWindowForm.name"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Starts</span>
+                    <input
+                        v-model="vacationWindowForm.starts_on"
+                        type="date"
+                        required
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Ends</span>
+                    <input
+                        v-model="vacationWindowForm.ends_on"
+                        type="date"
+                        required
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <button
+                    type="submit"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
+                    :disabled="vacationWindowForm.processing"
+                >
+                    Add window
+                </button>
+            </div>
+            <p
+                v-if="vacationWindowForm.errors.ends_on || vacationWindowForm.errors.starts_on"
+                class="text-sm text-red-700"
+            >
+                {{
+                    vacationWindowForm.errors.ends_on ||
+                    vacationWindowForm.errors.starts_on
+                }}
+            </p>
         </form>
 
         <div

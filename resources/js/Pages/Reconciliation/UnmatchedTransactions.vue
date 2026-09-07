@@ -37,6 +37,10 @@
             type: Array,
             default: () => [],
         },
+        vacation_windows: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     const unmatchedTransactionsReloadOnly = [
@@ -158,6 +162,7 @@
                 :categories="categories"
                 :match-modes="matchModes"
                 :selected-transaction-ids="selectedTransactionIds"
+                :vacation-windows="vacation_windows"
                 @toggle-selection="toggleTransactionSelection"
             >
             <div

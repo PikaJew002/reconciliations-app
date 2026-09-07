@@ -19,6 +19,7 @@ use App\Models\TransactionCategorizationRule;
 use App\Services\Plans\LeftoverOriginService;
 use App\Services\Plans\PaycheckBillAssignmentService;
 use App\Services\Plans\PlannedOccurrenceGenerator;
+use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\TransactionMatchEvaluator;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -36,6 +37,7 @@ class PlannedTemplateController extends Controller
         PlannedOccurrenceGenerator $generator,
         PaycheckBillAssignmentService $assignments,
         LeftoverOriginService $origin,
+        VacationWindowService $vacationWindows,
     ): Response {
         $userId = $request->user()->id;
         $generator->ensureForUser($userId);
@@ -152,6 +154,7 @@ class PlannedTemplateController extends Controller
             'month_in_budget_year' => $this->monthInBudgetYear($userId, $monthStart),
             'month_beyond_occurrence_horizon' => PlannedOccurrenceGenerator::isBeyondHorizon($monthStart),
             'leftover_origin' => $origin->payload($userId),
+            'vacation_windows' => $vacationWindows->payloadForUser($userId),
         ]);
     }
 

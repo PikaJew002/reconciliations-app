@@ -10,6 +10,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Services\Orders\OrderCategorizationBrowseService;
 use App\Services\Orders\OrderInstanceCategorizationService;
+use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\ProductMatchingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,14 +20,22 @@ use Inertia\Response;
 
 class OrderCategorizationController extends Controller
 {
-    public function index(Request $request, OrderCategorizationBrowseService $browse): Response
-    {
+    public function index(
+        Request $request,
+        OrderCategorizationBrowseService $browse,
+        VacationWindowService $vacationWindows,
+    ): Response {
+        $userId = $request->user()->id;
+
         $data = $browse->index(
-            $request->user()->id,
+            $userId,
             $request->string('q')->toString() ?: null,
         );
 
-        return Inertia::render('Orders/Categorize', $data);
+        return Inertia::render('Orders/Categorize', [
+            ...$data,
+            'vacation_windows' => $vacationWindows->payloadForUser($userId),
+        ]);
     }
 
     public function categorizeAll(
@@ -53,6 +62,11 @@ class OrderCategorizationController extends Controller
         $updated = 0;
 
         if ($normalized === 'walmart') {
+            abort_if(
+                app(VacationWindowService::class)->covers($order->user_id, $order->ordered_at),
+                404,
+            );
+
             $updated = $this->categorizeWalmartOrder($order, $categoryId, $productMatching);
         } elseif ($normalized === 'amazon') {
             $updated = $this->categorizeAmazonOrder($order, $categoryId);
@@ -148,6 +162,9 @@ class OrderCategorizationController extends Controller
     ): int {
         $updated = 0;
 
+        $inVacationWindow = app(VacationWindowService::class)
+            ->covers($order->user_id, $order->ordered_at);
+
         foreach ($order->items as $item) {
             if ($this->walmartItemAlreadyCategorized($item)) {
                 continue;
@@ -155,7 +172,12 @@ class OrderCategorizationController extends Controller
 
             $product = $item->product;
 
-            if ($item->product_id !== null && $product !== null && $product->category_id !== null) {
+            if (
+                ! $inVacationWindow
+                && $item->product_id !== null
+                && $product !== null
+                && $product->category_id !== null
+            ) {
                 continue;
             }
 
@@ -212,6 +234,10 @@ class OrderCategorizationController extends Controller
             ->whereNull('category_id')
             ->where('type', 'product')
             ->whereHas('orderItem', fn ($query) => $query->where('product_id', $product->id))
+            ->whereHas(
+                'order',
+                fn ($query) => app(VacationWindowService::class)->whereOrderNotCovered($query, $product->user_id),
+            )
             ->update([
                 'category_id' => $categoryId,
                 'category_confidence' => 100,

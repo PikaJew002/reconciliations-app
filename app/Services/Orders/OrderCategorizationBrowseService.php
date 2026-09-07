@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
+use App\Services\Plans\VacationWindowService;
 use Illuminate\Database\Eloquent\Builder;
 
 class OrderCategorizationBrowseService
@@ -29,6 +30,7 @@ class OrderCategorizationBrowseService
     ];
 
     public function __construct(
+        protected VacationWindowService $vacationWindows,
         protected int $listLimit = 50,
     ) {}
 
@@ -107,7 +109,7 @@ class OrderCategorizationBrowseService
             ->whereHas('merchant', function (Builder $builder): void {
                 $builder->whereIn('normalized_name', self::QUEUE_MERCHANT_NORMALIZED_NAMES);
             })
-            ->where(function (Builder $builder): void {
+            ->where(function (Builder $builder) use ($userId): void {
                 $builder
                     ->where(function (Builder $walmart): void {
                         $walmart
@@ -125,6 +127,20 @@ class OrderCategorizationBrowseService
                                             ->whereNotNull('category_id');
                                     });
                             });
+                    })
+                    ->orWhere(function (Builder $vacationWalmart) use ($userId): void {
+                        $vacationWalmart
+                            ->whereHas('merchant', fn (Builder $m) => $m->where('normalized_name', 'walmart'));
+
+                        $this->vacationWindows->whereOrderCovered($vacationWalmart, $userId);
+
+                        $vacationWalmart->whereHas('items', function (Builder $items): void {
+                            $items->whereDoesntHave('components', function (Builder $components): void {
+                                $components
+                                    ->where('type', 'product')
+                                    ->whereNotNull('category_id');
+                            });
+                        });
                     })
                     ->orWhere(function (Builder $amazon): void {
                         $amazon
@@ -145,9 +161,10 @@ class OrderCategorizationBrowseService
     {
         $normalized = $order->merchant?->normalized_name;
         $mode = $normalized === 'walmart' ? self::MODE_ITEMS : self::MODE_COMPONENTS;
+        $inVacationWindow = $this->vacationWindows->covers($order->user_id, $order->ordered_at);
 
         $lines = $mode === self::MODE_ITEMS
-            ? $this->mapWalmartLines($order)
+            ? $this->mapWalmartLines($order, $inVacationWindow)
             : $this->mapAmazonLines($order);
 
         return [
@@ -157,6 +174,7 @@ class OrderCategorizationBrowseService
             'total' => (float) $order->total,
             'status' => $order->status,
             'mode' => $mode,
+            'in_vacation_window' => $inVacationWindow,
             'merchant' => $order->merchant?->only(['id', 'name', 'normalized_name']),
             'lines' => $lines,
         ];
@@ -165,13 +183,13 @@ class OrderCategorizationBrowseService
     /**
      * @return list<array<string, mixed>>
      */
-    protected function mapWalmartLines(Order $order): array
+    protected function mapWalmartLines(Order $order, bool $inVacationWindow): array
     {
         $needsProduct = [];
         $needsCategory = [];
 
         foreach ($order->items as $item) {
-            $line = $this->mapWalmartItem($item);
+            $line = $this->mapWalmartItem($item, $inVacationWindow);
 
             if ($line === null) {
                 continue;
@@ -190,7 +208,7 @@ class OrderCategorizationBrowseService
     /**
      * @return array<string, mixed>|null
      */
-    protected function mapWalmartItem(OrderItem $item): ?array
+    protected function mapWalmartItem(OrderItem $item, bool $inVacationWindow): ?array
     {
         if ($this->itemHasInstanceCategory($item)) {
             return null;
@@ -211,7 +229,11 @@ class OrderCategorizationBrowseService
 
         $product = $item->product;
 
-        if ($product === null || $product->category_id !== null) {
+        if ($product === null) {
+            return null;
+        }
+
+        if ($product->category_id !== null && ! $inVacationWindow) {
             return null;
         }
 

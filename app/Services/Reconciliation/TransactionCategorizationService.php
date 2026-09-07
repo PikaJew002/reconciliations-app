@@ -5,12 +5,17 @@ namespace App\Services\Reconciliation;
 use App\Models\BankTransaction;
 use App\Models\Category;
 use App\Models\TransactionCategorizationRule;
+use App\Services\Plans\VacationWindowService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class TransactionCategorizationService
 {
+    public function __construct(
+        protected VacationWindowService $vacationWindows,
+    ) {}
+
     /**
      * @return array{applied: int, ambiguous: int}
      */
@@ -54,6 +59,10 @@ class TransactionCategorizationService
                 ->with('merchant')
                 ->orderBy('id')
                 ->each(function (BankTransaction $transaction) use ($debitRules, &$applied, &$ambiguous): void {
+                    if ($this->vacationWindows->covers($transaction->user_id, $transaction->posted_at)) {
+                        return;
+                    }
+
                     $this->applyMatchingRules($transaction, $debitRules, $applied, $ambiguous);
                 });
         }
@@ -116,6 +125,13 @@ class TransactionCategorizationService
             && $matchMode !== TransactionCategorizationRule::MATCH_ONCE
         ) {
             throw new InvalidArgumentException('Order-import merchant transactions can only be categorized as a one-off.');
+        }
+
+        if (
+            $this->vacationWindows->covers($transaction->user_id, $transaction->posted_at)
+            && $matchMode !== TransactionCategorizationRule::MATCH_ONCE
+        ) {
+            throw new InvalidArgumentException('Vacation-window transactions can only be categorized as a one-off.');
         }
 
         if (! in_array($matchMode, TransactionCategorizationRule::allMatchModes(), true)) {

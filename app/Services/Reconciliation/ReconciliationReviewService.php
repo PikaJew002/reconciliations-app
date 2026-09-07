@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\ReimbursementGroup;
 use App\Models\TransactionTransferLink;
 use App\Models\VenmoActivity;
+use App\Services\Plans\VacationWindowService;
 
 class ReconciliationReviewService
 {
@@ -15,6 +16,7 @@ class ReconciliationReviewService
         protected ReimbursementGroupService $reimbursementGroups,
         protected VenmoActivityMatcher $venmoMatcher,
         protected TransactionCategorizationService $transactionCategorization,
+        protected VacationWindowService $vacationWindows,
         protected int $listLimit = 50,
         protected int $unmatchedTransactionsLimit = 250,
     ) {}
@@ -427,6 +429,10 @@ class ReconciliationReviewService
         $isDebit = (float) $transaction->amount < 0;
         $canCategorizeBase = $transaction->status === 'unmatched'
             && $transaction->classification === null;
+        $inVacationWindow = $this->vacationWindows->covers(
+            $transaction->user_id,
+            $transaction->posted_at,
+        );
 
         $payload = [
             'id' => $transaction->id,
@@ -439,8 +445,11 @@ class ReconciliationReviewService
             'merchant' => $transaction->merchant?->name,
             'supports_order_import' => (bool) ($transaction->merchant?->supports_order_import),
             'can_categorize' => $canCategorizeBase && ($isCredit || $isDebit),
-            'one_off_categorize_only' => $isDebit
-                && (bool) ($transaction->merchant?->supports_order_import),
+            'in_vacation_window' => $inVacationWindow,
+            'one_off_categorize_only' => $isDebit && (
+                (bool) ($transaction->merchant?->supports_order_import)
+                || $inVacationWindow
+            ),
             'venmo_summary' => $transaction->venmoSummary(),
         ];
 

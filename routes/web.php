@@ -21,6 +21,7 @@ use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
 use App\Http\Controllers\Plans\PlannedOccurrenceController;
 use App\Http\Controllers\Plans\PlannedTemplateController;
+use App\Http\Controllers\Plans\VacationWindowController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
@@ -123,6 +124,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/plans', [PlannedTemplateController::class, 'index'])->name('plans.index');
     Route::put('/plans/leftover-origin', [PlannedTemplateController::class, 'updateLeftoverOrigin'])
         ->name('plans.leftover-origin.update');
+    Route::post('/plans/vacation-windows', [VacationWindowController::class, 'store'])
+        ->name('plans.vacation-windows.store');
+    Route::delete('/plans/vacation-windows/{vacationWindow}', [VacationWindowController::class, 'destroy'])
+        ->name('plans.vacation-windows.destroy');
     Route::post('/plans', [PlannedTemplateController::class, 'store'])->name('plans.store');
     Route::patch('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'update'])->name('plans.update');
     Route::put('/plans/{plannedTemplate}/assignments', [PlannedTemplateController::class, 'updateAssignments'])

@@ -9,6 +9,7 @@ use App\Models\ImportBatch;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\User;
+use App\Models\VacationWindow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -80,6 +81,11 @@ class ResetUserDataCommandTest extends TestCase
             'import_batch_id' => $amazonBatch->id,
             'merchant_id' => $merchant->id,
         ]);
+        VacationWindow::factory()->create([
+            'user_id' => $user->id,
+            'starts_on' => '2026-08-01',
+            'ends_on' => '2026-08-10',
+        ]);
 
         $this->artisan('user:reset-data', [
             'user' => 'onboarding@example.com',
@@ -105,6 +111,7 @@ class ResetUserDataCommandTest extends TestCase
         $this->assertDatabaseMissing('categories', ['user_id' => $user->id]);
         $this->assertDatabaseMissing('orders', ['user_id' => $user->id]);
         $this->assertDatabaseMissing('merchants', ['user_id' => $user->id]);
+        $this->assertDatabaseMissing('vacation_windows', ['user_id' => $user->id]);
 
         Storage::disk('local')->assertMissing('imports/bank.csv');
         Storage::disk('local')->assertMissing('imports/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/summary.csv');

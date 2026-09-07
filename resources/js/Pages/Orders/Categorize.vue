@@ -22,6 +22,10 @@
             type: Object,
             required: true,
         },
+        vacation_windows: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
@@ -199,6 +203,9 @@
     let orderSavingKey = (order) => `order:${order.id}`;
 
     let orderThisTimeSavingKey = (order) => `order-once:${order.id}`;
+
+    let orderIsVacationHold = (order) =>
+        Boolean(order.in_vacation_window) && order.mode === 'items';
 
     let orderIsBusy = (order) => {
         return (
@@ -452,6 +459,13 @@
                 order and leaves later matches uncategorized. Amazon lines
                 are always one-off.
             </p>
+            <p
+                v-if="vacation_windows.length > 0"
+                class="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
+                Vacation-window Walmart orders stay one-off so the product
+                catalog is not rewritten.
+            </p>
         </div>
 
         <p
@@ -502,6 +516,12 @@
                         <p class="font-medium">
                             {{ order.merchant?.name ?? 'Order' }}
                             · #{{ order.order_number }}
+                            <span
+                                v-if="order.in_vacation_window"
+                                class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
+                            >
+                                Vacation
+                            </span>
                         </p>
                         <p class="text-sm text-neutral-600">
                             {{ order.ordered_at || '—' }}
@@ -517,7 +537,11 @@
                         </p>
                         <form
                             class="flex flex-wrap items-end gap-2"
-                            @submit.prevent="submitOrderCategory(order)"
+                            @submit.prevent="
+                                orderIsVacationHold(order)
+                                    ? submitOrderThisTimeOnly(order)
+                                    : submitOrderCategory(order)
+                            "
                         >
                             <label class="block text-sm">
                                 <span class="text-neutral-600"
@@ -538,6 +562,7 @@
                                 </select>
                             </label>
                             <button
+                                v-if="!orderIsVacationHold(order)"
                                 type="submit"
                                 class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                 :disabled="
@@ -554,7 +579,12 @@
                             <button
                                 v-if="order.mode === 'items'"
                                 type="button"
-                                class="btn rounded border px-3 text-sm disabled:opacity-50"
+                                class="btn rounded px-3 text-sm disabled:opacity-50"
+                                :class="
+                                    orderIsVacationHold(order)
+                                        ? 'bg-brand hover:bg-brand-hover text-white'
+                                        : 'border'
+                                "
                                 :disabled="
                                     !orderCategorySelections[order.id] ||
                                     orderIsBusy(order)
@@ -602,7 +632,9 @@
                                     <form
                                         class="flex flex-wrap items-end gap-2"
                                         @submit.prevent="
-                                            submitCreateProduct(order, line)
+                                            orderIsVacationHold(order)
+                                                ? submitThisTimeOnly(order, line)
+                                                : submitCreateProduct(order, line)
                                         "
                                     >
                                         <label class="block text-sm">
@@ -633,6 +665,7 @@
                                             </select>
                                         </label>
                                         <button
+                                            v-if="!orderIsVacationHold(order)"
                                             type="submit"
                                             class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                             :disabled="
@@ -650,7 +683,12 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="btn rounded border px-3 text-sm disabled:opacity-50"
+                                            class="btn rounded px-3 text-sm disabled:opacity-50"
+                                            :class="
+                                                orderIsVacationHold(order)
+                                                    ? 'bg-brand hover:bg-brand-hover text-white'
+                                                    : 'border'
+                                            "
                                             :disabled="
                                                 !categorySelections[
                                                     selectionKey(order, line)
@@ -717,7 +755,9 @@
                                     <form
                                         class="flex flex-wrap items-end gap-2"
                                         @submit.prevent="
-                                            submitProductCategory(order, line)
+                                            orderIsVacationHold(order)
+                                                ? submitThisTimeOnly(order, line)
+                                                : submitProductCategory(order, line)
                                         "
                                     >
                                         <label class="block text-sm">
@@ -748,6 +788,7 @@
                                             </select>
                                         </label>
                                         <button
+                                            v-if="!orderIsVacationHold(order)"
                                             type="submit"
                                             class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
                                             :disabled="
@@ -765,7 +806,12 @@
                                         </button>
                                         <button
                                             type="button"
-                                            class="btn rounded border px-3 text-sm disabled:opacity-50"
+                                            class="btn rounded px-3 text-sm disabled:opacity-50"
+                                            :class="
+                                                orderIsVacationHold(order)
+                                                    ? 'bg-brand hover:bg-brand-hover text-white'
+                                                    : 'border'
+                                            "
                                             :disabled="
                                                 !categorySelections[
                                                     selectionKey(order, line)
