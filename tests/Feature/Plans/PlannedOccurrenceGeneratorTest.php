@@ -131,6 +131,23 @@ class PlannedOccurrenceGeneratorTest extends TestCase
         $this->assertSame([], $this->occurrenceDates($otherTemplate));
     }
 
+    public function test_sync_creates_occurrences_back_to_leftover_tracking_start(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-07 12:00:00'));
+
+        $user = User::factory()->create([
+            'leftover_starts_on' => '2026-07-01',
+        ]);
+        $template = $this->templateFor($user, '2026-09-07 12:00:00');
+
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
+
+        $this->assertSame(
+            ['2026-07-01', '2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01'],
+            $this->occurrenceDates($template),
+        );
+    }
+
     public function test_backfill_recreates_missing_months_since_the_plan_was_created(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-09-07 12:00:00'));
@@ -141,9 +158,14 @@ class PlannedOccurrenceGeneratorTest extends TestCase
         app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
 
         $this->assertSame(
-            ['2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01'],
+            ['2026-07-01', '2026-08-01', '2026-09-01', '2026-10-01', '2026-11-01'],
             $this->occurrenceDates($template),
         );
+
+        PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('scheduled_date', '2026-07-01')
+            ->delete();
 
         $created = app(PlannedOccurrenceGenerator::class)->backfillTemplate($template);
 
@@ -166,11 +188,12 @@ class PlannedOccurrenceGeneratorTest extends TestCase
 
         $user = User::factory()->create();
         $template = $this->templateFor($user, '2026-08-23 03:55:32');
-        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
         $july = PlannedOccurrence::factory()
             ->forTemplate($template, '2026-07-01')
             ->resolved()
             ->create();
+
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
 
         $this->assertSame(0, app(PlannedOccurrenceGenerator::class)->backfillTemplate($template));
         $this->assertDatabaseHas('planned_occurrences', [
@@ -187,6 +210,11 @@ class PlannedOccurrenceGeneratorTest extends TestCase
         $user = User::factory()->create();
         $template = $this->templateFor($user, '2026-08-23 03:55:32');
         app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('scheduled_date', '2026-07-01')
+            ->delete();
 
         $this->artisan('plans:generate-occurrences', ['--backfill' => true])
             ->assertSuccessful()

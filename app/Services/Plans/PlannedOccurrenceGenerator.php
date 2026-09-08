@@ -4,6 +4,7 @@ namespace App\Services\Plans;
 
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
+use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 
@@ -47,15 +48,14 @@ class PlannedOccurrenceGenerator
             return;
         }
 
-        foreach ($this->monthsInHorizon() as $month) {
+        foreach ($this->monthsFrom($this->historyStartForTemplate($template), self::horizonLastMonth()) as $month) {
             $this->syncOccurrenceForMonth($template, $month, updateExisting: true);
         }
     }
 
     /**
-     * Recreate months that were generated when each plan existed, then later
-     * pruned. Starts at the month before the plan was created (the original
-     * horizon start) and stops at the current horizon.
+     * Recreate missing months back to leftover tracking start (when set) or
+     * the month before the plan was created, through the current horizon.
      */
     public function backfillAll(?int $userId = null): int
     {
@@ -82,7 +82,7 @@ class PlannedOccurrenceGenerator
 
         $created = 0;
 
-        foreach ($this->monthsFrom($this->firstGeneratedMonth($template), self::horizonLastMonth()) as $month) {
+        foreach ($this->monthsFrom($this->historyStartForTemplate($template), self::horizonLastMonth()) as $month) {
             if ($this->syncOccurrenceForMonth($template, $month, updateExisting: false)) {
                 $created++;
             }
@@ -103,30 +103,29 @@ class PlannedOccurrenceGenerator
     }
 
     /**
-     * Last month through two months ahead. Future months stay ungenerated
-     * so the template can change mid-year before those records exist.
-     * Existing occurrences outside this window are left in place.
-     *
-     * @return list<CarbonInterface>
+     * Earliest month to generate for a plan: leftover tracking start when set,
+     * otherwise the month before the plan was created (the original horizon
+     * start when the plan first appeared).
      */
-    protected function monthsInHorizon(): array
-    {
-        return $this->monthsFrom(
-            Carbon::now()->startOfMonth()->subMonth()->startOfDay(),
-            self::horizonLastMonth(),
-        );
-    }
-
-    /**
-     * When the plan was created, generation started at last month.
-     */
-    protected function firstGeneratedMonth(PlannedTemplate $template): CarbonInterface
+    protected function historyStartForTemplate(PlannedTemplate $template): CarbonInterface
     {
         $created = $template->created_at
             ? Carbon::parse($template->created_at)->startOfMonth()
             : Carbon::now()->startOfMonth();
 
-        return $created->subMonth()->startOfDay();
+        $start = $created->copy()->subMonth()->startOfDay();
+
+        $leftoverStartsOn = User::query()
+            ->whereKey($template->user_id)
+            ->value('leftover_starts_on');
+
+        if ($leftoverStartsOn === null) {
+            return $start;
+        }
+
+        $leftoverStart = Carbon::parse($leftoverStartsOn)->startOfMonth()->startOfDay();
+
+        return $leftoverStart->lt($start) ? $leftoverStart : $start;
     }
 
     /**

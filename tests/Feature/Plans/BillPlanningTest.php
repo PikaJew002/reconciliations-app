@@ -38,6 +38,58 @@ class BillPlanningTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_creating_a_bill_plan_generates_occurrences_back_to_leftover_tracking_start(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-07 12:00:00'));
+
+        $user = User::factory()->create([
+            'leftover_starts_on' => '2026-07-01',
+        ]);
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $this->actingAs($user)
+            ->post('/plans', [
+                'name' => 'Internet',
+                'category_id' => $utilities->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+                'normalized_pattern' => 'METRO FIBERNET',
+                'expected_day' => 15,
+                'expected_amount' => 64,
+                'lookback_days' => 7,
+                'lookforward_days' => 3,
+            ])
+            ->assertRedirect(route('plans.index'));
+
+        $template = PlannedTemplate::query()->where('user_id', $user->id)->firstOrFail();
+
+        foreach (['2026-07-15', '2026-08-15', '2026-09-15', '2026-10-15', '2026-11-15'] as $date) {
+            $this->assertTrue(
+                PlannedOccurrence::query()
+                    ->where('template_id', $template->id)
+                    ->whereDate('expected_date', $date)
+                    ->where('status', PlannedOccurrence::STATUS_PLANNED)
+                    ->exists(),
+                "Missing occurrence for {$date}",
+            );
+        }
+
+        $this->assertFalse(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('expected_date', '2026-06-15')
+                ->exists(),
+        );
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-07')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->has('bill_occurrences', 1)
+                ->where('bill_occurrences.0.template_name', 'Internet')
+                ->where('bill_occurrences.0.expected_date', '2026-07-15'));
+    }
+
     public function test_creating_a_bill_plan_generates_monthly_bill_occurrences(): void
     {
         $user = User::factory()->create();
