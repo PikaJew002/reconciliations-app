@@ -37,6 +37,7 @@ use App\Http\Controllers\Review\ReviewCategorizationController;
 use App\Http\Controllers\Review\ReviewController;
 use App\Http\Controllers\Rules\IncomeClassificationRuleController;
 use App\Http\Controllers\Rules\RuleController;
+use App\Http\Controllers\Users\UserDataExportController;
 use App\Http\Controllers\Venmo\VenmoImportController;
 use Illuminate\Support\Facades\Route;
 
@@ -57,6 +58,9 @@ Route::middleware('auth')->group(function () {
         ->name('extension.auth.callback');
 
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::get('/internal/exports/{token}', [UserDataExportController::class, 'show'])
+        ->name('internal.user-export.download');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
