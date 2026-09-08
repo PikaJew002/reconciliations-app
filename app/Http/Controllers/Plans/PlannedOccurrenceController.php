@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Plans;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Plans\LinkPlannedOccurrenceRequest;
+use App\Http\Requests\Plans\UpdateOccurrenceCarryForwardRequest;
 use App\Http\Requests\Plans\UpdatePlannedOccurrenceRequest;
 use App\Jobs\MatchPlannedOccurrences;
 use App\Models\BankTransaction;
@@ -49,6 +50,27 @@ class PlannedOccurrenceController extends Controller
         return redirect()
             ->route('plans.index', array_filter(['month' => $month !== '' ? $month : null]))
             ->with('success', $label.' updated for this date only. Matching existing transactions…');
+    }
+
+    public function updateCarryForward(
+        UpdateOccurrenceCarryForwardRequest $request,
+        PlannedOccurrence $plannedOccurrence,
+    ): RedirectResponse {
+        if ($plannedOccurrence->user_id !== $request->user()->id) {
+            throw new NotFoundHttpException;
+        }
+
+        if ($plannedOccurrence->classification !== BankTransaction::CLASSIFICATION_INCOME) {
+            abort(422, 'Carry-forward can only be set on paycheck occurrences.');
+        }
+
+        $plannedOccurrence->update([
+            'carry_forward' => $request->carryForward(),
+        ]);
+
+        return redirect()
+            ->route('plans.index', array_filter(['month' => $request->viewMonth()]))
+            ->with('success', 'Carry-forward to the next paycheck updated.');
     }
 
     public function link(

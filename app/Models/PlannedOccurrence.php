@@ -32,6 +32,7 @@ class PlannedOccurrence extends Model
         'expected_amount',
         'date_customized',
         'amount_customized',
+        'carry_forward',
         'lookback_days',
         'lookforward_days',
         'status',
@@ -44,6 +45,7 @@ class PlannedOccurrence extends Model
         'expected_date' => 'date',
         'date_customized' => 'boolean',
         'amount_customized' => 'boolean',
+        'carry_forward' => 'decimal:2',
         'lookback_days' => 'integer',
         'lookforward_days' => 'integer',
     ];

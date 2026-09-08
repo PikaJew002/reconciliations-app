@@ -335,6 +335,9 @@ class PlannedTemplateController extends Controller
             'expected_amount' => (float) $occurrence->expected_amount,
             'date_customized' => (bool) $occurrence->date_customized,
             'amount_customized' => (bool) $occurrence->amount_customized,
+            'carry_forward' => $occurrence->carry_forward !== null
+                ? (float) $occurrence->carry_forward
+                : null,
             'amount' => $actualAmount,
             'leftover' => $leftover,
             'status' => $occurrence->status,

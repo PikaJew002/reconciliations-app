@@ -114,6 +114,11 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(3000, $august['planned_leftover']);
         $this->assertEquals(3000, $august['paycheck_remaining']);
         $this->assertEquals(6000, $august['remaining']);
+        $this->assertEquals(0, $july['decision_brought_forward']);
+        $this->assertEquals(3000, $july['decision_remaining']);
+        $this->assertNull($july['carry_forward']);
+        $this->assertEquals(0, $august['decision_brought_forward']);
+        $this->assertEquals(3000, $august['decision_remaining']);
         $this->assertSame('2026-09-01', $august['next_paycheck']['date']);
     }
 
@@ -136,7 +141,7 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(1000, $august['remaining']);
     }
 
-    public function test_widget_reports_chained_remaining(): void
+    public function test_widget_reports_decision_remaining(): void
     {
         [$user] = $this->paycheckSetup();
         $this->startLeftoverFrom($user, '2026-07-01');
@@ -146,7 +151,7 @@ class PaycheckLeftoverTest extends TestCase
             ->getJson(route('api.leftover.current'))
             ->assertOk()
             ->assertJson([
-                'remaining' => '$1,000.00',
+                'remaining' => '$3,000.00',
                 'days_remaining' => 17,
                 'next_paycheck' => 'Sep 1',
             ]);
@@ -155,6 +160,8 @@ class PaycheckLeftoverTest extends TestCase
 
         $this->assertEquals(3000, $leftover['paycheck_remaining']);
         $this->assertEquals(1000, $leftover['remaining']);
+        $this->assertEquals(3000, $leftover['decision_remaining']);
+        $this->assertEquals(0, $leftover['decision_brought_forward']);
         $this->assertEquals(-2000, $leftover['brought_forward']);
         $this->assertEquals(-2000, $leftover['previous_paycheck_remaining']);
         $this->assertSame('Acme paycheck', $leftover['previous_paycheck']['name']);
@@ -448,8 +455,12 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(800, $july['brought_forward']);
         $this->assertEquals(3000, $july['paycheck_remaining']);
         $this->assertEquals(3800, $july['remaining']);
+        $this->assertEquals(0, $july['decision_brought_forward']);
+        $this->assertEquals(3000, $july['decision_remaining']);
         $this->assertEquals(3800, $august['brought_forward']);
         $this->assertEquals(6800, $august['remaining']);
+        $this->assertEquals(0, $august['decision_brought_forward']);
+        $this->assertEquals(3000, $august['decision_remaining']);
     }
 
     public function test_user_can_save_leftover_carry_over(): void
@@ -543,6 +554,139 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertSame('2026-07-01', $user->fresh()->leftover_starts_on->toDateString());
         $this->assertEquals(500, (float) $user->fresh()->leftover_carry_over);
         $this->assertEquals(500, $this->windowStarting($this->leftoverWindows($user), '2026-07-01')['brought_forward']);
+    }
+
+    public function test_occurrence_carry_forward_starts_the_next_decision_leftover(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $user->forceFill(['leftover_carry_over' => 800])->save();
+
+        $july = $this->occurrenceOn($paycheck, '2026-07-01');
+
+        $this->actingAs($user)
+            ->from(route('plans.index', ['month' => '2026-07']))
+            ->put(route('plans.occurrences.carry-forward.update', $july), [
+                'carry_forward' => 500,
+                'month' => '2026-07',
+            ])
+            ->assertRedirect(route('plans.index', ['month' => '2026-07']));
+
+        $this->assertEquals(500, (float) $july->fresh()->carry_forward);
+
+        $windows = $this->leftoverWindows($user);
+        $julyWindow = $this->windowStarting($windows, '2026-07-01');
+        $augustWindow = $this->windowStarting($windows, '2026-08-01');
+
+        $this->assertEquals(500, $julyWindow['carry_forward']);
+        $this->assertEquals(800, $julyWindow['brought_forward']);
+        $this->assertEquals(3800, $julyWindow['remaining']);
+        $this->assertEquals(0, $julyWindow['decision_brought_forward']);
+        $this->assertEquals(3000, $julyWindow['decision_remaining']);
+        $this->assertEquals(3800, $augustWindow['brought_forward']);
+        $this->assertEquals(6800, $augustWindow['remaining']);
+        $this->assertEquals(500, $augustWindow['decision_brought_forward']);
+        $this->assertEquals(3500, $augustWindow['decision_remaining']);
+
+        $this->actingAsLeftoverReporter($user)
+            ->getJson(route('api.leftover.current'))
+            ->assertOk()
+            ->assertJson([
+                'remaining' => '$3,500.00',
+                'days_remaining' => 17,
+                'next_paycheck' => 'Sep 1',
+            ]);
+    }
+
+    public function test_negative_occurrence_carry_forward_is_allowed(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+
+        $july = $this->occurrenceOn($paycheck, '2026-07-01');
+
+        $this->actingAs($user)
+            ->put(route('plans.occurrences.carry-forward.update', $july), [
+                'carry_forward' => -250,
+            ])
+            ->assertRedirect();
+
+        $august = $this->windowStarting($this->leftoverWindows($user), '2026-08-01');
+
+        $this->assertEquals(-250, $august['decision_brought_forward']);
+        $this->assertEquals(2750, $august['decision_remaining']);
+        $this->assertEquals(3000, $august['brought_forward']);
+        $this->assertEquals(6000, $august['remaining']);
+    }
+
+    public function test_clearing_occurrence_carry_forward_returns_decision_leftover_to_zero_start(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+
+        $july = $this->occurrenceOn($paycheck, '2026-07-01');
+        $july->forceFill(['carry_forward' => 500])->save();
+
+        $this->actingAs($user)
+            ->put(route('plans.occurrences.carry-forward.update', $july), [
+                'carry_forward' => '',
+                'month' => '2026-07',
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($july->fresh()->carry_forward);
+
+        $august = $this->windowStarting($this->leftoverWindows($user), '2026-08-01');
+
+        $this->assertEquals(0, $august['decision_brought_forward']);
+        $this->assertEquals(3000, $august['decision_remaining']);
+    }
+
+    public function test_carry_forward_can_be_set_on_a_resolved_paycheck(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+
+        $july = $this->occurrenceOn($paycheck, '2026-07-01');
+
+        $july->update(['status' => PlannedOccurrence::STATUS_RESOLVED]);
+
+        $this->actingAs($user)
+            ->put(route('plans.occurrences.carry-forward.update', $july), [
+                'carry_forward' => 125.5,
+                'month' => '2026-07',
+            ])
+            ->assertRedirect();
+
+        $this->assertEquals(125.5, (float) $july->fresh()->carry_forward);
+    }
+
+    public function test_bill_occurrences_cannot_set_carry_forward(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $bill = $this->rentBill($user);
+
+        $occurrence = $this->occurrenceOn($bill, '2026-08-01');
+
+        $this->actingAs($user)
+            ->put(route('plans.occurrences.carry-forward.update', $occurrence), [
+                'carry_forward' => 50,
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_plans_page_includes_paycheck_carry_forward(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+
+        $august = $this->occurrenceOn($paycheck, '2026-08-01');
+        $august->forceFill(['carry_forward' => -40])->save();
+
+        $this->actingAs($user)
+            ->get(route('plans.index', ['month' => '2026-08']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->where('paycheck_occurrences.0.carry_forward', -40));
     }
 
     public function test_creating_a_paycheck_plan_locks_leftover_to_the_current_month(): void
@@ -782,6 +926,44 @@ class PaycheckLeftoverTest extends TestCase
         $this->assertEquals(3000, $leftover['remaining']);
     }
 
+    public function test_order_components_matched_to_checking_do_not_double_count(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $checking = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $bank = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $checking->id,
+            'import_batch_id' => $batch->id,
+            'amount' => -42.5,
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'posted_at' => '2026-08-10',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'ordered_at' => '2026-08-10',
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'amount' => 42.5,
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $bank->id,
+            'order_component_id' => $component->id,
+            'allocated_amount' => 42.5,
+        ]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(42.5, $leftover['spent']);
+        $this->assertEquals(2957.5, $leftover['decision_remaining']);
+    }
+
     public function test_order_components_matched_to_a_credit_card_do_not_reduce_leftover(): void
     {
         [$user] = $this->paycheckSetup();
@@ -885,10 +1067,10 @@ class PaycheckLeftoverTest extends TestCase
                 ->where('paycheck_leftover.allocated', 50)
                 ->where('paycheck_leftover.paycheck_remaining', 2550)
                 ->where('paycheck_leftover.remaining', 2550)
+                ->where('paycheck_leftover.decision_remaining', 2550)
+                ->where('paycheck_leftover.decision_brought_forward', 0)
                 ->where('paycheck_leftover.brought_forward', 0)
                 ->where('paycheck_leftover.previous_paycheck_remaining', null)
-                ->where('leftover_origin.month', '2026-08')
-                ->where('leftover_origin.paycheck.date', '2026-08-01')
                 ->has('month_report.summary.leftover_income')
                 ->has('month_report.summary.vs_budget_difference')
                 ->has('year_report.summary.leftover_income'));
@@ -941,6 +1123,16 @@ class PaycheckLeftoverTest extends TestCase
     protected function startLeftoverFrom(User $user, string $date): void
     {
         $user->forceFill(['leftover_starts_on' => $date])->save();
+    }
+
+    protected function occurrenceOn(PlannedTemplate $template, string $date): PlannedOccurrence
+    {
+        app(PaycheckLeftoverService::class)->windows($template->user_id);
+
+        return PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('expected_date', $date)
+            ->firstOrFail();
     }
 
     protected function rentBill(User $user): PlannedTemplate

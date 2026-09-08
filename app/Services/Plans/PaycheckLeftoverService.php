@@ -129,8 +129,9 @@ class PaycheckLeftoverService
         $creditEvents = $this->creditEventsForUser($userId, $from, $paycheckTransactionIds);
         $spendEvents = collect($this->spendQuery->spendEventsForUser($userId, $from));
         $creditCardSpend = $this->creditCardSpendKeys($spendEvents);
+        $allocatedOrderComponents = $this->allocatedOrderComponentIds($spendEvents);
         $spendEvents = $spendEvents
-            ->reject(function (array $event) use ($assignedBillTransactionIds, $creditCardSpend): bool {
+            ->reject(function (array $event) use ($assignedBillTransactionIds, $creditCardSpend, $allocatedOrderComponents): bool {
                 $transactionId = $event['bank_transaction_id'] ?? null;
 
                 if ($transactionId !== null
@@ -138,7 +139,14 @@ class PaycheckLeftoverService
                     return true;
                 }
 
-                return $this->isCreditCardSpendEvent($event, $creditCardSpend);
+                if ($this->isCreditCardSpendEvent($event, $creditCardSpend)) {
+                    return true;
+                }
+
+                $orderComponentId = $event['order_component_id'] ?? null;
+
+                return $orderComponentId !== null
+                    && isset($allocatedOrderComponents[(int) $orderComponentId]);
             })
             ->values();
 
@@ -159,6 +167,7 @@ class PaycheckLeftoverService
 
         $windows = [];
         $broughtForward = $this->origin->carryOverForUser($userId);
+        $decisionBroughtForward = 0.0;
 
         foreach ($starts as $index => $item) {
             /** @var PlannedOccurrence $occurrence */
@@ -213,6 +222,10 @@ class PaycheckLeftoverService
 
             $paycheckRemaining = round($contribution['leftover'] + $credited - $spent - $allocated, 2);
             $remaining = round($broughtForward + $paycheckRemaining, 2);
+            $decisionRemaining = round($decisionBroughtForward + $paycheckRemaining, 2);
+            $carryForward = $occurrence->carry_forward !== null
+                ? round((float) $occurrence->carry_forward, 2)
+                : null;
             $nextPaycheck = $next !== null
                 ? $this->paycheckPayload($paychecks->get($next['occurrence']->template_id), $next['occurrence'], $next['start'])
                 : null;
@@ -223,6 +236,8 @@ class PaycheckLeftoverService
                 'starts_on' => $start->toDateString(),
                 'ends_before' => $end?->toDateString(),
                 'brought_forward' => $broughtForward,
+                'decision_brought_forward' => $decisionBroughtForward,
+                'carry_forward' => $carryForward,
                 'planned_leftover' => $contribution['leftover'],
                 'spent' => $spent,
                 'credited' => $credited,
@@ -233,6 +248,7 @@ class PaycheckLeftoverService
                 'allocations' => $windowAllocations->all(),
                 'paycheck_remaining' => $paycheckRemaining,
                 'remaining' => $remaining,
+                'decision_remaining' => $decisionRemaining,
                 ...$this->dayCounts($start, $end),
                 'bills' => array_map(function (array $bill): array {
                     unset($bill['occurrence_id'], $bill['bank_transaction_id']);
@@ -248,6 +264,7 @@ class PaycheckLeftoverService
             ];
 
             $broughtForward = $remaining;
+            $decisionBroughtForward = $carryForward ?? 0.0;
         }
 
         return $windows;
@@ -527,6 +544,30 @@ class PaycheckLeftoverService
             'pending' => array_fill_keys($creditCardPendingIds, true),
             'order_component' => array_fill_keys($creditCardOrderComponentIds, true),
         ];
+    }
+
+    /**
+     * Order components already allocated to a bank row are the same cash
+     * leaving checking. Keep the bank event; drop the component.
+     *
+     * @param  Collection<int, array<string, mixed>>  $events
+     * @return array<int, true>
+     */
+    protected function allocatedOrderComponentIds(Collection $events): array
+    {
+        $orderComponentIds = $this->eventIds($events, 'order_component_id');
+
+        if ($orderComponentIds === []) {
+            return [];
+        }
+
+        $allocatedIds = TransactionAllocation::query()
+            ->whereIn('order_component_id', $orderComponentIds)
+            ->pluck('order_component_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return array_fill_keys($allocatedIds, true);
     }
 
     /**

@@ -135,6 +135,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
     Route::patch('/plans/occurrences/{plannedOccurrence}', [PlannedOccurrenceController::class, 'update'])
         ->name('plans.occurrences.update');
+    Route::put('/plans/occurrences/{plannedOccurrence}/carry-forward', [PlannedOccurrenceController::class, 'updateCarryForward'])
+        ->name('plans.occurrences.carry-forward.update');
     Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
         ->name('plans.occurrences.link');
 

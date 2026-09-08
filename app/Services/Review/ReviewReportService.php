@@ -91,7 +91,7 @@ class ReviewReportService
     ): array {
         $dailyRate = round($weekSpend / 7, 2);
         $daysRemaining = $leftover['days_remaining'] ?? null;
-        $paycheckRemaining = $leftover['remaining'] ?? $leftover['paycheck_remaining'] ?? null;
+        $paycheckRemaining = $leftover['decision_remaining'] ?? $leftover['paycheck_remaining'] ?? null;
         $projectedToPaycheck = $daysRemaining !== null
             ? round($dailyRate * (int) $daysRemaining, 2)
             : null;
@@ -129,7 +129,7 @@ class ReviewReportService
         array $pace,
     ): array {
         $corrections = [];
-        $paycheckRemaining = $leftover['remaining'] ?? $leftover['paycheck_remaining'] ?? null;
+        $paycheckRemaining = $leftover['decision_remaining'] ?? $leftover['paycheck_remaining'] ?? null;
 
         if ($paycheckRemaining !== null && (float) $paycheckRemaining < 0) {
             $corrections[] = [
