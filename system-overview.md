@@ -391,18 +391,20 @@ Resolved paychecks/bills use the posted bank amount when present.
 
 Dashboard leftover windows run from this paycheck’s start (posted date if resolved, otherwise expected date) until the next paycheck.
 
-This paycheck (hero and leftover widget) is the chained remaining:
+Leftover in the UI (dashboard hero, leftover widget, Review) is the decision leftover:
 
 ```
-paycheck remaining = planned leftover − unassigned spend − allocated transfers
-remaining = brought forward + paycheck remaining
+paycheck remaining = planned leftover + credits − unassigned spend − allocated transfers
+decision remaining = decision brought forward + paycheck remaining
 ```
 
-Brought forward is the leftover origin carry-over on the first window, then the previous window’s chained remaining after that. Spend before the origin paycheck is ignored. Remaining leftover carries into the next window.
+Decision leftover starts from the previous paycheck occurrence’s optional `carry_forward` (or 0). It does not auto-cascade remaining. Set carry-forward on a paycheck occurrence on Plans, positive or negative.
 
-Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Credit-card **payments** and checking↔savings transfers are allocated (they leave or return checking cash) and are not category spend. Card charges are spend.
+A running year leftover (`remaining`) is still computed from `users.leftover_carry_over` and chained window remaining. It is stored for a future year-review feature and is not shown in the UI.
 
-Windows start at a leftover origin: the first paycheck occurrence on or after `users.leftover_starts_on`. That date defaults to the current calendar month the first time leftover is computed (or a paycheck plan is created) and then stays put. Starting carry-over (`users.leftover_carry_over`) is brought forward at that origin paycheck. The start month and carry-over can be changed on Plans.
+Unassigned spend includes categorized bank/order spend in the window **and** still-planned unassigned bills. Assigned bill transactions are excluded so they are not subtracted twice. Order components allocated to a bank transaction are excluded so the bank amount is counted once. Credit-card **payments** and checking↔savings transfers are allocated (they leave or return checking cash) and are not category spend. Card charges do not reduce leftover until the card is paid.
+
+Windows start at a leftover origin: the first paycheck occurrence on or after `users.leftover_starts_on`. That date defaults to the current calendar month the first time leftover is computed (or a paycheck plan is created) and then stays put. The start month can be changed on Plans. Starting carry-over (`users.leftover_carry_over`) seeds year leftover only.
 
 There is no account-balance ledger.
 

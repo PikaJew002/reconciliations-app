@@ -8,6 +8,7 @@ use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\ReconciliationRun;
 use App\Models\TransactionCategorizationRule;
+use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\ReconciliationReviewService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,8 +17,11 @@ use Inertia\Response;
 
 class ReconciliationController extends Controller
 {
-    public function unmatchedTransactions(Request $request, ReconciliationReviewService $review): Response
-    {
+    public function unmatchedTransactions(
+        Request $request,
+        ReconciliationReviewService $review,
+        VacationWindowService $vacationWindows,
+    ): Response {
         $userId = $request->user()->id;
 
         return Inertia::render('Reconciliation/UnmatchedTransactions', [
@@ -25,6 +29,7 @@ class ReconciliationController extends Controller
             ...$review->unmatchedTransactionsForUser($userId),
             'categories' => $this->categoriesPayload($userId),
             'matchModes' => TransactionCategorizationRule::allMatchModes(),
+            'vacation_windows' => $vacationWindows->payloadForUser($userId),
             ...$this->sharedRunProps($userId),
         ]);
     }

@@ -23,6 +23,7 @@ use App\Models\TransactionAllocation;
 use App\Models\TransactionCategorizationRule;
 use App\Models\TransactionTransferLink;
 use App\Models\User;
+use App\Models\VacationWindow;
 use App\Models\VenmoActivity;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,7 @@ class ResetUserDataService
             PendingSpend::query()->where('user_id', $userId)->delete();
             PlannedOccurrence::query()->where('user_id', $userId)->delete();
             PlannedTemplate::query()->where('user_id', $userId)->delete();
+            VacationWindow::query()->where('user_id', $userId)->delete();
             PlannedOccurrenceMatchRun::query()->where('user_id', $userId)->delete();
             BudgetCategoryLimit::query()->where('user_id', $userId)->delete();
             BudgetYear::query()->where('user_id', $userId)->delete();

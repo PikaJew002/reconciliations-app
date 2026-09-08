@@ -51,4 +51,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(PendingSpend::class);
     }
+
+    public function vacationWindows()
+    {
+        return $this->hasMany(VacationWindow::class);
+    }
 }

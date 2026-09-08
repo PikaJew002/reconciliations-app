@@ -40,10 +40,6 @@
             type: Object,
             default: null,
         },
-        leftover_origin: {
-            type: Object,
-            default: null,
-        },
     });
 
     let queryBase = () => {
@@ -105,15 +101,15 @@
             return null;
         }
 
-        return Number(props.paycheck_leftover.remaining);
+        return Number(props.paycheck_leftover.decision_remaining);
     });
 
-    let runningLeftover = computed(() => {
+    let paycheckBroughtForward = computed(() => {
         if (!props.paycheck_leftover) {
-            return null;
+            return 0;
         }
 
-        return Number(props.paycheck_leftover.remaining);
+        return Number(props.paycheck_leftover.decision_brought_forward ?? 0);
     });
 
     let leftoverUntilLabel = computed(() => {
@@ -214,7 +210,7 @@
                 </p>
                 <p class="text-sm text-neutral-600">
                     Brought forward
-                    {{ formatMoney(paycheck_leftover.brought_forward) }}
+                    {{ formatMoney(paycheckBroughtForward) }}
                     + {{ paycheck_leftover.paycheck.name }} after bills
                     {{ formatMoney(paycheck_leftover.planned_leftover) }}
                     <template v-if="(paycheck_leftover.credited ?? 0) > 0">
@@ -454,31 +450,6 @@
                 :style="chipStyle(budget_year.color)"
             >
                 {{ budget_year.label }}
-            </p>
-
-            <p
-                v-if="runningLeftover !== null"
-                class="text-sm"
-                :class="differenceClass(runningLeftover)"
-            >
-                Running leftover
-                <template v-if="runningLeftover > 0">
-                    {{ formatMoney(runningLeftover) }} ahead
-                </template>
-                <template v-else-if="runningLeftover < 0">
-                    {{ formatMoney(-runningLeftover) }} behind
-                </template>
-                <template v-else>even</template>
-                <template v-if="leftover_origin">
-                    since
-                    {{
-                        formatDay(
-                            leftover_origin.paycheck?.date ||
-                                leftover_origin.starts_on,
-                        )
-                    }}.
-                    <Link href="/plans" class="underline">Change on Plans</Link>
-                </template>
             </p>
 
             <PeriodReport

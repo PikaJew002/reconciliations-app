@@ -4,9 +4,14 @@ namespace App\Services\Reconciliation;
 
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Services\Plans\VacationWindowService;
 
 class OrderComponentGenerator
 {
+    public function __construct(
+        protected VacationWindowService $vacationWindows,
+    ) {}
+
     /**
      * @return int Number of orders that had components generated.
      */
@@ -57,8 +62,10 @@ class OrderComponentGenerator
 
         $order->loadMissing('items.product');
 
+        $holdProductCategory = $this->vacationWindows->covers($order->user_id, $order->ordered_at);
+
         foreach ($order->items as $item) {
-            $productCategoryId = $item->product?->category_id;
+            $productCategoryId = $holdProductCategory ? null : $item->product?->category_id;
 
             OrderComponent::create([
                 'order_id' => $order->id,

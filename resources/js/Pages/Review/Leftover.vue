@@ -193,8 +193,8 @@
                     v-if="leftover_origin && originLabel"
                     class="mt-2 text-sm text-neutral-600"
                 >
-                    Chain starts {{ originLabel }}, carry-over
-                    {{ formatMoney(leftover_origin.carry_over ?? 0) }}.
+                    Leftover starts {{ originLabel }}. Carry-forward on a
+                    paycheck occurrence starts the next check’s leftover.
                     <Link href="/plans" class="underline">Change on Plans</Link>
                 </p>
             </div>
@@ -233,16 +233,10 @@
                         <p
                             class="mt-1 text-sm font-semibold tabular-nums"
                             :class="
-                                differenceClass(window.paycheck_remaining)
+                                differenceClass(window.decision_remaining)
                             "
                         >
-                            {{ formatDelta(window.paycheck_remaining) }}
-                        </p>
-                        <p
-                            class="text-xs tabular-nums"
-                            :class="differenceClass(window.remaining)"
-                        >
-                            {{ formatMoney(window.remaining) }}
+                            {{ formatMoney(window.decision_remaining) }}
                         </p>
                     </Link>
                 </div>
@@ -274,25 +268,17 @@
                                 class="text-2xl font-semibold tabular-nums"
                                 :class="
                                     differenceClass(
-                                        selectedWindow.paycheck_remaining,
+                                        selectedWindow.decision_remaining,
                                     )
                                 "
                             >
                                 {{
-                                    formatDelta(
-                                        selectedWindow.paycheck_remaining,
+                                    formatMoney(
+                                        selectedWindow.decision_remaining,
                                     )
                                 }}
                             </p>
-                            <p
-                                class="text-sm tabular-nums"
-                                :class="
-                                    differenceClass(selectedWindow.remaining)
-                                "
-                            >
-                                {{ formatMoney(selectedWindow.remaining) }}
-                                remaining
-                            </p>
+                            <p class="text-sm text-neutral-600">leftover</p>
                         </div>
                     </div>
 
@@ -322,11 +308,15 @@
                                 class="tabular-nums"
                                 :class="
                                     differenceClass(
-                                        selectedWindow.brought_forward,
+                                        selectedWindow.decision_brought_forward,
                                     )
                                 "
                             >
-                                {{ formatMoney(selectedWindow.brought_forward) }}
+                                {{
+                                    formatMoney(
+                                        selectedWindow.decision_brought_forward,
+                                    )
+                                }}
                             </dd>
                         </div>
                         <div class="flex items-baseline justify-between gap-3">
@@ -411,14 +401,36 @@
                             </dd>
                         </div>
                         <div class="flex items-baseline justify-between gap-3">
-                            <dt>Remaining</dt>
+                            <dt>Leftover</dt>
                             <dd
                                 class="tabular-nums"
                                 :class="
-                                    differenceClass(selectedWindow.remaining)
+                                    differenceClass(
+                                        selectedWindow.decision_remaining,
+                                    )
                                 "
                             >
-                                {{ formatMoney(selectedWindow.remaining) }}
+                                {{
+                                    formatMoney(
+                                        selectedWindow.decision_remaining,
+                                    )
+                                }}
+                            </dd>
+                        </div>
+                        <div
+                            v-if="selectedWindow.carry_forward !== null"
+                            class="flex items-baseline justify-between gap-3"
+                        >
+                            <dt>Carry to next paycheck</dt>
+                            <dd
+                                class="tabular-nums"
+                                :class="
+                                    differenceClass(
+                                        selectedWindow.carry_forward,
+                                    )
+                                "
+                            >
+                                {{ formatMoney(selectedWindow.carry_forward) }}
                             </dd>
                         </div>
                     </dl>

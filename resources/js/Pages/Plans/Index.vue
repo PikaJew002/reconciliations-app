@@ -75,6 +75,10 @@
             type: Object,
             default: null,
         },
+        vacation_windows: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
@@ -766,67 +770,144 @@
             props.leftover_origin?.starts_on,
     );
 
-    let leftoverCarryOverValue = (value) => {
+    let carryForwardDraftValue = (value) => {
         if (value === '' || value === null || value === undefined) {
-            return 0;
+            return '';
         }
 
         let amount = Number(value);
 
-        return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+        return Number.isFinite(amount) ? String(Math.round(amount * 100) / 100) : '';
+    };
+
+    let parsedCarryForward = (value) => {
+        if (value === '' || value === null || value === undefined) {
+            return null;
+        }
+
+        let amount = Number(value);
+
+        return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : null;
+    };
+
+    let carryForwardDrafts = ref({});
+    let carryForwardSavingId = ref(null);
+
+    let syncCarryForwardDrafts = () => {
+        let next = {};
+
+        for (let occurrence of props.paycheck_occurrences) {
+            next[occurrence.id] = carryForwardDraftValue(occurrence.carry_forward);
+        }
+
+        carryForwardDrafts.value = next;
+    };
+
+    syncCarryForwardDrafts();
+
+    watch(
+        () => props.paycheck_occurrences,
+        () => {
+            syncCarryForwardDrafts();
+        },
+        { deep: true },
+    );
+
+    let carryForwardDirty = (occurrence) => {
+        return (
+            parsedCarryForward(carryForwardDrafts.value[occurrence.id]) !==
+            parsedCarryForward(occurrence.carry_forward)
+        );
+    };
+
+    let saveCarryForward = (occurrence) => {
+        if (carryForwardSavingId.value === occurrence.id) {
+            return;
+        }
+
+        carryForwardSavingId.value = occurrence.id;
+
+        router.put(
+            `/plans/occurrences/${occurrence.id}/carry-forward`,
+            {
+                carry_forward: parsedCarryForward(
+                    carryForwardDrafts.value[occurrence.id],
+                ),
+                month: props.month,
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    if (carryForwardSavingId.value === occurrence.id) {
+                        carryForwardSavingId.value = null;
+                    }
+                },
+            },
+        );
+    };
+
+    let discardCarryForward = (occurrence) => {
+        carryForwardDrafts.value = {
+            ...carryForwardDrafts.value,
+            [occurrence.id]: carryForwardDraftValue(occurrence.carry_forward),
+        };
     };
 
     let leftoverOriginMonthDraft = ref(props.leftover_origin?.month ?? '');
-    let leftoverCarryOverDraft = ref(
-        leftoverCarryOverValue(props.leftover_origin?.carry_over),
-    );
     let leftoverOriginSaving = ref(false);
 
     watch(
-        () => [
-            props.leftover_origin?.month,
-            props.leftover_origin?.carry_over,
-        ],
+        () => props.leftover_origin?.month,
         () => {
             leftoverOriginMonthDraft.value = props.leftover_origin?.month ?? '';
-            leftoverCarryOverDraft.value = leftoverCarryOverValue(
-                props.leftover_origin?.carry_over,
-            );
         },
     );
+
+    let vacationWindowForm = useForm({
+        name: '',
+        starts_on: '',
+        ends_on: '',
+        month: props.month,
+    });
+
+    watch(
+        () => props.month,
+        (month) => {
+            vacationWindowForm.month = month;
+        },
+    );
+
+    let addVacationWindow = () => {
+        vacationWindowForm.post('/plans/vacation-windows', {
+            preserveScroll: true,
+            onSuccess: () => {
+                vacationWindowForm.reset('name', 'starts_on', 'ends_on');
+                vacationWindowForm.month = props.month;
+            },
+        });
+    };
+
+    let deleteVacationWindow = (window) => {
+        if (!window?.id) {
+            return;
+        }
+
+        router.delete(`/plans/vacation-windows/${window.id}`, {
+            data: { month: props.month },
+            preserveScroll: true,
+        });
+    };
 
     let leftoverOriginDirty = computed(() => {
         if (!props.leftover_origin) {
             return false;
         }
 
-        return (
-            leftoverOriginMonthDraft.value !== props.leftover_origin.month ||
-            leftoverCarryOverValue(leftoverCarryOverDraft.value) !==
-                leftoverCarryOverValue(props.leftover_origin.carry_over)
-        );
+        return leftoverOriginMonthDraft.value !== props.leftover_origin.month;
     });
-
-    let onLeftoverOriginMonthDraftChange = () => {
-        if (!props.leftover_origin) {
-            return;
-        }
-
-        if (leftoverOriginMonthDraft.value !== props.leftover_origin.month) {
-            leftoverCarryOverDraft.value = 0;
-            return;
-        }
-
-        leftoverCarryOverDraft.value = leftoverCarryOverValue(
-            props.leftover_origin.carry_over,
-        );
-    };
 
     let discardLeftoverOrigin = () => {
         leftoverOriginMonthDraft.value = props.leftover_origin?.month ?? '';
-        leftoverCarryOverDraft.value = leftoverCarryOverValue(
-            props.leftover_origin?.carry_over,
-        );
     };
 
     let saveLeftoverOrigin = () => {
@@ -845,7 +926,6 @@
             {
                 month: leftoverOriginMonthDraft.value,
                 view_month: props.month,
-                carry_over: leftoverCarryOverValue(leftoverCarryOverDraft.value),
             },
             {
                 preserveScroll: true,
@@ -903,21 +983,20 @@
         >
             <p class="text-sm font-medium">Leftover tracking</p>
             <p class="text-sm text-neutral-600">
-                Starts at the
+                Leftover starts at the
                 {{ formatDay(leftoverOriginPaycheckDate) }}
                 <template v-if="leftover_origin.paycheck?.name">
                     {{ leftover_origin.paycheck.name }}
                 </template>
-                paycheck. Brought forward is
-                {{ formatMoney(leftover_origin.carry_over ?? 0) }}
-                there. Spend before that paycheck is ignored.
+                paycheck. Spend before that paycheck is ignored. Set
+                carry-forward on a paycheck occurrence below to start the next
+                check’s leftover.
             </p>
             <label class="block text-sm sm:max-w-xs">
                 <span class="text-neutral-600">Start month</span>
                 <select
                     v-model="leftoverOriginMonthDraft"
                     class="mt-1 w-full rounded border px-3"
-                    @change="onLeftoverOriginMonthDraftChange"
                 >
                     <option
                         v-for="option in leftover_origin.months"
@@ -931,15 +1010,6 @@
                         </template>
                     </option>
                 </select>
-            </label>
-            <label class="block text-sm sm:max-w-xs">
-                <span class="text-neutral-600">Starting carry-over</span>
-                <input
-                    v-model="leftoverCarryOverDraft"
-                    type="number"
-                    step="0.01"
-                    class="mt-1 w-full rounded border px-3"
-                />
             </label>
             <div
                 v-if="leftoverOriginDirty"
@@ -961,6 +1031,89 @@
                     Discard
                 </button>
             </div>
+        </form>
+
+        <form
+            class="space-y-3 rounded border px-4 py-3"
+            @submit.prevent="addVacationWindow"
+        >
+            <p class="text-sm font-medium">Vacation windows</p>
+            <p class="text-sm text-neutral-600">
+                Learned vendor rules and Walmart product categories are skipped
+                for spend in these dates. You categorize those by hand. Bills
+                and income still match as usual.
+            </p>
+            <ul
+                v-if="vacation_windows.length > 0"
+                class="divide-y rounded border"
+            >
+                <li
+                    v-for="window in vacation_windows"
+                    :key="window.id"
+                    class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                    <span>
+                        <template v-if="window.name">
+                            {{ window.name }}
+                            ·
+                        </template>
+                        {{ formatDay(window.starts_on) }}
+                        –
+                        {{ formatDay(window.ends_on) }}
+                    </span>
+                    <button
+                        type="button"
+                        class="btn rounded border px-3 text-sm"
+                        @click="deleteVacationWindow(window)"
+                    >
+                        Remove
+                    </button>
+                </li>
+            </ul>
+            <div class="flex flex-wrap items-end gap-3">
+                <label class="block text-sm sm:max-w-xs">
+                    <span class="text-neutral-600">Name (optional)</span>
+                    <input
+                        v-model="vacationWindowForm.name"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Starts</span>
+                    <input
+                        v-model="vacationWindowForm.starts_on"
+                        type="date"
+                        required
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Ends</span>
+                    <input
+                        v-model="vacationWindowForm.ends_on"
+                        type="date"
+                        required
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <button
+                    type="submit"
+                    class="btn rounded bg-brand hover:bg-brand-hover px-3 text-sm text-white disabled:opacity-50"
+                    :disabled="vacationWindowForm.processing"
+                >
+                    Add window
+                </button>
+            </div>
+            <p
+                v-if="vacationWindowForm.errors.ends_on || vacationWindowForm.errors.starts_on"
+                class="text-sm text-red-700"
+            >
+                {{
+                    vacationWindowForm.errors.ends_on ||
+                    vacationWindowForm.errors.starts_on
+                }}
+            </p>
         </form>
 
         <div
@@ -1390,6 +1543,9 @@
                                 <th class="px-3 py-2 font-medium">Status</th>
                                 <th class="px-3 py-2 font-medium">Amount</th>
                                 <th class="px-3 py-2 font-medium">Leftover</th>
+                                <th class="px-3 py-2 font-medium">
+                                    Carry to next
+                                </th>
                                 <th class="px-3 py-2 font-medium">Posted</th>
                                 <th class="px-3 py-2 font-medium"></th>
                             </tr>
@@ -1488,6 +1644,52 @@
                                             ? '—'
                                             : formatMoney(occurrence.leftover)
                                     }}
+                                </td>
+                                <td class="px-3 py-2">
+                                    <div class="flex flex-col items-start gap-1">
+                                        <input
+                                            v-model="
+                                                carryForwardDrafts[occurrence.id]
+                                            "
+                                            type="number"
+                                            step="0.01"
+                                            class="w-28 rounded border px-2"
+                                            placeholder="None"
+                                        />
+                                        <div
+                                            v-if="carryForwardDirty(occurrence)"
+                                            class="flex flex-wrap items-center gap-2"
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn rounded border px-2 text-xs"
+                                                :disabled="
+                                                    carryForwardSavingId ===
+                                                    occurrence.id
+                                                "
+                                                @click="
+                                                    saveCarryForward(occurrence)
+                                                "
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="text-xs underline"
+                                                :disabled="
+                                                    carryForwardSavingId ===
+                                                    occurrence.id
+                                                "
+                                                @click="
+                                                    discardCarryForward(
+                                                        occurrence,
+                                                    )
+                                                "
+                                            >
+                                                Discard
+                                            </button>
+                                        </div>
+                                    </div>
                                 </td>
                                 <td class="px-3 py-2 text-neutral-600">
                                     <template

@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Services\Orders\OrderInstanceCategorizationService;
 use App\Services\Orders\OrderRemovalService;
+use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\ProductMatchingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,11 @@ class OrderItemCategorizationController extends Controller
         ProductMatchingService $productMatching,
     ): RedirectResponse {
         $this->authorizeWalmartItem($request, $item);
+
+        abort_if(
+            app(VacationWindowService::class)->covers($item->order->user_id, $item->order->ordered_at),
+            404,
+        );
 
         $validated = ['category_id' => $this->validatedExpenseCategoryId($request)];
 
@@ -45,6 +51,10 @@ class OrderItemCategorizationController extends Controller
             ->whereNull('category_id')
             ->where('type', 'product')
             ->whereHas('orderItem', fn ($query) => $query->where('product_id', $product->id))
+            ->whereHas(
+                'order',
+                fn ($query) => app(VacationWindowService::class)->whereOrderNotCovered($query, $product->user_id),
+            )
             ->update([
                 'category_id' => $validated['category_id'],
                 'category_confidence' => 100,

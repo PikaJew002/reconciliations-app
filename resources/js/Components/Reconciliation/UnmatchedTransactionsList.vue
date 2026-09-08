@@ -23,6 +23,10 @@
             type: Array,
             default: () => [],
         },
+        vacationWindows: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let emit = defineEmits(['toggle-selection']);
@@ -132,6 +136,7 @@
         let transactions = unmatchedTransactionsForAccount.value;
         let counts = {
             all: transactions.length,
+            vacation: 0,
             walmart: 0,
             amazon: 0,
             'untagged-transfer': 0,
@@ -149,10 +154,15 @@
             if (isCreditTransaction(transaction)) {
                 counts.credits += 1;
             }
+
+            if (transaction.in_vacation_window) {
+                counts.vacation += 1;
+            }
         }
 
         return [
             { id: 'all', label: 'All', count: counts.all },
+            { id: 'vacation', label: 'Vacation window', count: counts.vacation },
             { id: 'walmart', label: 'Walmart', count: counts.walmart },
             { id: 'amazon', label: 'Amazon', count: counts.amazon },
             {
@@ -228,6 +238,12 @@
         if (unmatchedTransactionFilter.value === 'credits') {
             return transactions.filter((transaction) =>
                 isCreditTransaction(transaction),
+            );
+        }
+
+        if (unmatchedTransactionFilter.value === 'vacation') {
+            return transactions.filter(
+                (transaction) => transaction.in_vacation_window,
             );
         }
 
@@ -512,6 +528,24 @@
 
 <template>
     <section class="space-y-3">
+        <p
+            v-if="vacationWindows.length > 0"
+            class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+            Vacation window is on. Learned expense and bill rules will not
+            auto-apply to spend in
+            {{
+                vacationWindows
+                    .map((window) => {
+                        let label = window.name
+                            ? `${window.name} (${window.starts_on}–${window.ends_on})`
+                            : `${window.starts_on}–${window.ends_on}`;
+
+                        return label;
+                    })
+                    .join('; ')
+            }}. Categorize those as one-offs.
+        </p>
         <div v-if="unmatchedTransactions.length > 0" class="space-y-2">
             <div class="flex flex-wrap gap-2">
                 <button
@@ -582,6 +616,12 @@
                         <div>
                             <p class="font-medium">
                                 {{ unmatchedTransactionTitle(transaction) }}
+                                <span
+                                    v-if="transaction.in_vacation_window"
+                                    class="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900"
+                                >
+                                    Vacation
+                                </span>
                             </p>
                             <p class="text-neutral-600">
                                 {{

@@ -8,6 +8,7 @@ use App\Models\BankTransaction;
 use App\Models\CategorizationRun;
 use App\Models\Category;
 use App\Models\TransactionCategorizationRule;
+use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -81,6 +82,14 @@ class TransactionCategorizationController extends Controller
                     $validated['match_mode'] === TransactionCategorizationRule::MATCH_ONCE,
                     422,
                     'Order-import merchant transactions can only be categorized as a one-off.',
+                );
+            }
+
+            if (app(VacationWindowService::class)->covers($transaction->user_id, $transaction->posted_at)) {
+                abort_unless(
+                    $validated['match_mode'] === TransactionCategorizationRule::MATCH_ONCE,
+                    422,
+                    'Vacation-window transactions can only be categorized as a one-off.',
                 );
             }
 

@@ -21,6 +21,7 @@ use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
 use App\Http\Controllers\Plans\PlannedOccurrenceController;
 use App\Http\Controllers\Plans\PlannedTemplateController;
+use App\Http\Controllers\Plans\VacationWindowController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
@@ -36,6 +37,7 @@ use App\Http\Controllers\Review\ReviewCategorizationController;
 use App\Http\Controllers\Review\ReviewController;
 use App\Http\Controllers\Rules\IncomeClassificationRuleController;
 use App\Http\Controllers\Rules\RuleController;
+use App\Http\Controllers\Users\UserDataExportController;
 use App\Http\Controllers\Venmo\VenmoImportController;
 use Illuminate\Support\Facades\Route;
 
@@ -56,6 +58,9 @@ Route::middleware('auth')->group(function () {
         ->name('extension.auth.callback');
 
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::get('/internal/exports/{token}', [UserDataExportController::class, 'show'])
+        ->name('internal.user-export.download');
 
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -123,6 +128,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/plans', [PlannedTemplateController::class, 'index'])->name('plans.index');
     Route::put('/plans/leftover-origin', [PlannedTemplateController::class, 'updateLeftoverOrigin'])
         ->name('plans.leftover-origin.update');
+    Route::post('/plans/vacation-windows', [VacationWindowController::class, 'store'])
+        ->name('plans.vacation-windows.store');
+    Route::delete('/plans/vacation-windows/{vacationWindow}', [VacationWindowController::class, 'destroy'])
+        ->name('plans.vacation-windows.destroy');
     Route::post('/plans', [PlannedTemplateController::class, 'store'])->name('plans.store');
     Route::patch('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'update'])->name('plans.update');
     Route::put('/plans/{plannedTemplate}/assignments', [PlannedTemplateController::class, 'updateAssignments'])
@@ -130,6 +139,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/plans/{plannedTemplate}', [PlannedTemplateController::class, 'destroy'])->name('plans.destroy');
     Route::patch('/plans/occurrences/{plannedOccurrence}', [PlannedOccurrenceController::class, 'update'])
         ->name('plans.occurrences.update');
+    Route::put('/plans/occurrences/{plannedOccurrence}/carry-forward', [PlannedOccurrenceController::class, 'updateCarryForward'])
+        ->name('plans.occurrences.carry-forward.update');
     Route::post('/plans/occurrences/{plannedOccurrence}/link', [PlannedOccurrenceController::class, 'link'])
         ->name('plans.occurrences.link');
 

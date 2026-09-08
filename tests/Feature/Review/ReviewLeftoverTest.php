@@ -72,6 +72,7 @@ class ReviewLeftoverTest extends TestCase
                 ->where('windows.1.spent', 0)
                 ->where('windows.1.credit_card_payments', 200)
                 ->where('windows.1.remaining', 800)
+                ->where('windows.1.decision_remaining', 2800)
                 ->where('windows.1.allocations.0.kind', PaycheckLeftoverService::ALLOCATION_CREDIT_CARD_PAYMENT)
                 ->where('windows.1.allocations.0.amount', 200));
     }

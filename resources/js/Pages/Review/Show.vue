@@ -111,7 +111,7 @@
             return null;
         }
 
-        return Number(props.paycheck_leftover.remaining);
+        return Number(props.paycheck_leftover.decision_remaining);
     });
 
     let leftoverUntilLabel = computed(() => {
