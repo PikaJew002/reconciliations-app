@@ -5,6 +5,7 @@ namespace Tests\Feature\Plans;
 use App\Jobs\MatchPlannedOccurrences;
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\BudgetYear;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\PlannedOccurrence;
@@ -38,22 +39,109 @@ class BillPlanningTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_creating_a_bill_plan_generates_occurrences_from_selected_start_month(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-07 12:00:00'));
+
+        $user = User::factory()->create([
+            'leftover_starts_on' => '2026-07-01',
+        ]);
+        BudgetYear::factory()->for($user)->current()->starting('2026-07')->create();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $this->actingAs($user)
+            ->post('/plans', $this->billPlanPayload([
+                'name' => 'Gym',
+                'category_id' => $utilities->id,
+                'normalized_pattern' => 'PLANET FITNESS',
+                'expected_day' => 1,
+                'expected_amount' => 25,
+                'occurrences_starts_on' => '2026-09',
+            ]))
+            ->assertRedirect(route('plans.index'));
+
+        $template = PlannedTemplate::query()->where('user_id', $user->id)->firstOrFail();
+        $this->assertSame('2026-09-01', $template->occurrences_starts_on->toDateString());
+
+        foreach (['2026-09-01', '2026-10-01', '2026-11-01'] as $date) {
+            $this->assertTrue(
+                PlannedOccurrence::query()
+                    ->where('template_id', $template->id)
+                    ->whereDate('expected_date', $date)
+                    ->exists(),
+                "Missing occurrence for {$date}",
+            );
+        }
+
+        $this->assertFalse(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('expected_date', '2026-07-01')
+                ->exists(),
+        );
+    }
+
+    public function test_creating_a_bill_plan_generates_occurrences_back_to_leftover_tracking_start(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-07 12:00:00'));
+
+        $user = User::factory()->create([
+            'leftover_starts_on' => '2026-07-01',
+        ]);
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $this->actingAs($user)
+            ->post('/plans', $this->billPlanPayload([
+                'name' => 'Internet',
+                'category_id' => $utilities->id,
+                'normalized_pattern' => 'METRO FIBERNET',
+                'expected_day' => 15,
+                'expected_amount' => 64,
+                'occurrences_starts_on' => '2026-07',
+            ]))
+            ->assertRedirect(route('plans.index'));
+
+        $template = PlannedTemplate::query()->where('user_id', $user->id)->firstOrFail();
+
+        foreach (['2026-07-15', '2026-08-15', '2026-09-15', '2026-10-15', '2026-11-15'] as $date) {
+            $this->assertTrue(
+                PlannedOccurrence::query()
+                    ->where('template_id', $template->id)
+                    ->whereDate('expected_date', $date)
+                    ->where('status', PlannedOccurrence::STATUS_PLANNED)
+                    ->exists(),
+                "Missing occurrence for {$date}",
+            );
+        }
+
+        $this->assertFalse(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('expected_date', '2026-06-15')
+                ->exists(),
+        );
+
+        $this->actingAs($user)
+            ->get('/plans?month=2026-07')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Plans/Index')
+                ->has('bill_occurrences', 1)
+                ->where('bill_occurrences.0.template_name', 'Internet')
+                ->where('bill_occurrences.0.expected_date', '2026-07-15'));
+    }
+
     public function test_creating_a_bill_plan_generates_monthly_bill_occurrences(): void
     {
         $user = User::factory()->create();
         $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
 
         $this->actingAs($user)
-            ->post('/plans', [
+            ->post('/plans', $this->billPlanPayload([
                 'name' => 'Electric',
                 'category_id' => $utilities->id,
-                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
                 'normalized_pattern' => 'DUKE ENERGY',
-                'expected_day' => 15,
-                'expected_amount' => 140,
-                'lookback_days' => 7,
-                'lookforward_days' => 3,
-            ])
+            ]))
             ->assertRedirect(route('plans.index'));
 
         $template = PlannedTemplate::query()->where('user_id', $user->id)->first();
@@ -93,16 +181,11 @@ class BillPlanningTest extends TestCase
         $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
 
         $this->actingAs($user)
-            ->post('/plans', [
+            ->post('/plans', $this->billPlanPayload([
                 'name' => 'Electric',
                 'category_id' => $utilities->id,
-                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
                 'normalized_pattern' => 'DUKE ENERGY',
-                'expected_day' => 15,
-                'expected_amount' => 140,
-                'lookback_days' => 7,
-                'lookforward_days' => 3,
-            ])
+            ]))
             ->assertRedirect(route('plans.index'));
 
         $run = PlannedOccurrenceMatchRun::query()->where('user_id', $user->id)->first();
@@ -130,6 +213,7 @@ class BillPlanningTest extends TestCase
                 'normalized_pattern' => 'duke energy',
                 'expected_day' => 15,
                 'expected_amount' => 140,
+                'occurrences_starts_on' => '2026-03',
                 'lookback_days' => 7,
                 'lookforward_days' => 3,
                 'is_active' => true,
@@ -166,16 +250,11 @@ class BillPlanningTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post('/plans', [
+            ->post('/plans', $this->billPlanPayload([
                 'name' => 'Electric',
                 'category_id' => $utilities->id,
-                'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
                 'normalized_pattern' => 'DUKE ENERGY',
-                'expected_day' => 15,
-                'expected_amount' => 140,
-                'lookback_days' => 7,
-                'lookforward_days' => 3,
-            ])
+            ]))
             ->assertRedirect(route('plans.index'));
 
         $this->assertDatabaseHas('planned_occurrences', [
@@ -195,27 +274,19 @@ class BillPlanningTest extends TestCase
         $user = User::factory()->create();
         $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
 
-        $this->actingAs($user)->post('/plans', [
+        $this->actingAs($user)->post('/plans', $this->billPlanPayload([
             'name' => 'Phone',
             'category_id' => $utilities->id,
-            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
             'normalized_pattern' => 'VERIZON',
             'expected_day' => 5,
             'expected_amount' => 80,
-            'lookback_days' => 7,
-            'lookforward_days' => 3,
-        ])->assertRedirect(route('plans.index'));
+        ]))->assertRedirect(route('plans.index'));
 
-        $this->actingAs($user)->post('/plans', [
+        $this->actingAs($user)->post('/plans', $this->billPlanPayload([
             'name' => 'Electric',
             'category_id' => $utilities->id,
-            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
             'normalized_pattern' => 'DUKE ENERGY',
-            'expected_day' => 15,
-            'expected_amount' => 140,
-            'lookback_days' => 7,
-            'lookforward_days' => 3,
-        ])->assertRedirect(route('plans.index'));
+        ]))->assertRedirect(route('plans.index'));
 
         $this->assertSame(2, PlannedTemplate::query()->where('user_id', $user->id)->count());
         $this->assertSame(
@@ -459,6 +530,22 @@ class BillPlanningTest extends TestCase
     }
 
     /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    protected function billPlanPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT,
+            'expected_day' => 15,
+            'expected_amount' => 140,
+            'lookback_days' => 7,
+            'lookforward_days' => 3,
+            'occurrences_starts_on' => '2026-03',
+        ], $overrides);
+    }
+
+    /**
      * @return array{0: User, 1: Category, 2: PlannedTemplate}
      */
     protected function billSetup(): array
@@ -474,6 +561,7 @@ class BillPlanningTest extends TestCase
             'amount' => 140,
             'expected_day' => 15,
             'expected_amount' => 140,
+            'occurrences_starts_on' => '2026-03-01',
             'lookback_days' => 7,
             'lookforward_days' => 3,
         ]);

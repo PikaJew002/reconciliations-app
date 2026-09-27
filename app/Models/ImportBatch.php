@@ -76,6 +76,37 @@ class ImportBatch extends Model
         ]);
     }
 
+    public function markReverted(): void
+    {
+        $this->update([
+            'status' => 'reverted',
+        ]);
+    }
+
+    public function canRevert(): bool
+    {
+        return in_array($this->status, ['completed', 'failed'], true);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function historyPayload(): array
+    {
+        return [
+            'id' => $this->id,
+            'source' => $this->source,
+            'type' => $this->type,
+            'original_filename' => $this->original_filename,
+            'record_count' => $this->record_count,
+            'status' => $this->status,
+            'error_message' => $this->error_message,
+            'created_at' => $this->created_at,
+            'completed_at' => $this->completed_at,
+            'can_revert' => $this->canRevert(),
+        ];
+    }
+
     public function validationRules(): array
     {
         return [

@@ -43,7 +43,9 @@ class RetailerImportController extends Controller
 
         return Inertia::render('Orders/Imports', [
             'merchant' => $vendor,
-            'batches' => $batches,
+            'batches' => $batches
+                ->map(fn (ImportBatch $batch) => $batch->historyPayload())
+                ->values(),
         ]);
     }
 

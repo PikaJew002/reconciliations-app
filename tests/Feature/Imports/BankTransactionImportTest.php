@@ -198,7 +198,9 @@ class BankTransactionImportTest extends TestCase
                 ->where('breadcrumbs.2.label', 'Imports')
                 ->where('breadcrumbs.2.href', route('accounts.imports.index', $account))
                 ->where('breadcrumbs.3.label', 'Import batch')
-                ->missing('breadcrumbs.3.href'));
+                ->missing('breadcrumbs.3.href')
+                ->where('can_revert', true)
+                ->where('revert_url', route('accounts.imports.destroy', [$account, $batch])));
     }
 
     public function test_account_import_batch_show_rejects_batches_for_other_accounts(): void
@@ -253,7 +255,8 @@ class BankTransactionImportTest extends TestCase
                 ->component('Accounts/Imports')
                 ->has('batches', 1)
                 ->where('batches.0.id', $batchA->id)
-                ->where('batches.0.original_filename', 'a.csv'));
+                ->where('batches.0.original_filename', 'a.csv')
+                ->where('batches.0.can_revert', true));
     }
 
     public function test_bank_import_chains_transfer_pairing_and_income_classification(): void

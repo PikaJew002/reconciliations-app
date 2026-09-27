@@ -21,4 +21,9 @@ class ImportBatchPolicy
     {
         return true;
     }
+
+    public function delete(User $user, ImportBatch $importBatch): bool
+    {
+        return $user->id === $importBatch->user_id;
+    }
 }

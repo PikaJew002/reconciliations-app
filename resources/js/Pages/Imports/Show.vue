@@ -1,7 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
-    import { computed, onMounted, onUnmounted } from 'vue';
+    import { Link, router, usePage } from '@inertiajs/vue3';
+    import { computed, onMounted, onUnmounted, ref } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -14,11 +14,23 @@
             type: Array,
             required: true,
         },
+        can_revert: {
+            type: Boolean,
+            default: false,
+        },
+        revert_url: {
+            type: String,
+            default: null,
+        },
     });
 
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
+    let flashError = computed(() => page.props.flash?.error);
     let isInProgress = computed(() =>
         ['pending', 'processing'].includes(props.batch.status),
     );
+    let reverting = ref(false);
     let pollId = null;
 
     let formatImportedAt = (value) => {
@@ -35,6 +47,27 @@
         return date.toLocaleString();
     };
 
+    let revertBatch = () => {
+        if (!props.can_revert || !props.revert_url) {
+            return;
+        }
+
+        if (
+            !window.confirm(
+                `Revert import "${props.batch.original_filename}"? This removes the imported records and undoes their matches.`,
+            )
+        ) {
+            return;
+        }
+
+        reverting.value = true;
+        router.delete(props.revert_url, {
+            onFinish: () => {
+                reverting.value = false;
+            },
+        });
+    };
+
     onMounted(() => {
         if (!isInProgress.value) {
             return;
@@ -42,7 +75,7 @@
 
         pollId = window.setInterval(() => {
             router.reload({
-                only: ['batch'],
+                only: ['batch', 'can_revert', 'revert_url'],
                 onSuccess: (page) => {
                     let status = page.props.batch?.status;
                     if (
@@ -89,6 +122,19 @@
             </p>
         </div>
 
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
+        <p
+            v-if="flashError"
+            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+            {{ flashError }}
+        </p>
+
         <dl class="space-y-3 rounded border p-4 text-sm">
             <div class="flex justify-between gap-4">
                 <dt class="text-neutral-600">Imported</dt>
@@ -119,5 +165,20 @@
         <p v-if="isInProgress" class="text-sm text-neutral-600">
             Processing… this page refreshes automatically.
         </p>
+
+        <div v-if="can_revert && revert_url" class="space-y-2">
+            <button
+                type="button"
+                class="btn rounded border px-4 text-sm text-red-700 hover:bg-red-50"
+                :disabled="reverting"
+                @click="revertBatch"
+            >
+                Revert import
+            </button>
+            <p class="text-sm text-neutral-600">
+                Removes the records created by this import and undoes their
+                matches.
+            </p>
+        </div>
     </div>
 </template>
