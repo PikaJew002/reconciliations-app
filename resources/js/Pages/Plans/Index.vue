@@ -87,6 +87,10 @@
             type: String,
             default: '',
         },
+        assignment_bill_occurrences: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
@@ -325,6 +329,7 @@
         expected_day: 1,
         expected_amount: '',
         occurrences_starts_on: props.default_bill_occurrence_starts_on,
+        recurrence_months: 1,
         lookback_days: 7,
         lookforward_days: 3,
         is_active: true,
@@ -378,6 +383,80 @@
             month: 'short',
             day: 'numeric',
         });
+    };
+
+    let billRecurrenceLabel = (template) => {
+        let months = Number(template.recurrence_months ?? 1);
+
+        if (months <= 1) {
+            return 'Monthly';
+        }
+
+        return `Every ${months} months`;
+    };
+
+    let monthsBetweenYearMonths = (startYm, endYm) => {
+        let [startYear, startMonth] = startYm.split('-').map(Number);
+        let [endYear, endMonth] = endYm.split('-').map(Number);
+
+        return (endYear - startYear) * 12 + (endMonth - startMonth);
+    };
+
+    let isBillDueInMonth = (bill, yearMonth) => {
+        let recurrence = Number(bill.recurrence_months ?? 1);
+
+        if (recurrence <= 1) {
+            return true;
+        }
+
+        if (!bill.occurrences_starts_on) {
+            return false;
+        }
+
+        let monthsSinceAnchor = monthsBetweenYearMonths(
+            bill.occurrences_starts_on,
+            yearMonth,
+        );
+
+        return (
+            monthsSinceAnchor >= 0 &&
+            monthsSinceAnchor % recurrence === 0
+        );
+    };
+
+    let billCoverageYearMonth = (paycheck, bill) => {
+        let [year, month] = props.month.split('-').map(Number);
+
+        if (billCoversNextMonth(paycheck, bill)) {
+            month += 1;
+
+            if (month > 12) {
+                month = 1;
+                year += 1;
+            }
+        }
+
+        return `${year}-${String(month).padStart(2, '0')}`;
+    };
+
+    let assignedBillAmountForPaycheck = (paycheck, bill) => {
+        let coverageMonth = billCoverageYearMonth(paycheck, bill);
+
+        if (!isBillDueInMonth(bill, coverageMonth)) {
+            return 0;
+        }
+
+        let occurrence = props.assignment_bill_occurrences.find(
+            (item) =>
+                Number(item.template_id) === Number(bill.id) &&
+                item.period_month === coverageMonth,
+        );
+
+        if (!occurrence) {
+            return 0;
+        }
+
+        return Number(occurrence.amount);
     };
 
     let billOccurrenceStartLabel = (month) => {
@@ -490,6 +569,7 @@
         editForm.occurrences_starts_on =
             template.occurrences_starts_on ??
             props.default_bill_occurrence_starts_on;
+        editForm.recurrence_months = template.recurrence_months ?? 1;
     };
 
     let payloadFromForm = (form, kind) => ({
@@ -510,7 +590,10 @@
         lookforward_days: form.lookforward_days,
         is_active: form.is_active,
         ...(kind === 'bill'
-            ? { occurrences_starts_on: form.occurrences_starts_on }
+            ? {
+                  occurrences_starts_on: form.occurrences_starts_on,
+                  recurrence_months: Number(form.recurrence_months) || 1,
+              }
             : {}),
     });
 
@@ -649,7 +732,11 @@
 
         return props.bill_templates
             .filter((bill) => ids.includes(Number(bill.id)) && bill.is_active)
-            .reduce((sum, bill) => sum + Number(bill.expected_amount), 0);
+            .reduce(
+                (sum, bill) =>
+                    sum + assignedBillAmountForPaycheck(paycheck, bill),
+                0,
+            );
     };
 
     let paycheckLeftover = (paycheck) =>
@@ -1438,7 +1525,11 @@
                         </option>
                     </select>
                     <span class="mt-1 block text-xs text-neutral-500">
-                        Generate expected bills back to this month.
+                        {{
+                            Number(createBillForm.recurrence_months) > 1
+                                ? 'First due month in the billing cycle. Occurrences generate from here.'
+                                : 'Generate expected bills back to this month.'
+                        }}
                     </span>
                     <span
                         v-if="createBillForm.errors.occurrences_starts_on"
@@ -1446,6 +1537,29 @@
                         >{{
                             createBillForm.errors.occurrences_starts_on
                         }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Every N months</span>
+                    <input
+                        v-model.number="createBillForm.recurrence_months"
+                        type="number"
+                        min="1"
+                        max="24"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    />
+                    <span class="mt-1 block text-xs text-neutral-500">
+                        {{
+                            Number(createBillForm.recurrence_months) <= 1
+                                ? 'Monthly (every 1 month).'
+                                : `Every ${createBillForm.recurrence_months} months.`
+                        }}
+                    </span>
+                    <span
+                        v-if="createBillForm.errors.recurrence_months"
+                        class="mt-1 block text-red-600"
+                        >{{ createBillForm.errors.recurrence_months }}</span
                     >
                 </label>
                 <label class="block text-sm">
@@ -2279,10 +2393,28 @@
                             {{ bill.name }} · Day {{ bill.expected_day }} ·
                             {{ formatMoney(bill.expected_amount) }}
                             <span
+                                v-if="Number(bill.recurrence_months ?? 1) > 1"
+                                class="text-neutral-500"
+                            >
+                                · every {{ bill.recurrence_months }} months
+                            </span>
+                            <span
                                 v-if="billCoversNextMonth(template, bill)"
                                 class="text-neutral-500"
                             >
                                 · next month
+                            </span>
+                            <span
+                                v-if="
+                                    isBillSelected(template, bill) &&
+                                    assignedBillAmountForPaycheck(
+                                        template,
+                                        bill,
+                                    ) === 0
+                                "
+                                class="text-neutral-500"
+                            >
+                                · $0 this paycheck
                             </span>
                             <span
                                 v-if="!bill.is_active"
@@ -2468,12 +2600,14 @@
                             {{ planMatchSummary(template) }}
                         </p>
                         <p class="text-sm text-neutral-600">
-                            Occurrences from
+                            {{ billRecurrenceLabel(template) }} · from
                             {{
                                 billOccurrenceStartLabel(
                                     template.occurrences_starts_on,
                                 )
                             }}
+                            · Day {{ template.expected_day }} ·
+                            {{ formatMoney(template.expected_amount) }}
                         </p>
                         <p class="text-sm text-neutral-600">
                             {{
@@ -2550,8 +2684,11 @@
                             </option>
                         </select>
                         <span class="mt-1 block text-xs text-neutral-500">
-                            Moving earlier adds missing months. Moving later
-                            leaves existing occurrences in place.
+                            {{
+                                Number(editForm.recurrence_months) > 1
+                                    ? 'First due month in the billing cycle.'
+                                    : 'Moving earlier adds missing months. Moving later leaves existing occurrences in place.'
+                            }}
                         </span>
                         <span
                             v-if="editForm.errors.occurrences_starts_on"
@@ -2560,6 +2697,17 @@
                                 editForm.errors.occurrences_starts_on
                             }}</span
                         >
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Every N months</span>
+                        <input
+                            v-model.number="editForm.recurrence_months"
+                            type="number"
+                            min="1"
+                            max="24"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        />
                     </label>
                     <label class="block text-sm">
                         <span class="text-neutral-600">Expected day</span>

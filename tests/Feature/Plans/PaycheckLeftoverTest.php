@@ -198,6 +198,28 @@ class PaycheckLeftoverTest extends TestCase
             ]);
     }
 
+    public function test_assigned_quarterly_bill_does_not_reduce_planned_leftover_in_off_month(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+        $garbage = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'name' => 'Garbage',
+            'recurrence_months' => 3,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 10,
+            'expected_amount' => 120,
+            'amount' => 120,
+        ]);
+        $paycheck->assignedBills()->sync([$garbage->id]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(3000, $leftover['planned_leftover']);
+        $this->assertEquals(3000, $leftover['decision_remaining']);
+    }
+
     public function test_assigned_bill_transactions_are_not_counted_as_spend(): void
     {
         [$user, $paycheck] = $this->paycheckSetup();

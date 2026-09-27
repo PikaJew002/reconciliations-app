@@ -51,11 +51,22 @@ class StorePlannedTemplateRequest extends FormRequest
             $amount = $this->input('expected_amount');
         }
 
+        $recurrenceMonths = $this->input('recurrence_months');
+
+        if ($recurrenceMonths === null || $recurrenceMonths === '') {
+            $recurrenceMonths = 1;
+        }
+
+        if (! $isBill) {
+            $recurrenceMonths = 1;
+        }
+
         $this->merge([
             'normalized_pattern' => $pattern,
             'match_mode' => $matchMode,
             'merchant_id' => $merchantId ?: null,
             'amount' => $amount,
+            'recurrence_months' => (int) $recurrenceMonths,
             'lookback_days' => $this->input('lookback_days', 7),
             'lookforward_days' => $this->input('lookforward_days', 3),
             'is_active' => $this->has('is_active') ? $this->boolean('is_active') : true,
@@ -80,6 +91,7 @@ class StorePlannedTemplateRequest extends FormRequest
             'expected_day' => ['required', 'integer', 'min:1', 'max:31'],
             'expected_amount' => ['required', 'numeric', 'min:0'],
             'occurrences_starts_on' => ['nullable', 'date_format:Y-m'],
+            'recurrence_months' => ['sometimes', 'integer', 'min:1', 'max:24'],
             'lookback_days' => ['required', 'integer', 'min:0', 'max:31'],
             'lookforward_days' => ['required', 'integer', 'min:0', 'max:31'],
             'is_active' => ['sometimes', 'boolean'],
@@ -211,6 +223,9 @@ class StorePlannedTemplateRequest extends FormRequest
                     ->startOfMonth()
                     ->toDateString()
                 : null,
+            'recurrence_months' => $isBill
+                ? (int) ($validated['recurrence_months'] ?? 1)
+                : 1,
             'lookback_days' => $validated['lookback_days'],
             'lookforward_days' => $validated['lookforward_days'],
             'is_active' => $validated['is_active'] ?? true,

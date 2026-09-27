@@ -131,6 +131,47 @@ class BillPlanningTest extends TestCase
                 ->where('bill_occurrences.0.expected_date', '2026-07-15'));
     }
 
+    public function test_creating_a_quarterly_bill_plan_stores_recurrence_and_generates_due_months_only(): void
+    {
+        $user = User::factory()->create();
+        BudgetYear::factory()->for($user)->current()->starting('2026-01')->create();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+
+        $this->actingAs($user)
+            ->post('/plans', $this->billPlanPayload([
+                'name' => 'Garbage',
+                'category_id' => $utilities->id,
+                'normalized_pattern' => 'WASTE MGMT',
+                'expected_day' => 10,
+                'expected_amount' => 120,
+                'occurrences_starts_on' => '2026-01',
+                'recurrence_months' => 3,
+            ]))
+            ->assertRedirect(route('plans.index'));
+
+        $template = PlannedTemplate::query()->where('user_id', $user->id)->firstOrFail();
+        $this->assertSame(3, (int) $template->recurrence_months);
+
+        $this->assertTrue(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('expected_date', '2026-01-10')
+                ->exists(),
+        );
+        $this->assertTrue(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('expected_date', '2026-04-10')
+                ->exists(),
+        );
+        $this->assertFalse(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('expected_date', '2026-02-10')
+                ->exists(),
+        );
+    }
+
     public function test_creating_a_bill_plan_generates_monthly_bill_occurrences(): void
     {
         $user = User::factory()->create();

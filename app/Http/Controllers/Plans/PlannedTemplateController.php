@@ -22,6 +22,7 @@ use App\Services\Plans\PlannedOccurrenceGenerator;
 use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\TransactionMatchEvaluator;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,13 @@ class PlannedTemplateController extends Controller
         }
         $monthEnd = $monthStart->copy()->addMonth();
 
+        $monthStartDay = $monthStart->copy()->startOfDay();
+        $occurrencesByTemplateId = $assignments->occurrencesByTemplateId(
+            $userId,
+            $monthStartDay,
+            $monthStartDay->copy()->addMonths(2),
+        );
+
         $templates = PlannedTemplate::query()
             ->where('user_id', $userId)
             ->with([
@@ -64,7 +72,12 @@ class PlannedTemplateController extends Controller
             ->orderBy('expected_day')
             ->orderBy('name')
             ->get()
-            ->map(fn (PlannedTemplate $template) => $this->templatePayload($template, $assignments));
+            ->map(fn (PlannedTemplate $template) => $this->templatePayload(
+                $template,
+                $assignments,
+                $monthStartDay,
+                $occurrencesByTemplateId,
+            ));
 
         $linkedIds = PlannedOccurrence::query()
             ->where('user_id', $userId)
@@ -102,6 +115,23 @@ class PlannedTemplateController extends Controller
             ->where('classification', BankTransaction::CLASSIFICATION_BILL)
             ->values()
             ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
+
+        $assignmentBillOccurrences = PlannedOccurrence::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_BILL)
+            ->where('scheduled_date', '>=', $monthStartDay)
+            ->where('scheduled_date', '<', $monthStartDay->copy()->addMonths(2))
+            ->with('bankTransaction:id,amount')
+            ->get()
+            ->map(fn (PlannedOccurrence $occurrence) => [
+                'template_id' => (int) $occurrence->template_id,
+                'period_month' => $occurrence->periodDate()->format('Y-m'),
+                'amount' => $occurrence->isResolved() && $occurrence->bankTransaction !== null
+                    ? abs((float) $occurrence->bankTransaction->amount)
+                    : (float) $occurrence->expected_amount,
+            ])
+            ->values()
+            ->all();
 
         $paycheckLinkCandidates = $this->linkCandidates(
             $userId,
@@ -142,6 +172,7 @@ class PlannedTemplateController extends Controller
                 ->all(),
             'paycheck_occurrences' => $paycheckOccurrences,
             'bill_occurrences' => $billOccurrences,
+            'assignment_bill_occurrences' => $assignmentBillOccurrences,
             'paycheck_link_candidates' => $paycheckLinkCandidates,
             'bill_link_candidates' => $billLinkCandidates,
             'categories' => $categories,
@@ -267,6 +298,8 @@ class PlannedTemplateController extends Controller
     protected function templatePayload(
         PlannedTemplate $template,
         PaycheckBillAssignmentService $assignments,
+        ?CarbonInterface $paycheckMonth = null,
+        ?Collection $occurrencesByTemplateId = null,
     ): array {
         $assignedBills = $template->relationLoaded('assignedBills')
             ? $template->assignedBills
@@ -295,6 +328,7 @@ class PlannedTemplateController extends Controller
             'expected_day' => (int) $template->expected_day,
             'expected_amount' => (float) $template->expected_amount,
             'occurrences_starts_on' => $template->occurrences_starts_on?->format('Y-m'),
+            'recurrence_months' => (int) ($template->recurrence_months ?? 1),
             'lookback_days' => (int) $template->lookback_days,
             'lookforward_days' => (int) $template->lookforward_days,
             'is_active' => (bool) $template->is_active,
@@ -305,7 +339,12 @@ class PlannedTemplateController extends Controller
                 ->values()
                 ->all(),
             'leftover' => $template->classification === BankTransaction::CLASSIFICATION_INCOME
-                ? $assignments->leftover($template, $assignedBills)
+                ? $assignments->leftover(
+                    $template,
+                    $assignedBills,
+                    $paycheckMonth,
+                    $occurrencesByTemplateId,
+                )
                 : null,
             'assigned_paycheck' => $assignedPaycheck ? [
                 'id' => (int) $assignedPaycheck->id,
