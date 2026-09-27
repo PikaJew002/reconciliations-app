@@ -3,6 +3,7 @@
 namespace App\Services\Orders;
 
 use App\Models\BankTransaction;
+use App\Models\Category;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
@@ -166,6 +167,7 @@ class OrderBrowseService
      *     order: array<string, mixed>,
      *     items: list<array<string, mixed>>,
      *     components: list<array<string, mixed>>,
+     *     categories: list<array{id: int, name: string, kind: string}>,
      *     can_delete: bool,
      *     has_allocations: bool
      * }
@@ -180,6 +182,7 @@ class OrderBrowseService
             'components' => fn ($query) => $query
                 ->orderBy('id')
                 ->with('category:id,name')
+                ->with('orderItem:id,quantity,unit_price')
                 ->with('allocations:id,order_component_id,allocated_amount,allocation_type'),
         ]);
 
@@ -192,6 +195,8 @@ class OrderBrowseService
                     ->where('allocation_type', '!=', 'refund')
                     ->sum('allocated_amount'), 2);
                 $amount = (float) $component->amount;
+                $item = $component->orderItem;
+                $unallocated = ! $hasAllocations;
 
                 return [
                     'id' => $component->id,
@@ -203,9 +208,16 @@ class OrderBrowseService
                         : null,
                     'refund_kind' => $component->refund_kind,
                     'category' => $component->category?->only(['id', 'name']),
+                    'category_id' => $component->category_id,
+                    'is_user_modified' => (bool) $component->is_user_modified,
                     'allocated_amount' => $allocated,
                     'remaining_amount' => round($amount - $allocated, 2),
-                    'can_refund' => $canEdit && ! $hasAllocations,
+                    'can_refund' => $canEdit && $unallocated,
+                    'can_delete' => $canEdit && $unallocated,
+                    'order_item_id' => $component->order_item_id,
+                    'quantity' => $item !== null ? (float) $item->quantity : null,
+                    'unit_price' => $item !== null ? (float) $item->unit_price : null,
+                    'can_edit_quantity' => $canEdit && $item !== null && $unallocated,
                 ];
             })
             ->values()
@@ -237,6 +249,7 @@ class OrderBrowseService
                 'discount' => (float) $order->discount,
                 'total' => (float) $order->total,
                 'imported_total' => (float) $order->imported_total,
+                'can_edit' => $canEdit,
                 'can_edit_total' => $canEdit && ! $hasAllocations,
                 ...$balance,
             ],
@@ -252,6 +265,7 @@ class OrderBrowseService
                 ->values()
                 ->all(),
             'components' => $components,
+            'categories' => $this->categoriesForUser($userId),
             'can_delete' => true,
             'has_allocations' => $hasAllocations,
         ];
@@ -270,6 +284,25 @@ class OrderBrowseService
         }
 
         return $order;
+    }
+
+    /**
+     * @return list<array{id: int, name: string, kind: string}>
+     */
+    protected function categoriesForUser(int $userId): array
+    {
+        return Category::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'kind'])
+            ->map(fn (Category $category): array => [
+                'id' => $category->id,
+                'name' => $category->name,
+                'kind' => $category->kind,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

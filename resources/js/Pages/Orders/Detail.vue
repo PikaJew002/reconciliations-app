@@ -4,7 +4,7 @@
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
     import { Link, router } from '@inertiajs/vue3';
-    import { computed, ref } from 'vue';
+    import { computed, reactive, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -25,6 +25,10 @@
             type: Array,
             required: true,
         },
+        categories: {
+            type: Array,
+            default: () => [],
+        },
         can_delete: {
             type: Boolean,
             required: true,
@@ -36,6 +40,131 @@
     });
 
     let deleting = ref(false);
+    let componentForm = ref(null);
+    let quantityForms = reactive({});
+    let componentCategoryForms = reactive({});
+    let savingComponent = ref(false);
+    let savingQuantityKey = ref(null);
+    let savingComponentCategoryKey = ref(null);
+
+    let expenseCategories = computed(() =>
+        props.categories.filter((category) => category.kind === 'expense'),
+    );
+
+    function defaultComponentForm() {
+        let gap = Number(props.order.gap);
+
+        return {
+            type: gap > 0 ? 'delivery' : 'other',
+            description: gap > 0 ? 'Fast delivery fee' : 'Adjustment',
+            amount: Number(gap.toFixed(2)),
+        };
+    }
+
+    function syncComponentForms() {
+        if (props.order.can_edit && componentForm.value === null) {
+            componentForm.value = defaultComponentForm();
+        }
+
+        for (let component of props.components) {
+            if (componentCategoryForms[component.id] === undefined) {
+                componentCategoryForms[component.id] = component.category_id ?? '';
+            }
+
+            if (
+                !component.can_edit_quantity ||
+                component.order_item_id == null ||
+                quantityForms[component.order_item_id] !== undefined
+            ) {
+                continue;
+            }
+
+            quantityForms[component.order_item_id] = Number(component.quantity);
+        }
+    }
+
+    function addComponent() {
+        if (!props.order.can_edit || !componentForm.value || savingComponent.value) {
+            return;
+        }
+
+        savingComponent.value = true;
+
+        router.post(
+            `/reconciliation/orders/${props.order.id}/components`,
+            componentForm.value,
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    componentForm.value = defaultComponentForm();
+                },
+                onFinish: () => {
+                    savingComponent.value = false;
+                },
+            },
+        );
+    }
+
+    function updateItemQuantity(component) {
+        if (!component.can_edit_quantity || component.order_item_id == null) {
+            return;
+        }
+
+        let quantity = quantityForms[component.order_item_id];
+
+        savingQuantityKey.value = component.order_item_id;
+
+        router.patch(
+            `/reconciliation/orders/${props.order.id}/items/${component.order_item_id}`,
+            { quantity },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    savingQuantityKey.value = null;
+                },
+            },
+        );
+    }
+
+    function deleteComponent(component) {
+        if (!component.can_delete) {
+            return;
+        }
+
+        router.delete(
+            `/reconciliation/orders/${props.order.id}/components/${component.id}`,
+            {
+                preserveScroll: true,
+            },
+        );
+    }
+
+    function saveComponentCategory(component) {
+        let categoryId = componentCategoryForms[component.id];
+
+        if (!categoryId) {
+            return;
+        }
+
+        savingComponentCategoryKey.value = component.id;
+
+        router.patch(
+            `/reconciliation/orders/${props.order.id}/components/${component.id}/category`,
+            { category_id: categoryId },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    savingComponentCategoryKey.value = null;
+                },
+            },
+        );
+    }
+
+    watch(
+        () => [props.order, props.components],
+        () => syncComponentForms(),
+        { immediate: true },
+    );
 
     let gapExplained = computed(() => {
         let importedDiffers =
@@ -156,8 +285,9 @@
             </template>
             <template v-else>
                 This often means the scrape imported the order incorrectly.
-                Remove it below to re-import, or mark a refund if a line came
-                back.
+                Fix a quantity, add a missing fee, or mark a refund in the
+                components list. You can also remove the order below to
+                re-import it.
             </template>
         </p>
 
@@ -270,7 +400,8 @@
                 <h2 class="text-base font-semibold">Components</h2>
                 <p class="text-sm text-neutral-600">
                     Reconciliation breakdown: product lines plus tax, delivery,
-                    tip, and discount.
+                    tip, and discount. Edit a quantity, assign a category, mark
+                    a refund, or add a missing fee here.
                     <template v-if="!order.components_balanced">
                         Sum {{ formatMoney(order.component_sum) }} vs bank total
                         {{ formatMoney(order.total) }}.
@@ -284,7 +415,7 @@
                 <li
                     v-for="component in components"
                     :key="component.id"
-                    class="flex items-start justify-between gap-4 px-4 py-3"
+                    class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
                 >
                     <div>
                         <p class="font-medium">{{ component.description }}</p>
@@ -293,19 +424,141 @@
                             <template v-if="component.category">
                                 · {{ component.category.name }}
                             </template>
+                            <template v-if="component.unit_price != null">
+                                · {{ formatMoney(component.unit_price) }}/ea
+                            </template>
+                            <template v-if="component.is_user_modified">
+                                · manual
+                            </template>
                             · {{ allocationLabel(component) }}
                         </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <form
+                            v-if="component.can_edit_quantity"
+                            class="flex items-center gap-2"
+                            @submit.prevent="updateItemQuantity(component)"
+                        >
+                            <label
+                                class="flex items-center gap-1.5 text-neutral-600"
+                            >
+                                <span>Qty</span>
+                                <input
+                                    v-model.number="
+                                        quantityForms[component.order_item_id]
+                                    "
+                                    type="number"
+                                    min="0.001"
+                                    step="any"
+                                    class="w-20 rounded border px-2"
+                                    required
+                                />
+                            </label>
+                            <button
+                                type="submit"
+                                class="text-xs text-neutral-800 underline disabled:opacity-50"
+                                :disabled="
+                                    savingQuantityKey === component.order_item_id
+                                "
+                            >
+                                Update
+                            </button>
+                        </form>
+                        <form
+                            v-if="order.can_edit && expenseCategories.length > 0"
+                            class="flex items-center gap-2"
+                            @submit.prevent="saveComponentCategory(component)"
+                        >
+                            <select
+                                v-model="componentCategoryForms[component.id]"
+                                class="rounded border px-2 text-xs"
+                            >
+                                <option disabled value="">Category</option>
+                                <option
+                                    v-for="category in expenseCategories"
+                                    :key="category.id"
+                                    :value="category.id"
+                                >
+                                    {{ category.name }}
+                                </option>
+                            </select>
+                            <button
+                                type="submit"
+                                class="text-xs text-neutral-800 underline disabled:opacity-50"
+                                :disabled="
+                                    savingComponentCategoryKey ===
+                                        component.id ||
+                                    !componentCategoryForms[component.id]
+                                "
+                            >
+                                Save
+                            </button>
+                        </form>
                         <OrderComponentRefundForm
-                            class="mt-1"
                             :order-id="order.id"
                             :component="component"
                         />
+                        <p class="font-medium">
+                            {{ formatMoney(component.amount) }}
+                        </p>
+                        <button
+                            v-if="component.can_delete"
+                            type="button"
+                            class="text-xs text-red-700 underline"
+                            @click="deleteComponent(component)"
+                        >
+                            Remove
+                        </button>
                     </div>
-                    <p class="font-medium">
-                        {{ formatMoney(component.amount) }}
-                    </p>
                 </li>
             </ul>
+            <form
+                v-if="order.can_edit && componentForm"
+                class="grid gap-3 sm:grid-cols-4"
+                @submit.prevent="addComponent"
+            >
+                <label class="block space-y-1 sm:col-span-1">
+                    <span class="text-neutral-600">Type</span>
+                    <select
+                        v-model="componentForm.type"
+                        class="w-full rounded border px-2"
+                    >
+                        <option value="delivery">Delivery</option>
+                        <option value="fee">Fee</option>
+                        <option value="tip">Tip</option>
+                        <option value="tax">Tax</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+                <label class="block space-y-1 sm:col-span-2">
+                    <span class="text-neutral-600">Description</span>
+                    <input
+                        v-model="componentForm.description"
+                        type="text"
+                        class="w-full rounded border px-2"
+                        required
+                    />
+                </label>
+                <label class="block space-y-1 sm:col-span-1">
+                    <span class="text-neutral-600">Amount</span>
+                    <input
+                        v-model="componentForm.amount"
+                        type="number"
+                        step="0.01"
+                        class="w-full rounded border px-2"
+                        required
+                    />
+                </label>
+                <div class="sm:col-span-4">
+                    <button
+                        type="submit"
+                        class="btn rounded bg-brand px-3 text-white hover:bg-brand-hover disabled:opacity-50"
+                        :disabled="savingComponent"
+                    >
+                        {{ savingComponent ? 'Saving…' : 'Add component' }}
+                    </button>
+                </div>
+            </form>
         </section>
 
         <section class="space-y-3 rounded border px-4 py-3">
@@ -321,8 +574,8 @@
                     class="mt-2 text-sm text-amber-800"
                 >
                     <template v-if="gapExplained">
-                        You can also mark a refund or change the bank total
-                        above instead of removing the order.
+                        You can also mark a refund, change the bank total, or
+                        fix the components above instead of removing the order.
                     </template>
                     <template v-else>
                         Unbalanced components are a common sign the scrape

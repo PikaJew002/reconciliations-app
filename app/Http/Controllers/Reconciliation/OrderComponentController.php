@@ -32,7 +32,7 @@ class OrderComponentController extends Controller
         ]);
 
         return redirect()
-            ->route('reconciliation.needs-review')
+            ->back(fallback: route('reconciliation.needs-review'))
             ->with('success', 'Component added. Re-run reconciliation when ready.');
     }
 
