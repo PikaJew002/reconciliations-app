@@ -54,6 +54,22 @@
         'once',
     ];
 
+    function localDateString(date = new Date()) {
+        let year = date.getFullYear();
+        let month = String(date.getMonth() + 1).padStart(2, '0');
+        let day = String(date.getDate()).padStart(2, '0');
+
+        return `${year}-${month}-${day}`;
+    }
+
+    let activeVacationWindows = computed(() => {
+        let today = localDateString();
+
+        return props.vacationWindows.filter(
+            (window) => window.starts_on <= today && today <= window.ends_on,
+        );
+    });
+
     function isWalmartTransaction(transaction) {
         let merchant = (transaction.merchant || '').toLowerCase();
         let description = (transaction.description || '').toLowerCase();
@@ -529,13 +545,13 @@
 <template>
     <section class="space-y-3">
         <p
-            v-if="vacationWindows.length > 0"
+            v-if="activeVacationWindows.length > 0"
             class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
             Vacation window is on. Learned expense and bill rules will not
             auto-apply to spend in
             {{
-                vacationWindows
+                activeVacationWindows
                     .map((window) => {
                         let label = window.name
                             ? `${window.name} (${window.starts_on}–${window.ends_on})`
