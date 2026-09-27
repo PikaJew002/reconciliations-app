@@ -84,7 +84,9 @@ class VenmoActivityImportTest extends TestCase
                 ->where('breadcrumbs.0.label', 'Accounts')
                 ->where('breadcrumbs.1.label', 'Venmo')
                 ->where('breadcrumbs.1.href', route('venmo.imports.index'))
-                ->where('breadcrumbs.2.label', 'Import batch'));
+                ->where('breadcrumbs.2.label', 'Import batch')
+                ->where('can_revert', true)
+                ->where('revert_url', route('venmo.imports.destroy', $batch)));
     }
 
     public function test_venmo_import_batch_show_rejects_bank_batches(): void

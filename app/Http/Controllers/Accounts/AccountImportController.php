@@ -50,7 +50,9 @@ class AccountImportController extends Controller
                 'account_type' => $account->account_type,
                 'last_four' => $account->last_four,
             ],
-            'batches' => $batches,
+            'batches' => $batches
+                ->map(fn (ImportBatch $batch) => $batch->historyPayload())
+                ->values(),
         ]);
     }
 

@@ -45,6 +45,7 @@ class PlannedTemplateFactory extends Factory
             'normalized_pattern' => 'duke energy',
             'amount' => 140.00,
             'expected_amount' => 140.00,
+            'occurrences_starts_on' => '2026-03-01',
         ]);
     }
 }

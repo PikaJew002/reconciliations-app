@@ -7,6 +7,8 @@ use App\Models\Category;
 use App\Models\Merchant;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
+use App\Services\Plans\PlannedOccurrenceGenerator;
+use Carbon\Carbon;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -77,6 +79,7 @@ class StorePlannedTemplateRequest extends FormRequest
             'amount' => ['nullable', 'numeric', 'min:0'],
             'expected_day' => ['required', 'integer', 'min:1', 'max:31'],
             'expected_amount' => ['required', 'numeric', 'min:0'],
+            'occurrences_starts_on' => ['nullable', 'date_format:Y-m'],
             'lookback_days' => ['required', 'integer', 'min:0', 'max:31'],
             'lookforward_days' => ['required', 'integer', 'min:0', 'max:31'],
             'is_active' => ['sometimes', 'boolean'],
@@ -148,6 +151,35 @@ class StorePlannedTemplateRequest extends FormRequest
             if ($needsAmount && ! $this->filled('amount')) {
                 $validator->errors()->add('amount', 'An exact amount is required for this match mode.');
             }
+
+            if ($category?->kind === Category::KIND_BILL && ! $this->filled('occurrences_starts_on')) {
+                $validator->errors()->add('occurrences_starts_on', 'Choose the first month to generate for this bill.');
+            }
+
+            if ($this->filled('occurrences_starts_on') && $category?->kind === Category::KIND_BILL) {
+                $month = Carbon::createFromFormat('Y-m', $this->input('occurrences_starts_on'));
+
+                if ($month === false) {
+                    return;
+                }
+
+                $month = $month->startOfMonth()->startOfDay();
+                $currentMonth = Carbon::now()->startOfMonth()->startOfDay();
+
+                if ($month->gt($currentMonth)) {
+                    $validator->errors()->add('occurrences_starts_on', 'Start month cannot be in the future.');
+                }
+
+                $earliest = app(PlannedOccurrenceGenerator::class)
+                    ->earliestBillOccurrenceStartMonth($userId);
+
+                if ($month->lt($earliest)) {
+                    $validator->errors()->add(
+                        'occurrences_starts_on',
+                        'Start month must be within the current budget year.',
+                    );
+                }
+            }
         });
     }
 
@@ -174,6 +206,11 @@ class StorePlannedTemplateRequest extends FormRequest
                 : ($validated['amount'] ?? null),
             'expected_day' => $validated['expected_day'],
             'expected_amount' => $validated['expected_amount'],
+            'occurrences_starts_on' => $isBill
+                ? Carbon::createFromFormat('Y-m', $validated['occurrences_starts_on'])
+                    ->startOfMonth()
+                    ->toDateString()
+                : null,
             'lookback_days' => $validated['lookback_days'],
             'lookforward_days' => $validated['lookforward_days'],
             'is_active' => $validated['is_active'] ?? true,

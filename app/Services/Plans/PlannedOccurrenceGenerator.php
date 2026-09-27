@@ -2,6 +2,7 @@
 
 namespace App\Services\Plans;
 
+use App\Models\BudgetYear;
 use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\User;
@@ -102,13 +103,70 @@ class PlannedOccurrenceGenerator
             ->gt(self::horizonLastMonth());
     }
 
+    public function earliestBillOccurrenceStartMonth(int $userId): CarbonInterface
+    {
+        $currentMonth = Carbon::now()->startOfMonth()->startOfDay();
+
+        $budgetYear = BudgetYear::query()
+            ->where('user_id', $userId)
+            ->where('is_current', true)
+            ->first()
+            ?? BudgetYear::query()
+                ->where('user_id', $userId)
+                ->get()
+                ->first(fn (BudgetYear $year) => $year->containsMonth($currentMonth));
+
+        if ($budgetYear !== null) {
+            return $budgetYear->startsOn();
+        }
+
+        $leftoverStartsOn = User::query()
+            ->whereKey($userId)
+            ->value('leftover_starts_on');
+
+        if ($leftoverStartsOn !== null) {
+            return Carbon::parse($leftoverStartsOn)->startOfMonth()->startOfDay();
+        }
+
+        return $currentMonth->copy();
+    }
+
+    public function defaultBillOccurrenceStartMonth(int $userId): string
+    {
+        return $this->earliestBillOccurrenceStartMonth($userId)->format('Y-m');
+    }
+
     /**
-     * Earliest month to generate for a plan: leftover tracking start when set,
-     * otherwise the month before the plan was created (the original horizon
-     * start when the plan first appeared).
+     * @return list<array{value: string, label: string}>
+     */
+    public function billOccurrenceStartMonthOptions(int $userId): array
+    {
+        $current = Carbon::now()->startOfMonth()->startOfDay();
+        $cursor = $this->earliestBillOccurrenceStartMonth($userId);
+        $options = [];
+
+        while ($cursor->lte($current)) {
+            $options[] = [
+                'value' => $cursor->format('Y-m'),
+                'label' => $cursor->format('F Y'),
+            ];
+            $cursor = $cursor->copy()->addMonth();
+        }
+
+        return $options;
+    }
+
+    /**
+     * Earliest month to generate for a plan. Bill plans use their own
+     * occurrences_starts_on. Paycheck plans fall back to leftover tracking
+     * start or the month before the plan was created.
      */
     protected function historyStartForTemplate(PlannedTemplate $template): CarbonInterface
     {
+        if ($template->occurrences_starts_on !== null) {
+            return Carbon::parse($template->occurrences_starts_on)->startOfMonth()->startOfDay();
+        }
+
         $created = $template->created_at
             ? Carbon::parse($template->created_at)->startOfMonth()
             : Carbon::now()->startOfMonth();

@@ -155,6 +155,8 @@ class PlannedTemplateController extends Controller
             'month_beyond_occurrence_horizon' => PlannedOccurrenceGenerator::isBeyondHorizon($monthStart),
             'leftover_origin' => $origin->payload($userId),
             'vacation_windows' => $vacationWindows->payloadForUser($userId),
+            'bill_occurrence_start_months' => $generator->billOccurrenceStartMonthOptions($userId),
+            'default_bill_occurrence_starts_on' => $generator->defaultBillOccurrenceStartMonth($userId),
         ]);
     }
 
@@ -292,6 +294,7 @@ class PlannedTemplateController extends Controller
             'amount' => $template->amount !== null ? (float) $template->amount : null,
             'expected_day' => (int) $template->expected_day,
             'expected_amount' => (float) $template->expected_amount,
+            'occurrences_starts_on' => $template->occurrences_starts_on?->format('Y-m'),
             'lookback_days' => (int) $template->lookback_days,
             'lookforward_days' => (int) $template->lookforward_days,
             'is_active' => (bool) $template->is_active,

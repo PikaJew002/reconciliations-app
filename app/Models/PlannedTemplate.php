@@ -63,6 +63,7 @@ class PlannedTemplate extends Model
         'amount',
         'expected_day',
         'expected_amount',
+        'occurrences_starts_on',
         'lookback_days',
         'lookforward_days',
         'is_active',
@@ -71,6 +72,7 @@ class PlannedTemplate extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'expected_amount' => 'decimal:2',
+        'occurrences_starts_on' => 'date',
         'expected_day' => 'integer',
         'lookback_days' => 'integer',
         'lookforward_days' => 'integer',

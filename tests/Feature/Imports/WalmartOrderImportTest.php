@@ -102,7 +102,9 @@ class WalmartOrderImportTest extends TestCase
                 ->where('breadcrumbs.1.href', route('orders.show', 'walmart'))
                 ->where('breadcrumbs.2.label', 'Imports')
                 ->where('breadcrumbs.2.href', route('orders.imports.index', 'walmart'))
-                ->where('breadcrumbs.3.label', 'Import batch'));
+                ->where('breadcrumbs.3.label', 'Import batch')
+                ->where('can_revert', true)
+                ->where('revert_url', route('orders.imports.destroy', ['walmart', $batch])));
     }
 
     public function test_walmart_imports_lists_only_walmart_batches(): void
@@ -130,6 +132,7 @@ class WalmartOrderImportTest extends TestCase
                 ->component('Orders/Imports')
                 ->has('batches', 1)
                 ->where('batches.0.id', $walmartBatch->id)
-                ->where('batches.0.original_filename', 'walmart.json'));
+                ->where('batches.0.original_filename', 'walmart.json')
+                ->where('batches.0.can_revert', true));
     }
 }

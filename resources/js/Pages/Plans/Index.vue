@@ -79,6 +79,14 @@
             type: Array,
             default: () => [],
         },
+        bill_occurrence_start_months: {
+            type: Array,
+            default: () => [],
+        },
+        default_bill_occurrence_starts_on: {
+            type: String,
+            default: '',
+        },
     });
 
     let page = usePage();
@@ -316,6 +324,7 @@
         amount: '',
         expected_day: 1,
         expected_amount: '',
+        occurrences_starts_on: props.default_bill_occurrence_starts_on,
         lookback_days: 7,
         lookforward_days: 3,
         is_active: true,
@@ -369,6 +378,18 @@
             month: 'short',
             day: 'numeric',
         });
+    };
+
+    let billOccurrenceStartLabel = (month) => {
+        if (!month) {
+            return '—';
+        }
+
+        return (
+            props.bill_occurrence_start_months.find(
+                (option) => option.value === month,
+            )?.label ?? month
+        );
     };
 
     let planMatchSummary = (template) => {
@@ -466,6 +487,9 @@
         editForm.lookback_days = template.lookback_days;
         editForm.lookforward_days = template.lookforward_days;
         editForm.is_active = template.is_active;
+        editForm.occurrences_starts_on =
+            template.occurrences_starts_on ??
+            props.default_bill_occurrence_starts_on;
     };
 
     let payloadFromForm = (form, kind) => ({
@@ -485,6 +509,9 @@
         lookback_days: form.lookback_days,
         lookforward_days: form.lookforward_days,
         is_active: form.is_active,
+        ...(kind === 'bill'
+            ? { occurrences_starts_on: form.occurrences_starts_on }
+            : {}),
     });
 
     let createPaycheck = () => {
@@ -1394,6 +1421,32 @@
                             </template>
                         </option>
                     </select>
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Starts on</span>
+                    <select
+                        v-model="createBillForm.occurrences_starts_on"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    >
+                        <option
+                            v-for="option in bill_occurrence_start_months"
+                            :key="option.value"
+                            :value="option.value"
+                        >
+                            {{ option.label }}
+                        </option>
+                    </select>
+                    <span class="mt-1 block text-xs text-neutral-500">
+                        Generate expected bills back to this month.
+                    </span>
+                    <span
+                        v-if="createBillForm.errors.occurrences_starts_on"
+                        class="mt-1 block text-red-600"
+                        >{{
+                            createBillForm.errors.occurrences_starts_on
+                        }}</span
+                    >
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Expected day</span>
@@ -2415,6 +2468,14 @@
                             {{ planMatchSummary(template) }}
                         </p>
                         <p class="text-sm text-neutral-600">
+                            Occurrences from
+                            {{
+                                billOccurrenceStartLabel(
+                                    template.occurrences_starts_on,
+                                )
+                            }}
+                        </p>
+                        <p class="text-sm text-neutral-600">
                             {{
                                 template.assigned_paycheck
                                     ? `Assigned to ${template.assigned_paycheck.name}`
@@ -2472,6 +2533,33 @@
                                 {{ category.name }}
                             </option>
                         </select>
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Starts on</span>
+                        <select
+                            v-model="editForm.occurrences_starts_on"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        >
+                            <option
+                                v-for="option in bill_occurrence_start_months"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </select>
+                        <span class="mt-1 block text-xs text-neutral-500">
+                            Moving earlier adds missing months. Moving later
+                            leaves existing occurrences in place.
+                        </span>
+                        <span
+                            v-if="editForm.errors.occurrences_starts_on"
+                            class="mt-1 block text-red-600"
+                            >{{
+                                editForm.errors.occurrences_starts_on
+                            }}</span
+                        >
                     </label>
                     <label class="block text-sm">
                         <span class="text-neutral-600">Expected day</span>

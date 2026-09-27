@@ -37,7 +37,9 @@ class VenmoImportController extends Controller
             ]);
 
         return Inertia::render('Venmo/Imports', [
-            'batches' => $batches,
+            'batches' => $batches
+                ->map(fn (ImportBatch $batch) => $batch->historyPayload())
+                ->values(),
         ]);
     }
 

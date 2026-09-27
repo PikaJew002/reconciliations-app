@@ -102,6 +102,8 @@ Route::middleware('auth')->group(function () {
         ->name('accounts.imports.store');
     Route::get('/accounts/{account}/imports/{importBatch}', [ImportBatchController::class, 'showForAccount'])
         ->name('accounts.imports.show');
+    Route::delete('/accounts/{account}/imports/{importBatch}', [ImportBatchController::class, 'destroyForAccount'])
+        ->name('accounts.imports.destroy');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
 
     Route::get('/venmo/imports', [VenmoImportController::class, 'index'])
@@ -110,6 +112,8 @@ Route::middleware('auth')->group(function () {
         ->name('venmo.imports.store');
     Route::get('/venmo/imports/{importBatch}', [ImportBatchController::class, 'showForVenmo'])
         ->name('venmo.imports.show');
+    Route::delete('/venmo/imports/{importBatch}', [ImportBatchController::class, 'destroyForVenmo'])
+        ->name('venmo.imports.destroy');
 
     Route::get('/categories', [CategoryController::class, 'index'])->name('categories.index');
     Route::get('/categories/create', [CategoryController::class, 'create'])->name('categories.create');
@@ -186,6 +190,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders/{merchant}/imports/{importBatch}', [ImportBatchController::class, 'showForMerchant'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->name('orders.imports.show');
+    Route::delete('/orders/{merchant}/imports/{importBatch}', [ImportBatchController::class, 'destroyForMerchant'])
+        ->whereIn('merchant', ['walmart', 'amazon'])
+        ->name('orders.imports.destroy');
     Route::get('/orders/{merchant}/{order}', [OrderController::class, 'detail'])
         ->whereIn('merchant', ['walmart', 'amazon'])
         ->whereNumber('order')

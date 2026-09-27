@@ -92,7 +92,9 @@ class AmazonOrderImportTest extends TestCase
                 ->where('breadcrumbs.1.href', route('orders.show', 'amazon'))
                 ->where('breadcrumbs.2.label', 'Imports')
                 ->where('breadcrumbs.2.href', route('orders.imports.index', 'amazon'))
-                ->where('breadcrumbs.3.label', 'Import batch'));
+                ->where('breadcrumbs.3.label', 'Import batch')
+                ->where('can_revert', true)
+                ->where('revert_url', route('orders.imports.destroy', ['amazon', $batch])));
     }
 
     public function test_amazon_import_batch_show_rejects_walmart_batches(): void

@@ -139,6 +139,7 @@ class PlannedOccurrenceGeneratorTest extends TestCase
             'leftover_starts_on' => '2026-07-01',
         ]);
         $template = $this->templateFor($user, '2026-09-07 12:00:00');
+        $template->update(['occurrences_starts_on' => '2026-07-01']);
 
         app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
 
