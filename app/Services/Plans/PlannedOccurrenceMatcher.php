@@ -28,6 +28,7 @@ class PlannedOccurrenceMatcher
             ->whereIn('classification', [
                 BankTransaction::CLASSIFICATION_INCOME,
                 BankTransaction::CLASSIFICATION_BILL,
+                BankTransaction::CLASSIFICATION_EXPENSE,
             ])
             ->where(function ($query) {
                 $query->whereNull('template_id')
@@ -61,7 +62,8 @@ class PlannedOccurrenceMatcher
                     $debits->where('amount', '<', 0)
                         ->where(function (Builder $classification) {
                             $classification->whereNull('classification')
-                                ->orWhere('classification', BankTransaction::CLASSIFICATION_BILL);
+                                ->orWhere('classification', BankTransaction::CLASSIFICATION_BILL)
+                                ->orWhere('classification', BankTransaction::CLASSIFICATION_EXPENSE);
                         });
                 });
             })
@@ -129,9 +131,9 @@ class PlannedOccurrenceMatcher
             throw new \InvalidArgumentException('Only planned occurrences can be linked.');
         }
 
-        if ($occurrence->classification === BankTransaction::CLASSIFICATION_BILL) {
+        if ($this->isDebitPlan($occurrence)) {
             if ((float) $transaction->amount >= 0) {
-                throw new \InvalidArgumentException('Only debits can be linked to a bill occurrence.');
+                throw new \InvalidArgumentException('Only debits can be linked to a '.$occurrence->classification.' occurrence.');
             }
         } elseif ((float) $transaction->amount <= 0) {
             throw new \InvalidArgumentException('Only credits can be linked to an income occurrence.');
@@ -153,11 +155,18 @@ class PlannedOccurrenceMatcher
         PlannedOccurrence $occurrence,
         BankTransaction $transaction,
     ): bool {
-        if ($occurrence->classification === BankTransaction::CLASSIFICATION_BILL) {
+        if ($this->isDebitPlan($occurrence)) {
             if ((float) $transaction->amount >= 0) {
                 return false;
             }
         } elseif ((float) $transaction->amount <= 0) {
+            return false;
+        }
+
+        if (
+            $transaction->classification !== null
+            && $transaction->classification !== $occurrence->classification
+        ) {
             return false;
         }
 
@@ -175,6 +184,14 @@ class PlannedOccurrenceMatcher
             $occurrence->amount,
             $occurrence->classification,
         );
+    }
+
+    protected function isDebitPlan(PlannedOccurrence $occurrence): bool
+    {
+        return in_array($occurrence->classification, [
+            BankTransaction::CLASSIFICATION_BILL,
+            BankTransaction::CLASSIFICATION_EXPENSE,
+        ], true);
     }
 
     protected function dateDistance(PlannedOccurrence $occurrence, BankTransaction $transaction): int

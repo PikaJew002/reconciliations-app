@@ -77,6 +77,35 @@ class ReviewLeftoverTest extends TestCase
                 ->where('windows.1.allocations.0.amount', 200));
     }
 
+    public function test_planned_expenses_are_reserved_on_the_review_page(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Subscriptions']);
+        PlannedTemplate::factory()->expense()->create([
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'name' => 'Gym',
+            'expected_day' => 10,
+            'expected_amount' => 40,
+            'amount' => 40,
+            'occurrences_starts_on' => '2026-07-01',
+        ]);
+
+        $this->actingAs($user)
+            ->get('/review')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Review/Leftover')
+                ->where('windows.1.starts_on', '2026-08-01')
+                ->where('windows.1.planned_expenses', 40)
+                ->where('windows.1.spent', 0)
+                ->where('windows.1.decision_remaining', 2960)
+                ->where('windows.1.expenses.0.name', 'Gym')
+                ->where('windows.1.expenses.0.amount', 40));
+    }
+
     public function test_assigned_bills_are_listed_on_the_selected_window(): void
     {
         [$user, $paycheck] = $this->paycheckSetup();

@@ -116,6 +116,11 @@ class PlannedTemplateController extends Controller
             ->values()
             ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
 
+        $expenseOccurrences = $occurrences
+            ->where('classification', BankTransaction::CLASSIFICATION_EXPENSE)
+            ->values()
+            ->map(fn (PlannedOccurrence $occurrence) => $this->occurrencePayload($occurrence));
+
         $assignmentBillOccurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
             ->where('classification', BankTransaction::CLASSIFICATION_BILL)
@@ -147,9 +152,18 @@ class PlannedTemplateController extends Controller
             $monthEnd,
             credits: false,
         );
+        $expenseLinkCandidates = $this->linkCandidates(
+            $userId,
+            $linkedIds,
+            $monthStart,
+            $monthEnd,
+            credits: false,
+            classification: BankTransaction::CLASSIFICATION_EXPENSE,
+        );
 
         $categories = $this->categoriesForKind($userId, Category::KIND_INCOME);
         $billCategories = $this->categoriesForKind($userId, Category::KIND_BILL);
+        $expenseCategories = $this->categoriesForKind($userId, Category::KIND_EXPENSE);
 
         $merchants = Merchant::query()
             ->where('user_id', $userId)
@@ -170,16 +184,24 @@ class PlannedTemplateController extends Controller
                 ->where('classification', BankTransaction::CLASSIFICATION_BILL)
                 ->values()
                 ->all(),
+            'expense_templates' => $templates
+                ->where('classification', BankTransaction::CLASSIFICATION_EXPENSE)
+                ->values()
+                ->all(),
             'paycheck_occurrences' => $paycheckOccurrences,
             'bill_occurrences' => $billOccurrences,
+            'expense_occurrences' => $expenseOccurrences,
             'assignment_bill_occurrences' => $assignmentBillOccurrences,
             'paycheck_link_candidates' => $paycheckLinkCandidates,
             'bill_link_candidates' => $billLinkCandidates,
+            'expense_link_candidates' => $expenseLinkCandidates,
             'categories' => $categories,
             'bill_categories' => $billCategories,
+            'expense_categories' => $expenseCategories,
             'merchants' => $merchants,
             'match_modes' => PlannedTemplate::incomeMatchModes(),
             'bill_match_modes' => PlannedTemplate::billMatchModes(),
+            'expense_match_modes' => PlannedTemplate::expenseMatchModes(),
             'source_transactions' => $this->sourceTransactions($userId),
             'active_match_runs' => $this->activeMatchRunsPayload($userId),
             'month_in_budget_year' => $this->monthInBudgetYear($userId, $monthStart),
@@ -235,9 +257,11 @@ class PlannedTemplateController extends Controller
     {
         $this->ensureOwned($request, $plannedTemplate);
 
-        $label = $plannedTemplate->classification === BankTransaction::CLASSIFICATION_BILL
-            ? 'Bill plan'
-            : 'Paycheck plan';
+        $label = match ($plannedTemplate->classification) {
+            BankTransaction::CLASSIFICATION_BILL => 'Bill plan',
+            BankTransaction::CLASSIFICATION_EXPENSE => 'Expense plan',
+            default => 'Paycheck plan',
+        };
 
         $plannedTemplate->delete();
 
@@ -402,8 +426,9 @@ class PlannedTemplateController extends Controller
         Carbon $monthStart,
         Carbon $monthEnd,
         bool $credits,
+        ?string $classification = null,
     ): Collection {
-        $classification = $credits
+        $classification ??= $credits
             ? BankTransaction::CLASSIFICATION_INCOME
             : BankTransaction::CLASSIFICATION_BILL;
 
@@ -440,7 +465,7 @@ class PlannedTemplateController extends Controller
     {
         $categories = Category::query()
             ->where('user_id', $userId)
-            ->whereIn('kind', [Category::KIND_INCOME, Category::KIND_BILL])
+            ->whereIn('kind', [Category::KIND_INCOME, Category::KIND_BILL, Category::KIND_EXPENSE])
             ->get(['id', 'kind']);
 
         if ($categories->isEmpty()) {
@@ -461,7 +486,10 @@ class PlannedTemplateController extends Controller
                         ->where('classification', BankTransaction::CLASSIFICATION_INCOME);
                 })->orWhere(function (Builder $debits) {
                     $debits->where('amount', '<', 0)
-                        ->where('classification', BankTransaction::CLASSIFICATION_BILL);
+                        ->whereIn('classification', [
+                            BankTransaction::CLASSIFICATION_BILL,
+                            BankTransaction::CLASSIFICATION_EXPENSE,
+                        ]);
                 });
             })
             ->orderByDesc('posted_at')
@@ -502,9 +530,7 @@ class PlannedTemplateController extends Controller
             }
 
             $kind = $kindByCategoryId->get($categoryId);
-            $allowedModes = $kind === Category::KIND_BILL
-                ? PlannedTemplate::billMatchModes()
-                : PlannedTemplate::incomeMatchModes();
+            $allowedModes = PlannedTemplate::matchModesForKind((string) $kind);
 
             $matchedRule = null;
 

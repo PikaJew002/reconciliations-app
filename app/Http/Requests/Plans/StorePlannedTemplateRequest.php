@@ -33,6 +33,7 @@ class StorePlannedTemplateRequest extends FormRequest
         $merchantId = $this->input('merchant_id');
         $category = Category::query()->find($this->input('category_id'));
         $isBill = $category?->kind === Category::KIND_BILL;
+        $isExpense = $category?->kind === Category::KIND_EXPENSE;
 
         if (
             ($matchMode === null || $matchMode === '')
@@ -45,9 +46,13 @@ class StorePlannedTemplateRequest extends FormRequest
             $matchMode = TransactionCategorizationRule::MATCH_DESCRIPTION_PREFIX_AND_AMOUNT;
         }
 
+        if (($matchMode === null || $matchMode === '') && $isExpense) {
+            $matchMode = TransactionCategorizationRule::MATCH_DESCRIPTION;
+        }
+
         $amount = $this->filled('amount') ? $this->input('amount') : null;
 
-        if ($isBill && $this->filled('expected_amount')) {
+        if (($isBill || $isExpense) && $this->filled('expected_amount')) {
             $amount = $this->input('expected_amount');
         }
 
@@ -112,9 +117,9 @@ class StorePlannedTemplateRequest extends FormRequest
             if (
                 $category === null
                 || $category->user_id !== $userId
-                || ! in_array($category->kind, [Category::KIND_INCOME, Category::KIND_BILL], true)
+                || ! in_array($category->kind, [Category::KIND_INCOME, Category::KIND_BILL, Category::KIND_EXPENSE], true)
             ) {
-                $validator->errors()->add('category_id', 'Choose an income or bill category you own.');
+                $validator->errors()->add('category_id', 'Choose an income, bill, or expense category you own.');
 
                 return;
             }
@@ -164,11 +169,18 @@ class StorePlannedTemplateRequest extends FormRequest
                 $validator->errors()->add('amount', 'An exact amount is required for this match mode.');
             }
 
-            if ($category?->kind === Category::KIND_BILL && ! $this->filled('occurrences_starts_on')) {
-                $validator->errors()->add('occurrences_starts_on', 'Choose the first month to generate for this bill.');
+            $schedulesOccurrences = in_array($category?->kind, [Category::KIND_BILL, Category::KIND_EXPENSE], true);
+
+            if ($schedulesOccurrences && ! $this->filled('occurrences_starts_on')) {
+                $validator->errors()->add(
+                    'occurrences_starts_on',
+                    $category?->kind === Category::KIND_EXPENSE
+                        ? 'Choose the first month to generate for this expense.'
+                        : 'Choose the first month to generate for this bill.',
+                );
             }
 
-            if ($this->filled('occurrences_starts_on') && $category?->kind === Category::KIND_BILL) {
+            if ($this->filled('occurrences_starts_on') && $schedulesOccurrences) {
                 $month = Carbon::createFromFormat('Y-m', $this->input('occurrences_starts_on'));
 
                 if ($month === false) {
@@ -203,22 +215,25 @@ class StorePlannedTemplateRequest extends FormRequest
         $validated = $this->validated();
         $category = Category::query()->findOrFail($validated['category_id']);
         $isBill = $category->kind === Category::KIND_BILL;
+        $schedulesOccurrences = $isBill || $category->kind === Category::KIND_EXPENSE;
 
         return [
             'name' => $validated['name'],
             'category_id' => $validated['category_id'],
             'merchant_id' => $validated['merchant_id'] ?? null,
-            'classification' => $isBill
-                ? BankTransaction::CLASSIFICATION_BILL
-                : BankTransaction::CLASSIFICATION_INCOME,
+            'classification' => match ($category->kind) {
+                Category::KIND_BILL => BankTransaction::CLASSIFICATION_BILL,
+                Category::KIND_EXPENSE => BankTransaction::CLASSIFICATION_EXPENSE,
+                default => BankTransaction::CLASSIFICATION_INCOME,
+            },
             'match_mode' => $validated['match_mode'],
             'normalized_pattern' => $validated['normalized_pattern'] ?? null,
-            'amount' => $isBill
+            'amount' => $schedulesOccurrences
                 ? $validated['expected_amount']
                 : ($validated['amount'] ?? null),
             'expected_day' => $validated['expected_day'],
             'expected_amount' => $validated['expected_amount'],
-            'occurrences_starts_on' => $isBill
+            'occurrences_starts_on' => $schedulesOccurrences
                 ? Carbon::createFromFormat('Y-m', $validated['occurrences_starts_on'])
                     ->startOfMonth()
                     ->toDateString()
@@ -236,6 +251,10 @@ class StorePlannedTemplateRequest extends FormRequest
     {
         $category = Category::query()->find($this->input('category_id'));
 
-        return $category?->kind === Category::KIND_BILL ? 'Bill plan' : 'Paycheck plan';
+        return match ($category?->kind) {
+            Category::KIND_BILL => 'Bill plan',
+            Category::KIND_EXPENSE => 'Expense plan',
+            default => 'Paycheck plan',
+        };
     }
 }

@@ -48,4 +48,20 @@ class PlannedTemplateFactory extends Factory
             'occurrences_starts_on' => '2026-03-01',
         ]);
     }
+
+    public function expense(): static
+    {
+        return $this->state(fn () => [
+            'category_id' => Category::factory()->expense(),
+            'name' => 'Gym',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'match_mode' => TransactionCategorizationRule::MATCH_DESCRIPTION,
+            'normalized_pattern' => 'planet fitness',
+            'amount' => 40.00,
+            'expected_amount' => 40.00,
+            'expected_day' => 10,
+            'occurrences_starts_on' => '2026-07-01',
+            'recurrence_months' => 1,
+        ]);
+    }
 }

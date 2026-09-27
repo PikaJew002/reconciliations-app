@@ -46,11 +46,26 @@ class PlannedTemplate extends Model
     /**
      * @return list<string>
      */
+    /**
+     * Debit match modes that do not require a bill classification.
+     *
+     * @return list<string>
+     */
+    public static function expenseMatchModes(): array
+    {
+        return self::incomeMatchModes();
+    }
+
+    /**
+     * @return list<string>
+     */
     public static function matchModesForKind(string $kind): array
     {
-        return $kind === Category::KIND_BILL
-            ? self::billMatchModes()
-            : self::incomeMatchModes();
+        return match ($kind) {
+            Category::KIND_BILL => self::billMatchModes(),
+            Category::KIND_EXPENSE => self::expenseMatchModes(),
+            default => self::incomeMatchModes(),
+        };
     }
 
     protected $fillable = [

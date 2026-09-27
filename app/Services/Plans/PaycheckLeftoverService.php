@@ -50,7 +50,11 @@ class PaycheckLeftoverService
         $occurrences = PlannedOccurrence::query()
             ->where('user_id', $userId)
             ->whereNotNull('template_id')
-            ->with('bankTransaction:id,amount,posted_at')
+            ->with([
+                'bankTransaction:id,account_id,amount,posted_at',
+                'bankTransaction.account:id,account_type',
+                'template:id,name,is_active',
+            ])
             ->orderBy('expected_date')
             ->orderBy('id')
             ->get();
@@ -116,6 +120,30 @@ class PaycheckLeftoverService
             ->unique()
             ->all();
 
+        $activeExpenseTemplateIds = PlannedTemplate::query()
+            ->where('user_id', $userId)
+            ->where('classification', BankTransaction::CLASSIFICATION_EXPENSE)
+            ->where('is_active', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $expenseOccurrences = $occurrences
+            ->where('classification', BankTransaction::CLASSIFICATION_EXPENSE)
+            ->filter(fn (PlannedOccurrence $occurrence) => in_array(
+                (int) $occurrence->template_id,
+                $activeExpenseTemplateIds,
+                true,
+            ))
+            ->values();
+
+        $plannedExpenseTransactionIds = $expenseOccurrences
+            ->pluck('bank_transaction_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->all();
+
         $from = $starts->first()['start'];
         $accountActivity = $this->accountActivityFrom($userId, $from);
         $allocationEvents = $this->allocationEventsForUser($userId, $from);
@@ -131,11 +159,16 @@ class PaycheckLeftoverService
         $creditCardSpend = $this->creditCardSpendKeys($spendEvents);
         $allocatedOrderComponents = $this->allocatedOrderComponentIds($spendEvents);
         $spendEvents = $spendEvents
-            ->reject(function (array $event) use ($assignedBillTransactionIds, $creditCardSpend, $allocatedOrderComponents): bool {
+            ->reject(function (array $event) use ($assignedBillTransactionIds, $plannedExpenseTransactionIds, $creditCardSpend, $allocatedOrderComponents): bool {
                 $transactionId = $event['bank_transaction_id'] ?? null;
 
                 if ($transactionId !== null
                     && in_array((int) $transactionId, $assignedBillTransactionIds, true)) {
+                    return true;
+                }
+
+                if ($transactionId !== null
+                    && in_array((int) $transactionId, $plannedExpenseTransactionIds, true)) {
                     return true;
                 }
 
@@ -207,6 +240,11 @@ class PaycheckLeftoverService
             );
             $allocated = round((float) $windowAllocations->sum('amount'), 2);
             $credited = round((float) $windowCredits->sum('amount'), 2);
+            [$plannedExpenses, $expensePayload] = $this->plannedExpensesInWindow(
+                $expenseOccurrences,
+                $start,
+                $end,
+            );
             $creditCardPayments = round(
                 (float) $windowAllocations
                     ->where('kind', self::ALLOCATION_CREDIT_CARD_PAYMENT)
@@ -220,7 +258,7 @@ class PaycheckLeftoverService
                 2,
             );
 
-            $paycheckRemaining = round($contribution['leftover'] + $credited - $spent - $allocated, 2);
+            $paycheckRemaining = round($contribution['leftover'] + $credited - $spent - $allocated - $plannedExpenses, 2);
             $remaining = round($broughtForward + $paycheckRemaining, 2);
             $decisionRemaining = round($decisionBroughtForward + $paycheckRemaining, 2);
             $carryForward = $occurrence->carry_forward !== null
@@ -239,6 +277,8 @@ class PaycheckLeftoverService
                 'decision_brought_forward' => $decisionBroughtForward,
                 'carry_forward' => $carryForward,
                 'planned_leftover' => $contribution['leftover'],
+                'planned_expenses' => $plannedExpenses,
+                'expenses' => $expensePayload,
                 'spent' => $spent,
                 'credited' => $credited,
                 'credits' => $windowCredits->all(),
@@ -611,6 +651,56 @@ class PaycheckLeftoverService
 
         return $orderComponentId !== null
             && isset($creditCardSpend['order_component'][(int) $orderComponentId]);
+    }
+
+    /**
+     * Reserve checking auto-debits whose expected date falls in the window.
+     * A linked credit-card charge is skipped: cash leaves when the card is paid.
+     *
+     * @param  Collection<int, PlannedOccurrence>  $expenseOccurrences
+     * @return array{0: float, 1: list<array<string, mixed>>}
+     */
+    protected function plannedExpensesInWindow(
+        Collection $expenseOccurrences,
+        CarbonInterface $start,
+        ?CarbonInterface $end,
+    ): array {
+        $payload = [];
+        $total = 0.0;
+
+        foreach ($expenseOccurrences as $occurrence) {
+            if (! $this->dateInWindow($occurrence->expected_date->toDateString(), $start, $end)) {
+                continue;
+            }
+
+            if ($this->linkedCreditCardExpense($occurrence)) {
+                continue;
+            }
+
+            $amount = round(
+                $this->assignments->amountFor($occurrence, (float) $occurrence->expected_amount),
+                2,
+            );
+            $total += $amount;
+            $payload[] = [
+                'id' => (int) $occurrence->id,
+                'name' => $occurrence->template?->name ?? 'Planned expense',
+                'date' => $occurrence->expected_date->toDateString(),
+                'amount' => $amount,
+                'status' => $occurrence->status,
+            ];
+        }
+
+        return [round($total, 2), $payload];
+    }
+
+    protected function linkedCreditCardExpense(PlannedOccurrence $occurrence): bool
+    {
+        if (! $occurrence->isResolved()) {
+            return false;
+        }
+
+        return $occurrence->bankTransaction?->account?->account_type === Account::CREDIT_CARD;
     }
 
     protected function windowStart(PlannedOccurrence $occurrence): CarbonInterface

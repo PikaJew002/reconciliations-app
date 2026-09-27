@@ -328,6 +328,17 @@
                             </dd>
                         </div>
                         <div
+                            v-if="(selectedWindow.planned_expenses ?? 0) > 0"
+                            class="flex items-baseline justify-between gap-3"
+                        >
+                            <dt class="text-neutral-600">Planned expenses</dt>
+                            <dd class="tabular-nums">
+                                {{
+                                    formatMoney(selectedWindow.planned_expenses)
+                                }}
+                            </dd>
+                        </div>
+                        <div
                             v-if="(selectedWindow.credited ?? 0) > 0"
                             class="flex items-baseline justify-between gap-3"
                         >
@@ -458,6 +469,27 @@
                                     </span>
                                     <span class="tabular-nums">
                                         {{ formatMoney(bill.amount) }}
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div v-if="(selectedWindow.expenses ?? []).length > 0">
+                            <p class="text-sm font-medium">Planned expenses</p>
+                            <ul class="mt-2 space-y-1 text-sm">
+                                <li
+                                    v-for="expense in selectedWindow.expenses"
+                                    :key="expense.id"
+                                    class="flex items-baseline justify-between gap-3 text-neutral-700"
+                                >
+                                    <span>
+                                        {{ expense.name }}
+                                        <span class="text-neutral-500">
+                                            {{ formatDay(expense.date) }}
+                                        </span>
+                                    </span>
+                                    <span class="tabular-nums">
+                                        {{ formatMoney(expense.amount) }}
                                     </span>
                                 </li>
                             </ul>
