@@ -1,4 +1,6 @@
 <script setup>
+    import OrderBankTotalForm from './OrderBankTotalForm.vue';
+    import OrderComponentRefundForm from './OrderComponentRefundForm.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
     import { router } from '@inertiajs/vue3';
     import { computed, reactive, ref, watch } from 'vue';
@@ -146,9 +148,9 @@
         <div>
             <h2 class="text-base font-semibold">Unbalanced components</h2>
             <p class="text-sm text-neutral-600">
-                Orders whose components do not add up to the order total. Fix an
-                item quantity, add a missing fee (for example Fast delivery), or
-                remove a bad component, then re-run reconciliation.
+                Orders whose components do not add up to the bank total. Mark a
+                refund, set the bank total, fix an item quantity, add a missing
+                fee, or remove a bad component, then re-run reconciliation.
             </p>
         </div>
 
@@ -175,7 +177,7 @@
                     </div>
                     <div class="text-right">
                         <p class="font-medium">
-                            {{ formatMoney(order.total) }} total
+                            {{ formatMoney(order.total) }} bank total
                         </p>
                         <p class="text-neutral-600">
                             Components
@@ -186,6 +188,14 @@
                         </p>
                     </div>
                 </div>
+
+                <OrderBankTotalForm
+                    :order-id="order.id"
+                    :total="order.total"
+                    :imported-total="order.imported_total"
+                    :component-sum="order.component_sum"
+                    :can-edit="order.can_edit_total"
+                />
 
                 <ul class="divide-y rounded border">
                     <li
@@ -278,6 +288,10 @@
                                     Save
                                 </button>
                             </form>
+                            <OrderComponentRefundForm
+                                :order-id="order.id"
+                                :component="component"
+                            />
                             <p class="font-medium">
                                 {{ formatMoney(component.amount) }}
                             </p>

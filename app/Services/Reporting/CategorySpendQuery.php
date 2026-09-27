@@ -197,11 +197,11 @@ class CategorySpendQuery
         $components = OrderComponent::query()
             ->whereIn('order_id', $orderIds)
             ->whereNotNull('category_id')
-            ->get(['category_id', 'amount']);
+            ->get(['category_id', 'amount', 'refund_amount']);
 
         foreach ($components as $component) {
             $categoryId = (int) $component->category_id;
-            $amount = (float) $component->amount;
+            $amount = $component->spendAmount();
             $totals[$categoryId] = round(($totals[$categoryId] ?? 0) + $amount, 2);
         }
 
@@ -222,12 +222,13 @@ class CategorySpendQuery
             return 0.0;
         }
 
-        $total = (float) OrderComponent::query()
+        $total = OrderComponent::query()
             ->whereIn('order_id', $orderIds)
             ->whereNull('category_id')
-            ->sum('amount');
+            ->get(['amount', 'refund_amount'])
+            ->sum(fn (OrderComponent $component): float => $component->spendAmount());
 
-        return round($total, 2);
+        return round((float) $total, 2);
     }
 
     /**
@@ -406,7 +407,7 @@ class CategorySpendQuery
         $orders = Order::query()
             ->where('user_id', $userId)
             ->tap(fn (Builder $query) => $this->applyOrderedAtRange($query, $from, $to))
-            ->with(['components:id,order_id,amount,category_id,description,type'])
+            ->with(['components:id,order_id,amount,refund_amount,category_id,description,type'])
             ->get(['id', 'ordered_at']);
 
         foreach ($orders as $order) {
@@ -417,7 +418,7 @@ class CategorySpendQuery
             foreach ($order->components as $component) {
                 $events[] = [
                     'date' => $order->ordered_at->toDateString(),
-                    'amount' => round((float) $component->amount, 2),
+                    'amount' => $component->spendAmount(),
                     'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
                     'source' => 'order_component',
                     'bank_transaction_id' => null,

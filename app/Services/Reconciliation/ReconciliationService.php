@@ -4,7 +4,9 @@ namespace App\Services\Reconciliation;
 
 use App\Models\BankTransaction;
 use App\Models\Order;
+use App\Models\OrderComponent;
 use App\Models\TransactionAllocation;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +17,7 @@ class ReconciliationService
         protected int $dateWindowDays = 7,
         protected int $preCoverageLookbackDays = 10,
         protected int $subsetCandidateCap = 12,
+        protected int $refundCreditWindowDays = 30,
     ) {}
 
     /**
@@ -23,6 +26,11 @@ class ReconciliationService
     public function reconcileForUser(int $userId): int
     {
         $matchedTransactionIds = [];
+
+        $matchedTransactionIds = array_merge(
+            $matchedTransactionIds,
+            $this->reconcileBankRefunds($userId),
+        );
 
         $matchedTransactionIds = array_merge(
             $matchedTransactionIds,
@@ -45,6 +53,10 @@ class ReconciliationService
         $matchedTransactionIds = [];
 
         foreach ($this->openOrders($userId) as $order) {
+            if ($order->bankRefundTotal() >= 0.01) {
+                continue;
+            }
+
             $candidates = $this->candidateTransactions($userId, $order)
                 ->filter(fn (BankTransaction $transaction): bool => $this->amountsEqual(
                     abs((float) $transaction->amount),
@@ -75,6 +87,10 @@ class ReconciliationService
         $postedAtRange = $this->postedAtRange($userId);
 
         foreach ($this->openOrders($userId) as $order) {
+            if ($order->bankRefundTotal() >= 0.01) {
+                continue;
+            }
+
             if ($this->isNearImportEdge($order, $postedAtRange)) {
                 continue;
             }
@@ -188,42 +204,7 @@ class ReconciliationService
                 }
 
                 foreach ($transactions as $transaction) {
-                    $remaining = abs((float) $transaction->amount);
-                    $order->load(['components.allocations']);
-
-                    foreach ($order->components->sortBy('id') as $component) {
-                        if ($remaining < 0.01) {
-                            break;
-                        }
-
-                        $componentRemaining = (float) $component->remaining_amount;
-
-                        if ($componentRemaining < 0.01) {
-                            continue;
-                        }
-
-                        $allocationAmount = min($remaining, $componentRemaining);
-
-                        TransactionAllocation::create([
-                            'bank_transaction_id' => $transaction->id,
-                            'order_component_id' => $component->id,
-                            'allocated_amount' => round($allocationAmount, 2),
-                            'allocation_type' => 'automatic',
-                            'match_confidence' => 100,
-                            'notes' => null,
-                            'metadata' => [],
-                        ]);
-
-                        $remaining = round($remaining - $allocationAmount, 2);
-                    }
-
-                    $transaction->refresh();
-
-                    if (abs($transaction->remaining_amount) >= 0.01) {
-                        throw new \RuntimeException('Transaction was not fully allocated.');
-                    }
-
-                    $transaction->markMatched();
+                    $this->allocateDebitAcrossComponents($transaction, $order);
                 }
 
                 $order->refresh();
@@ -235,11 +216,273 @@ class ReconciliationService
 
                 $order->markReconciled();
             });
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $exception) {
+            $this->rethrowDatabaseException($exception);
+
             return false;
         }
 
         return true;
+    }
+
+    /**
+     * Match a gross card charge and the refund credits that net to the bank total.
+     *
+     * @return list<int>
+     */
+    protected function reconcileBankRefunds(int $userId): array
+    {
+        $matchedTransactionIds = [];
+        $paymentResolution = app(OrderPaymentResolutionService::class);
+
+        foreach ($this->openOrders($userId) as $order) {
+            $bankRefund = $order->bankRefundTotal();
+
+            if ($bankRefund < 0.01) {
+                continue;
+            }
+
+            if (abs($order->payableComponentSum() - (float) $order->total) >= 0.01) {
+                continue;
+            }
+
+            if ($paymentResolution->needsPaymentReview($order)) {
+                continue;
+            }
+
+            $debits = $this->candidateTransactions($userId, $order)->values();
+            $credits = $this->candidateCreditTransactions($userId, $order)->values();
+
+            if (
+                $debits->isEmpty()
+                || $credits->isEmpty()
+                || $debits->count() > $this->subsetCandidateCap
+                || $credits->count() > $this->subsetCandidateCap
+            ) {
+                continue;
+            }
+
+            $grossCents = $this->toCents((float) $order->total + $bankRefund);
+            $debitSubset = $this->findUniqueExactSubset($debits, $grossCents);
+            $creditSubset = $this->findUniqueExactSubset($credits, $this->toCents($bankRefund));
+
+            if ($debitSubset === null || $creditSubset === null) {
+                continue;
+            }
+
+            $matched = $debitSubset->concat($creditSubset)->values();
+
+            if ($this->allocateBankRefundTransactions($matched, $order)) {
+                foreach ($matched as $transaction) {
+                    $matchedTransactionIds[] = $transaction->id;
+                }
+            }
+        }
+
+        return $matchedTransactionIds;
+    }
+
+    /**
+     * @return Collection<int, BankTransaction>
+     */
+    protected function candidateCreditTransactions(int $userId, Order $order): Collection
+    {
+        $orderDate = $this->orderDate($order);
+
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('merchant_id', $order->merchant_id)
+            ->availableForExpenseMatching()
+            ->where('amount', '>', 0)
+            ->whereNotNull('merchant_id')
+            ->orderBy('posted_at')
+            ->orderBy('id')
+            ->get()
+            ->filter(function (BankTransaction $transaction) use ($order, $orderDate): bool {
+                if (! $this->paymentInstrumentsAlign($order, $transaction)) {
+                    return false;
+                }
+
+                if ($orderDate === null) {
+                    return true;
+                }
+
+                return abs($this->postedAtDate($transaction)->diffInDays($orderDate, false)) <= $this->refundCreditWindowDays;
+            })
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, BankTransaction>  $transactions
+     */
+    protected function allocateBankRefundTransactions(Collection $transactions, Order $order): bool
+    {
+        $debits = $transactions
+            ->filter(fn (BankTransaction $transaction): bool => (float) $transaction->amount < 0)
+            ->sortBy('id')
+            ->values();
+        $credits = $transactions
+            ->filter(fn (BankTransaction $transaction): bool => (float) $transaction->amount > 0)
+            ->sortBy('id')
+            ->values();
+
+        $order->loadMissing('components');
+        $bankRefund = $order->bankRefundTotal();
+        $debitSum = round($debits->sum(fn (BankTransaction $transaction): float => abs((float) $transaction->amount)), 2);
+        $creditSum = round($credits->sum(fn (BankTransaction $transaction): float => (float) $transaction->amount), 2);
+        $expectedDebit = round((float) $order->total + $bankRefund, 2);
+
+        if (
+            $debits->isEmpty()
+            || $credits->isEmpty()
+            || abs($debitSum - $expectedDebit) >= 0.01
+            || abs($creditSum - $bankRefund) >= 0.01
+            || abs($order->payableComponentSum() - (float) $order->total) >= 0.01
+        ) {
+            return false;
+        }
+
+        try {
+            DB::transaction(function () use ($debits, $credits, $order): void {
+                $order->refresh();
+                $order->load(['components.allocations']);
+
+                if ($order->status === 'reconciled' || $this->orderRemainingAmount($order) < 0.01) {
+                    throw new \RuntimeException('Order is not allocatable.');
+                }
+
+                foreach ($debits->concat($credits) as $transaction) {
+                    $transaction->refresh();
+
+                    if ($transaction->status !== 'unmatched' || abs((float) $transaction->remaining_amount) < 0.01) {
+                        throw new \RuntimeException('Transaction is not allocatable.');
+                    }
+                }
+
+                foreach ($debits as $transaction) {
+                    $this->allocateDebitAcrossComponents($transaction, $order);
+                }
+
+                $this->allocateRefundCredits($credits, $order);
+
+                $order->refresh();
+                $net = round((float) $order->allocated_amount, 2);
+
+                if (abs($net - round((float) $order->total, 2)) >= 0.01) {
+                    throw new \RuntimeException('Order was not fully allocated.');
+                }
+
+                $order->markReconciled();
+            });
+        } catch (\RuntimeException $exception) {
+            $this->rethrowDatabaseException($exception);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function rethrowDatabaseException(\RuntimeException $exception): void
+    {
+        if ($exception instanceof QueryException || $exception instanceof \PDOException) {
+            throw $exception;
+        }
+    }
+
+    protected function allocateDebitAcrossComponents(BankTransaction $transaction, Order $order): void
+    {
+        $remaining = abs((float) $transaction->amount);
+        $order->load(['components.allocations']);
+
+        foreach ($order->components->sortBy('id') as $component) {
+            if ($remaining < 0.01) {
+                break;
+            }
+
+            $componentRemaining = (float) $component->remaining_amount;
+
+            if ($componentRemaining < 0.01) {
+                continue;
+            }
+
+            $allocationAmount = min($remaining, $componentRemaining);
+
+            TransactionAllocation::create([
+                'bank_transaction_id' => $transaction->id,
+                'order_component_id' => $component->id,
+                'allocated_amount' => round($allocationAmount, 2),
+                'allocation_type' => TransactionAllocation::TYPE_AUTOMATIC,
+                'match_confidence' => 100,
+                'notes' => null,
+                'metadata' => [],
+            ]);
+
+            $remaining = round($remaining - $allocationAmount, 2);
+        }
+
+        $transaction->refresh();
+
+        if (abs($transaction->remaining_amount) >= 0.01) {
+            throw new \RuntimeException('Transaction was not fully allocated.');
+        }
+
+        $transaction->markMatched();
+    }
+
+    /**
+     * @param  Collection<int, BankTransaction>  $credits
+     */
+    protected function allocateRefundCredits(Collection $credits, Order $order): void
+    {
+        $order->load(['components']);
+
+        $capacity = [];
+
+        foreach ($order->components->sortBy('id') as $component) {
+            if ($component->refund_kind !== OrderComponent::REFUND_KIND_BANK) {
+                continue;
+            }
+
+            $capacity[$component->id] = round((float) $component->refund_amount, 2);
+        }
+
+        foreach ($credits as $credit) {
+            $remaining = round((float) $credit->amount, 2);
+
+            foreach ($capacity as $componentId => $room) {
+                if ($remaining < 0.01) {
+                    break;
+                }
+
+                if ($room < 0.01) {
+                    continue;
+                }
+
+                $allocationAmount = round(min($remaining, $room), 2);
+
+                TransactionAllocation::create([
+                    'bank_transaction_id' => $credit->id,
+                    'order_component_id' => $componentId,
+                    'allocated_amount' => $allocationAmount,
+                    'allocation_type' => TransactionAllocation::TYPE_REFUND,
+                    'match_confidence' => 100,
+                    'notes' => null,
+                    'metadata' => [],
+                ]);
+
+                $capacity[$componentId] = round($room - $allocationAmount, 2);
+                $remaining = round($remaining - $allocationAmount, 2);
+            }
+
+            $credit->refresh();
+
+            if ($remaining >= 0.01 || abs((float) $credit->remaining_amount) >= 0.01) {
+                throw new \RuntimeException('Refund credit was not fully allocated.');
+            }
+
+            $credit->markMatched();
+        }
     }
 
     /**

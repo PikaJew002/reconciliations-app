@@ -118,7 +118,7 @@ class OrderBrowseService
 
         $orders = $ordersQuery
             ->with('merchant:id,name,normalized_name')
-            ->withSum('components', 'amount')
+            ->with(['components:id,order_id,amount,refund_amount,refund_kind'])
             ->orderByDesc('ordered_at')
             ->orderByDesc('id')
             ->limit($this->listLimit)
@@ -127,7 +127,7 @@ class OrderBrowseService
                 $orderDate = $this->orderDate($order);
                 $balance = $this->componentBalance(
                     (float) $order->total,
-                    (float) ($order->components_sum_amount ?? 0),
+                    $order->payableComponentSum(),
                 );
 
                 return [
@@ -180,12 +180,17 @@ class OrderBrowseService
             'components' => fn ($query) => $query
                 ->orderBy('id')
                 ->with('category:id,name')
-                ->withSum('allocations', 'allocated_amount'),
+                ->with('allocations:id,order_component_id,allocated_amount,allocation_type'),
         ]);
 
+        $canEdit = $order->status !== 'reconciled';
+
         $components = $order->components
-            ->map(function (OrderComponent $component): array {
-                $allocated = round((float) ($component->allocations_sum_allocated_amount ?? 0), 2);
+            ->map(function (OrderComponent $component) use ($canEdit): array {
+                $hasAllocations = $component->allocations->isNotEmpty();
+                $allocated = round((float) $component->allocations
+                    ->where('allocation_type', '!=', 'refund')
+                    ->sum('allocated_amount'), 2);
                 $amount = (float) $component->amount;
 
                 return [
@@ -193,21 +198,26 @@ class OrderBrowseService
                     'type' => $component->type,
                     'description' => $component->description,
                     'amount' => $amount,
+                    'refund_amount' => $component->refund_amount !== null
+                        ? (float) $component->refund_amount
+                        : null,
+                    'refund_kind' => $component->refund_kind,
                     'category' => $component->category?->only(['id', 'name']),
                     'allocated_amount' => $allocated,
                     'remaining_amount' => round($amount - $allocated, 2),
+                    'can_refund' => $canEdit && ! $hasAllocations,
                 ];
             })
             ->values()
             ->all();
 
-        $hasAllocations = collect($components)->contains(
-            fn (array $component): bool => abs($component['allocated_amount']) >= 0.01,
+        $hasAllocations = $order->components->contains(
+            fn (OrderComponent $component): bool => $component->allocations->isNotEmpty(),
         );
 
         $balance = $this->componentBalance(
             (float) $order->total,
-            (float) $order->components->sum('amount'),
+            $order->payableComponentSum(),
         );
 
         return [
@@ -226,6 +236,8 @@ class OrderBrowseService
                 'tip' => (float) $order->tip,
                 'discount' => (float) $order->discount,
                 'total' => (float) $order->total,
+                'imported_total' => (float) $order->imported_total,
+                'can_edit_total' => $canEdit && ! $hasAllocations,
                 ...$balance,
             ],
             'items' => $order->items

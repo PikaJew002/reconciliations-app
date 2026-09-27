@@ -25,8 +25,10 @@ use App\Http\Controllers\Plans\VacationWindowController;
 use App\Http\Controllers\Products\ProductController;
 use App\Http\Controllers\Reconciliation\OrderComponentCategoryController;
 use App\Http\Controllers\Reconciliation\OrderComponentController;
+use App\Http\Controllers\Reconciliation\OrderComponentRefundController;
 use App\Http\Controllers\Reconciliation\OrderItemController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
+use App\Http\Controllers\Reconciliation\OrderTotalController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
 use App\Http\Controllers\Reconciliation\TransactionCategorizationController;
@@ -247,6 +249,12 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.transactions.categorize');
     Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])
         ->name('reconciliation.orders.components.category.update');
+    Route::patch('/reconciliation/orders/{order}/total', [OrderTotalController::class, 'update'])
+        ->name('reconciliation.orders.total.update');
+    Route::patch('/reconciliation/orders/{order}/components/{component}/refund', [OrderComponentRefundController::class, 'update'])
+        ->name('reconciliation.orders.components.refund.update');
+    Route::delete('/reconciliation/orders/{order}/components/{component}/refund', [OrderComponentRefundController::class, 'destroy'])
+        ->name('reconciliation.orders.components.refund.destroy');
     Route::post('/reconciliation/reimbursement-groups', [ReimbursementGroupController::class, 'store'])
         ->name('reconciliation.reimbursement-groups.store');
     Route::post('/reconciliation/reimbursement-groups/{reimbursementGroup}/transactions', [ReimbursementGroupController::class, 'addTransactions'])

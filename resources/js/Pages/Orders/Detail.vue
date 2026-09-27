@@ -1,8 +1,10 @@
 <script setup>
+    import OrderBankTotalForm from '../../Components/Reconciliation/OrderBankTotalForm.vue';
+    import OrderComponentRefundForm from '../../Components/Reconciliation/OrderComponentRefundForm.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
     import { Link, router } from '@inertiajs/vue3';
-    import { ref } from 'vue';
+    import { computed, ref } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
 
@@ -34,6 +36,19 @@
     });
 
     let deleting = ref(false);
+
+    let gapExplained = computed(() => {
+        let importedDiffers =
+            props.order.imported_total != null &&
+            Math.abs(
+                Number(props.order.imported_total) - Number(props.order.total),
+            ) >= 0.01;
+        let hasRefund = props.components.some(
+            (component) => component.refund_kind,
+        );
+
+        return importedDiffers || hasRefund;
+    });
 
     let formatDate = (value) => value || '—';
 
@@ -117,9 +132,12 @@
                         </template>
                     </p>
                 </div>
-                <p class="text-lg font-semibold">
-                    {{ formatMoney(order.total) }}
-                </p>
+                <div class="text-right">
+                    <p class="text-lg font-semibold">
+                        {{ formatMoney(order.total) }}
+                    </p>
+                    <p class="text-xs text-neutral-600">Bank total</p>
+                </div>
             </div>
         </div>
 
@@ -127,10 +145,20 @@
             v-if="!order.components_balanced"
             class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
-            Components do not add up to the order total (components
+            Components do not add up to the bank total (components
             {{ formatMoney(order.component_sum) }}, gap
-            {{ formatMoney(order.gap) }}). This often means the scrape imported
-            the order incorrectly. Remove it below to re-import.
+            {{ formatMoney(order.gap) }}).
+            <template v-if="gapExplained">
+                The imported total is {{ formatMoney(order.imported_total) }}.
+                Mark a refunded component or set the bank total. A bank credit
+                lowers what the card must net to; store credit does not,
+                because the charge was not credited back.
+            </template>
+            <template v-else>
+                This often means the scrape imported the order incorrectly.
+                Remove it below to re-import, or mark a refund if a line came
+                back.
+            </template>
         </p>
 
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -169,9 +197,14 @@
                     {{ formatMoney(order.component_sum) }}
                 </p>
             </div>
-            <div class="rounded border px-4 py-3 text-sm">
-                <p class="text-neutral-600">Total</p>
-                <p class="font-medium">{{ formatMoney(order.total) }}</p>
+            <div class="rounded border px-4 py-3 text-sm sm:col-span-2 lg:col-span-3">
+                <OrderBankTotalForm
+                    :order-id="order.id"
+                    :total="order.total"
+                    :imported-total="order.imported_total"
+                    :component-sum="order.component_sum"
+                    :can-edit="order.can_edit_total"
+                />
             </div>
         </div>
 
@@ -239,7 +272,7 @@
                     Reconciliation breakdown: product lines plus tax, delivery,
                     tip, and discount.
                     <template v-if="!order.components_balanced">
-                        Sum {{ formatMoney(order.component_sum) }} vs total
+                        Sum {{ formatMoney(order.component_sum) }} vs bank total
                         {{ formatMoney(order.total) }}.
                     </template>
                 </p>
@@ -262,6 +295,11 @@
                             </template>
                             · {{ allocationLabel(component) }}
                         </p>
+                        <OrderComponentRefundForm
+                            class="mt-1"
+                            :order-id="order.id"
+                            :component="component"
+                        />
                     </div>
                     <p class="font-medium">
                         {{ formatMoney(component.amount) }}
@@ -282,8 +320,15 @@
                     v-if="!order.components_balanced"
                     class="mt-2 text-sm text-amber-800"
                 >
-                    Unbalanced components are a common sign the scrape missed
-                    items or fees. Removing the order lets you import it again.
+                    <template v-if="gapExplained">
+                        You can also mark a refund or change the bank total
+                        above instead of removing the order.
+                    </template>
+                    <template v-else>
+                        Unbalanced components are a common sign the scrape
+                        missed items or fees. Removing the order lets you
+                        import it again.
+                    </template>
                 </p>
                 <p
                     v-if="has_allocations"
