@@ -198,6 +198,28 @@ class PaycheckLeftoverTest extends TestCase
             ]);
     }
 
+    public function test_assigned_quarterly_bill_does_not_reduce_planned_leftover_in_off_month(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Utilities']);
+        $garbage = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'name' => 'Garbage',
+            'recurrence_months' => 3,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 10,
+            'expected_amount' => 120,
+            'amount' => 120,
+        ]);
+        $paycheck->assignedBills()->sync([$garbage->id]);
+
+        $leftover = $this->leftoverCurrent($user);
+
+        $this->assertEquals(3000, $leftover['planned_leftover']);
+        $this->assertEquals(3000, $leftover['decision_remaining']);
+    }
+
     public function test_assigned_bill_transactions_are_not_counted_as_spend(): void
     {
         [$user, $paycheck] = $this->paycheckSetup();
@@ -1076,6 +1098,88 @@ class PaycheckLeftoverTest extends TestCase
                 ->has('year_report.summary.leftover_income'));
     }
 
+    public function test_planned_expense_lowers_decision_remaining_before_it_posts(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $this->plannedExpense($user, 40, 10);
+
+        $august = $this->windowStarting($this->leftoverWindows($user), '2026-08-01');
+
+        $this->assertEquals(40, $august['planned_expenses']);
+        $this->assertEquals(0, $august['spent']);
+        $this->assertEquals(2960, $august['paycheck_remaining']);
+        $this->assertEquals(2960, $august['decision_remaining']);
+        $this->assertSame('Gym', $august['expenses'][0]['name']);
+    }
+
+    public function test_linked_planned_expense_is_not_counted_twice(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $template = $this->plannedExpense($user, 40, 10);
+        $transaction = $this->expense($user, 40, '2026-08-10');
+
+        $this->leftoverWindows($user);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('expected_date', '2026-08-10')
+            ->firstOrFail()
+            ->update([
+                'bank_transaction_id' => $transaction->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+            ]);
+
+        $august = $this->windowStarting($this->leftoverWindows($user), '2026-08-01');
+
+        $this->assertEquals(40, $august['planned_expenses']);
+        $this->assertEquals(0, $august['spent']);
+        $this->assertEquals(2960, $august['decision_remaining']);
+    }
+
+    public function test_linked_credit_card_planned_expense_is_not_reserved(): void
+    {
+        [$user] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $template = $this->plannedExpense($user, 40, 10);
+        $transaction = $this->expense($user, 40, '2026-08-10', Account::CREDIT_CARD);
+
+        $this->leftoverWindows($user);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('expected_date', '2026-08-10')
+            ->firstOrFail()
+            ->update([
+                'bank_transaction_id' => $transaction->id,
+                'status' => PlannedOccurrence::STATUS_RESOLVED,
+            ]);
+
+        $august = $this->windowStarting($this->leftoverWindows($user), '2026-08-01');
+
+        $this->assertEquals(0, $august['planned_expenses']);
+        $this->assertEquals(0, $august['spent']);
+        $this->assertEquals(3000, $august['decision_remaining']);
+    }
+
+    public function test_planned_expense_after_the_next_paycheck_is_reserved_on_the_later_window(): void
+    {
+        [$user, $paycheck] = $this->paycheckSetup();
+        $this->startLeftoverFrom($user, '2026-07-01');
+        $this->secondPaycheck($user, $paycheck->category_id);
+        $this->plannedExpense($user, 40, 20);
+
+        $windows = $this->leftoverWindows($user);
+        $augustFirst = $this->windowStarting($windows, '2026-08-01');
+        $augustMid = $this->windowStarting($windows, '2026-08-15');
+
+        $this->assertEquals(0, $augustFirst['planned_expenses']);
+        $this->assertEquals(3000, $augustFirst['decision_remaining']);
+        $this->assertEquals(40, $augustMid['planned_expenses']);
+        $this->assertEquals(2960, $augustMid['decision_remaining']);
+    }
+
     protected function actingAsLeftoverReporter(User $user): static
     {
         Sanctum::actingAs($user, [ApiTokenController::ABILITY_LEFTOVER_REPORTING]);
@@ -1159,6 +1263,21 @@ class PaycheckLeftoverTest extends TestCase
             'normalized_pattern' => 'acme payroll mid',
             'expected_day' => 15,
             'expected_amount' => 3000,
+        ]);
+    }
+
+    protected function plannedExpense(User $user, float $amount, int $day): PlannedTemplate
+    {
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Subscriptions']);
+
+        return PlannedTemplate::factory()->expense()->create([
+            'user_id' => $user->id,
+            'category_id' => $category->id,
+            'name' => 'Gym',
+            'expected_day' => $day,
+            'expected_amount' => $amount,
+            'amount' => $amount,
+            'occurrences_starts_on' => '2026-07-01',
         ]);
     }
 

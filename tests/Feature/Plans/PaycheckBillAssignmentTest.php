@@ -10,6 +10,8 @@ use App\Models\PlannedOccurrence;
 use App\Models\PlannedTemplate;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
+use App\Services\Plans\PaycheckBillAssignmentService;
+use App\Services\Plans\PlannedOccurrenceGenerator;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -255,6 +257,97 @@ class PaycheckBillAssignmentTest extends TestCase
                             && (float) $occurrence['leftover'] === 1660.0,
                     ),
                 ));
+    }
+
+    public function test_quarterly_bill_counts_toward_leftover_only_in_due_coverage_month(): void
+    {
+        [$user, $paycheck] = $this->assignmentSetup();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Trash']);
+        $garbage = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'name' => 'Garbage',
+            'recurrence_months' => 3,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 10,
+            'expected_amount' => 120,
+            'amount' => 120,
+        ]);
+        $paycheck->update(['expected_day' => 15]);
+        $paycheck->assignedBills()->sync([$garbage->id]);
+
+        $generator = app(PlannedOccurrenceGenerator::class);
+        $generator->syncTemplate($paycheck->fresh());
+        $generator->syncTemplate($garbage->fresh());
+
+        $assignments = app(PaycheckBillAssignmentService::class);
+        $occurrences = $assignments->occurrencesByTemplateId(
+            $user->id,
+            Carbon::parse('2026-01-01'),
+            Carbon::parse('2026-06-01'),
+        );
+
+        $march = Carbon::parse('2026-03-01');
+        $dueMonthContribution = $assignments->contributionForPaycheck(
+            $paycheck->fresh(['assignedBills']),
+            null,
+            $march,
+            $occurrences,
+        );
+
+        $this->assertSame(120.0, $dueMonthContribution['bills_amount']);
+        $this->assertSame(2880.0, $dueMonthContribution['leftover']);
+
+        $february = Carbon::parse('2026-02-01');
+        $offMonthContribution = $assignments->contributionForPaycheck(
+            $paycheck->fresh(['assignedBills']),
+            null,
+            $february,
+            $occurrences,
+        );
+
+        $this->assertSame(0.0, $offMonthContribution['bills_amount']);
+        $this->assertSame(3000.0, $offMonthContribution['leftover']);
+    }
+
+    public function test_quarterly_bill_still_uses_next_month_coverage_day_logic(): void
+    {
+        [$user, $paycheck] = $this->assignmentSetup();
+        $utilities = Category::factory()->for($user)->bill()->create(['name' => 'Trash']);
+        $garbage = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $utilities->id,
+            'name' => 'Garbage',
+            'recurrence_months' => 3,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 3,
+            'expected_amount' => 120,
+            'amount' => 120,
+        ]);
+        $paycheck->update(['expected_day' => 5]);
+        $paycheck->assignedBills()->sync([$garbage->id]);
+
+        $generator = app(PlannedOccurrenceGenerator::class);
+        $generator->syncTemplate($paycheck->fresh());
+        $generator->syncTemplate($garbage->fresh());
+
+        $assignments = app(PaycheckBillAssignmentService::class);
+        $occurrences = $assignments->occurrencesByTemplateId(
+            $user->id,
+            Carbon::parse('2026-03-01'),
+            Carbon::parse('2026-06-01'),
+        );
+
+        $march = Carbon::parse('2026-03-01');
+        $contribution = $assignments->contributionForPaycheck(
+            $paycheck->fresh(['assignedBills']),
+            null,
+            $march,
+            $occurrences,
+        );
+
+        $this->assertSame(120.0, $contribution['bills_amount']);
+        $this->assertTrue($contribution['bills'][0]['covers_next_month']);
     }
 
     public function test_paycheck_occurrence_leftover_uses_expected_amounts_until_resolved(): void

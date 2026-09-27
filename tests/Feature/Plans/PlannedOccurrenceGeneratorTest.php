@@ -265,6 +265,95 @@ class PlannedOccurrenceGeneratorTest extends TestCase
             ->expectsOutputToContain('plans:generate-occurrences');
     }
 
+    public function test_quarterly_bill_generates_occurrences_only_in_due_months(): void
+    {
+        $user = User::factory()->create();
+        $billCategory = Category::factory()->for($user)->bill()->create();
+        $template = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $billCategory->id,
+            'recurrence_months' => 3,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 15,
+        ]);
+
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
+
+        $this->assertSame(
+            ['2026-01-15', '2026-04-15'],
+            $this->occurrenceDates($template),
+        );
+    }
+
+    public function test_changing_recurrence_to_quarterly_prunes_extra_planned_occurrences(): void
+    {
+        $user = User::factory()->create();
+        $billCategory = Category::factory()->for($user)->bill()->create();
+        $template = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $billCategory->id,
+            'recurrence_months' => 1,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 1,
+        ]);
+
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
+
+        $this->assertTrue(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('scheduled_date', '2026-02-01')
+                ->exists(),
+        );
+
+        $template->update(['recurrence_months' => 3]);
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template->fresh());
+
+        $this->assertSame(
+            ['2026-01-01', '2026-04-01'],
+            $this->occurrenceDates($template),
+        );
+    }
+
+    public function test_backfill_skips_non_due_months_for_quarterly_bills(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-07 12:00:00'));
+
+        $user = User::factory()->create();
+        $billCategory = Category::factory()->for($user)->bill()->create();
+        $template = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $billCategory->id,
+            'recurrence_months' => 3,
+            'occurrences_starts_on' => '2026-07-01',
+            'expected_day' => 1,
+            'created_at' => '2026-08-23 03:55:32',
+        ]);
+
+        app(PlannedOccurrenceGenerator::class)->syncTemplate($template);
+
+        PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->whereDate('scheduled_date', '2026-07-01')
+            ->delete();
+
+        $created = app(PlannedOccurrenceGenerator::class)->backfillTemplate($template);
+
+        $this->assertSame(1, $created);
+        $this->assertFalse(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('scheduled_date', '2026-08-01')
+                ->exists(),
+        );
+        $this->assertTrue(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('scheduled_date', '2026-07-01')
+                ->exists(),
+        );
+    }
+
     protected function templateFor(User $user, ?string $createdAt = null): PlannedTemplate
     {
         $salary = Category::factory()->for($user)->income()->create();

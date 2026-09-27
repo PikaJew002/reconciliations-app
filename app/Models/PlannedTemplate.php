@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -45,11 +46,26 @@ class PlannedTemplate extends Model
     /**
      * @return list<string>
      */
+    /**
+     * Debit match modes that do not require a bill classification.
+     *
+     * @return list<string>
+     */
+    public static function expenseMatchModes(): array
+    {
+        return self::incomeMatchModes();
+    }
+
+    /**
+     * @return list<string>
+     */
     public static function matchModesForKind(string $kind): array
     {
-        return $kind === Category::KIND_BILL
-            ? self::billMatchModes()
-            : self::incomeMatchModes();
+        return match ($kind) {
+            Category::KIND_BILL => self::billMatchModes(),
+            Category::KIND_EXPENSE => self::expenseMatchModes(),
+            default => self::incomeMatchModes(),
+        };
     }
 
     protected $fillable = [
@@ -64,6 +80,7 @@ class PlannedTemplate extends Model
         'expected_day',
         'expected_amount',
         'occurrences_starts_on',
+        'recurrence_months',
         'lookback_days',
         'lookforward_days',
         'is_active',
@@ -74,6 +91,7 @@ class PlannedTemplate extends Model
         'expected_amount' => 'decimal:2',
         'occurrences_starts_on' => 'date',
         'expected_day' => 'integer',
+        'recurrence_months' => 'integer',
         'lookback_days' => 'integer',
         'lookforward_days' => 'integer',
         'is_active' => 'boolean',
@@ -117,6 +135,24 @@ class PlannedTemplate extends Model
             'bill_template_id',
             'paycheck_template_id',
         )->withTimestamps();
+    }
+
+    public function isDueInMonth(CarbonInterface $month): bool
+    {
+        if ((int) $this->recurrence_months <= 1) {
+            return true;
+        }
+
+        if ($this->occurrences_starts_on === null) {
+            return false;
+        }
+
+        $anchor = $this->occurrences_starts_on->copy()->startOfMonth();
+        $target = $month->copy()->startOfMonth();
+        $monthsSinceAnchor = $anchor->diffInMonths($target, false);
+
+        return $monthsSinceAnchor >= 0
+            && $monthsSinceAnchor % (int) $this->recurrence_months === 0;
     }
 
     /**

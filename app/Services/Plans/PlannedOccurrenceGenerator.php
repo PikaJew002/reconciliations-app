@@ -52,6 +52,8 @@ class PlannedOccurrenceGenerator
         foreach ($this->monthsFrom($this->historyStartForTemplate($template), self::horizonLastMonth()) as $month) {
             $this->syncOccurrenceForMonth($template, $month, updateExisting: true);
         }
+
+        $this->pruneNonDuePlannedOccurrences($template);
     }
 
     /**
@@ -213,6 +215,10 @@ class PlannedOccurrenceGenerator
         CarbonInterface $month,
         bool $updateExisting,
     ): bool {
+        if (! $template->isDueInMonth($month)) {
+            return false;
+        }
+
         $scheduledDate = PlannedOccurrence::expectedDateForMonth($month, (int) $template->expected_day);
 
         $existing = PlannedOccurrence::query()
@@ -256,5 +262,20 @@ class PlannedOccurrenceGenerator
         ]);
 
         return true;
+    }
+
+    protected function pruneNonDuePlannedOccurrences(PlannedTemplate $template): void
+    {
+        PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->where('status', PlannedOccurrence::STATUS_PLANNED)
+            ->get()
+            ->each(function (PlannedOccurrence $occurrence) use ($template): void {
+                $period = ($occurrence->scheduled_date ?? $occurrence->expected_date)->copy()->startOfMonth();
+
+                if (! $template->isDueInMonth($period)) {
+                    $occurrence->delete();
+                }
+            });
     }
 }

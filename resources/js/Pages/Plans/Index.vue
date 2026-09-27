@@ -1,6 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import StickyToasts from '../../Components/StickyToasts.vue';
+    import TransactionPicker from '../../Components/TransactionPicker.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -19,6 +20,10 @@
             type: Array,
             required: true,
         },
+        expense_templates: {
+            type: Array,
+            default: () => [],
+        },
         paycheck_occurrences: {
             type: Array,
             required: true,
@@ -26,6 +31,10 @@
         bill_occurrences: {
             type: Array,
             required: true,
+        },
+        expense_occurrences: {
+            type: Array,
+            default: () => [],
         },
         paycheck_link_candidates: {
             type: Array,
@@ -35,6 +44,10 @@
             type: Array,
             required: true,
         },
+        expense_link_candidates: {
+            type: Array,
+            default: () => [],
+        },
         categories: {
             type: Array,
             required: true,
@@ -42,6 +55,10 @@
         bill_categories: {
             type: Array,
             required: true,
+        },
+        expense_categories: {
+            type: Array,
+            default: () => [],
         },
         merchants: {
             type: Array,
@@ -54,6 +71,10 @@
         bill_match_modes: {
             type: Array,
             required: true,
+        },
+        expense_match_modes: {
+            type: Array,
+            default: () => [],
         },
         source_transactions: {
             type: Object,
@@ -87,6 +108,10 @@
             type: String,
             default: '',
         },
+        assignment_bill_occurrences: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let page = usePage();
@@ -110,8 +135,10 @@
         return [
             'paycheck_occurrences',
             'bill_occurrences',
+            'expense_occurrences',
             'paycheck_link_candidates',
             'bill_link_candidates',
+            'expense_link_candidates',
             'active_match_runs',
         ];
     }
@@ -300,6 +327,7 @@
     let editingOccurrenceId = ref(null);
     let paycheckSourceId = ref('');
     let billSourceId = ref('');
+    let expenseSourceId = ref('');
 
     let emptyPaycheckForm = () => ({
         name: 'Paycheck',
@@ -325,6 +353,23 @@
         expected_day: 1,
         expected_amount: '',
         occurrences_starts_on: props.default_bill_occurrence_starts_on,
+        recurrence_months: 1,
+        lookback_days: 7,
+        lookforward_days: 3,
+        is_active: true,
+    });
+
+    let emptyExpenseForm = () => ({
+        name: '',
+        category_id: props.expense_categories[0]?.id ?? '',
+        merchant_id: '',
+        match_mode: 'description',
+        normalized_pattern: '',
+        amount: '',
+        expected_day: 1,
+        expected_amount: '',
+        occurrences_starts_on: props.default_bill_occurrence_starts_on,
+        recurrence_months: 1,
         lookback_days: 7,
         lookforward_days: 3,
         is_active: true,
@@ -332,6 +377,7 @@
 
     let createPaycheckForm = useForm(emptyPaycheckForm());
     let createBillForm = useForm(emptyBillForm());
+    let createExpenseForm = useForm(emptyExpenseForm());
     let editForm = useForm(emptyPaycheckForm());
     let occurrenceForm = useForm({
         expected_date: '',
@@ -378,6 +424,80 @@
             month: 'short',
             day: 'numeric',
         });
+    };
+
+    let billRecurrenceLabel = (template) => {
+        let months = Number(template.recurrence_months ?? 1);
+
+        if (months <= 1) {
+            return 'Monthly';
+        }
+
+        return `Every ${months} months`;
+    };
+
+    let monthsBetweenYearMonths = (startYm, endYm) => {
+        let [startYear, startMonth] = startYm.split('-').map(Number);
+        let [endYear, endMonth] = endYm.split('-').map(Number);
+
+        return (endYear - startYear) * 12 + (endMonth - startMonth);
+    };
+
+    let isBillDueInMonth = (bill, yearMonth) => {
+        let recurrence = Number(bill.recurrence_months ?? 1);
+
+        if (recurrence <= 1) {
+            return true;
+        }
+
+        if (!bill.occurrences_starts_on) {
+            return false;
+        }
+
+        let monthsSinceAnchor = monthsBetweenYearMonths(
+            bill.occurrences_starts_on,
+            yearMonth,
+        );
+
+        return (
+            monthsSinceAnchor >= 0 &&
+            monthsSinceAnchor % recurrence === 0
+        );
+    };
+
+    let billCoverageYearMonth = (paycheck, bill) => {
+        let [year, month] = props.month.split('-').map(Number);
+
+        if (billCoversNextMonth(paycheck, bill)) {
+            month += 1;
+
+            if (month > 12) {
+                month = 1;
+                year += 1;
+            }
+        }
+
+        return `${year}-${String(month).padStart(2, '0')}`;
+    };
+
+    let assignedBillAmountForPaycheck = (paycheck, bill) => {
+        let coverageMonth = billCoverageYearMonth(paycheck, bill);
+
+        if (!isBillDueInMonth(bill, coverageMonth)) {
+            return 0;
+        }
+
+        let occurrence = props.assignment_bill_occurrences.find(
+            (item) =>
+                Number(item.template_id) === Number(bill.id) &&
+                item.period_month === coverageMonth,
+        );
+
+        if (!occurrence) {
+            return 0;
+        }
+
+        return Number(occurrence.amount);
     };
 
     let billOccurrenceStartLabel = (month) => {
@@ -464,6 +584,14 @@
         applySourceTransaction(createBillForm, option);
     };
 
+    let onExpenseSourceChange = () => {
+        let option = sourceTransactionsFor(createExpenseForm.category_id).find(
+            (item) => String(item.id) === String(expenseSourceId.value),
+        );
+
+        applySourceTransaction(createExpenseForm, option);
+    };
+
     let shiftMonth = (delta) => {
         editingOccurrenceId.value = null;
         linkForId.value = null;
@@ -490,6 +618,19 @@
         editForm.occurrences_starts_on =
             template.occurrences_starts_on ??
             props.default_bill_occurrence_starts_on;
+        editForm.recurrence_months = template.recurrence_months ?? 1;
+    };
+
+    let planKind = (template) => {
+        if (template.classification === 'bill') {
+            return 'bill';
+        }
+
+        if (template.classification === 'expense') {
+            return 'expense';
+        }
+
+        return 'paycheck';
     };
 
     let payloadFromForm = (form, kind) => ({
@@ -499,7 +640,7 @@
         match_mode: form.match_mode,
         normalized_pattern: form.normalized_pattern || null,
         amount:
-            kind === 'bill'
+            kind === 'bill' || kind === 'expense'
                 ? form.expected_amount
                 : form.amount === ''
                   ? null
@@ -509,8 +650,14 @@
         lookback_days: form.lookback_days,
         lookforward_days: form.lookforward_days,
         is_active: form.is_active,
-        ...(kind === 'bill'
-            ? { occurrences_starts_on: form.occurrences_starts_on }
+        ...(kind === 'bill' || kind === 'expense'
+            ? {
+                  occurrences_starts_on: form.occurrences_starts_on,
+                  recurrence_months:
+                      kind === 'bill'
+                          ? Number(form.recurrence_months) || 1
+                          : 1,
+              }
             : {}),
     });
 
@@ -542,12 +689,23 @@
             });
     };
 
-    let saveEdit = (template) => {
-        let kind =
-            template.classification === 'bill' ? 'bill' : 'paycheck';
+    let createExpense = () => {
+        createExpenseForm
+            .transform((data) => payloadFromForm(data, 'expense'))
+            .post('/plans', {
+                preserveScroll: true,
+                onSuccess: () => {
+                    showCreate.value = null;
+                    createExpenseForm.reset();
+                    Object.assign(createExpenseForm, emptyExpenseForm());
+                    expenseSourceId.value = '';
+                },
+            });
+    };
 
+    let saveEdit = (template) => {
         editForm
-            .transform((data) => payloadFromForm(data, kind))
+            .transform((data) => payloadFromForm(data, planKind(template)))
             .patch(`/plans/${template.id}?month=${props.month}`, {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -588,11 +746,28 @@
         },
     );
 
-    let deleteTemplate = (template) => {
-        let kind =
-            template.classification === 'bill' ? 'bill' : 'paycheck';
+    watch(
+        () => createExpenseForm.match_mode,
+        (mode) => {
+            if (mode === 'merchant') {
+                createExpenseForm.normalized_pattern = '';
+            }
+        },
+    );
 
-        if (!window.confirm(`Delete ${kind} plan "${template.name}"?`)) {
+    watch(
+        () => createExpenseForm.category_id,
+        () => {
+            expenseSourceId.value = '';
+        },
+    );
+
+    let deleteTemplate = (template) => {
+        if (
+            !window.confirm(
+                `Delete ${planKind(template)} plan "${template.name}"?`,
+            )
+        ) {
             return;
         }
 
@@ -649,14 +824,65 @@
 
         return props.bill_templates
             .filter((bill) => ids.includes(Number(bill.id)) && bill.is_active)
-            .reduce((sum, bill) => sum + Number(bill.expected_amount), 0);
+            .reduce(
+                (sum, bill) =>
+                    sum + assignedBillAmountForPaycheck(paycheck, bill),
+                0,
+            );
     };
 
     let paycheckLeftover = (paycheck) =>
         Math.round(
-            (Number(paycheck.expected_amount) - assignedBillsTotal(paycheck)) *
+            (Number(paycheck.expected_amount) -
+                assignedBillsTotal(paycheck) -
+                plannedExpensesTotal(paycheck)) *
                 100,
         ) / 100;
+
+    let activePaychecks = () =>
+        props.paycheck_templates
+            .filter((paycheck) => paycheck.is_active)
+            .slice()
+            .sort(
+                (left, right) =>
+                    Number(left.expected_day) - Number(right.expected_day) ||
+                    Number(left.id) - Number(right.id),
+            );
+
+    let expenseInPaycheckWindow = (paycheck, expense) => {
+        if (!expense.is_active || !paycheck.is_active) {
+            return false;
+        }
+
+        let paychecks = activePaychecks();
+        let index = paychecks.findIndex(
+            (item) => Number(item.id) === Number(paycheck.id),
+        );
+
+        if (index === -1) {
+            return false;
+        }
+
+        let start = Number(paycheck.expected_day);
+        let day = Number(expense.expected_day);
+        let next = paychecks[index + 1];
+
+        if (next) {
+            return day >= start && day < Number(next.expected_day);
+        }
+
+        let firstDay = Number(paychecks[0].expected_day);
+
+        return day >= start || day < firstDay;
+    };
+
+    let plannedExpensesTotal = (paycheck) =>
+        props.expense_templates
+            .filter((expense) => expenseInPaycheckWindow(paycheck, expense))
+            .reduce(
+                (sum, expense) => sum + Number(expense.expected_amount),
+                0,
+            );
 
     let billCoversNextMonth = (paycheck, bill) =>
         Number(bill.expected_day) < Number(paycheck.expected_day);
@@ -972,9 +1198,11 @@
             <div>
                 <h1 class="text-2xl font-semibold">Plans</h1>
                 <p class="text-sm text-neutral-600">
-                    Recurring paychecks and bills that count toward a budget
-                    month, even when they post early or late. Imported
-                    transactions match these occurrences automatically.
+                    Recurring paychecks, bills, and monthly expenses that count
+                    toward a budget month, even when they post early or late.
+                    Imported transactions match these occurrences automatically.
+                    Monthly expenses are reserved in leftover for the paycheck
+                    window that contains their day.
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -999,6 +1227,20 @@
                     "
                 >
                     {{ showCreate === 'bill' ? 'Cancel' : 'New bill plan' }}
+                </button>
+                <button
+                    type="button"
+                    class="btn rounded border px-3 text-sm hover:bg-neutral-50"
+                    @click="
+                        showCreate =
+                            showCreate === 'expense' ? null : 'expense'
+                    "
+                >
+                    {{
+                        showCreate === 'expense'
+                            ? 'Cancel'
+                            : 'New expense plan'
+                    }}
                 </button>
             </div>
         </div>
@@ -1215,26 +1457,18 @@
                     class="block text-sm sm:col-span-2 lg:col-span-3"
                 >
                     <span class="text-neutral-600">Base on a transaction</span>
-                    <select
+                    <TransactionPicker
                         v-model="paycheckSourceId"
-                        class="mt-1 w-full rounded border px-3"
+                        class="mt-1"
+                        preset="source"
+                        placeholder="Optional — pick a past credit"
+                        clearable
+                        :options="
+                            sourceTransactionsFor(createPaycheckForm.category_id)
+                        "
+                        :merchants="merchants"
                         @change="onPaycheckSourceChange"
-                    >
-                        <option value="">Optional — pick a past credit</option>
-                        <option
-                            v-for="option in sourceTransactionsFor(
-                                createPaycheckForm.category_id,
-                            )"
-                            :key="option.id"
-                            :value="String(option.id)"
-                        >
-                            {{ option.posted_at }} ·
-                            {{ formatMoney(option.amount) }}
-                            <template v-if="option.description">
-                                · {{ option.description }}
-                            </template>
-                        </option>
-                    </select>
+                    />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Expected day</span>
@@ -1401,26 +1635,18 @@
                     class="block text-sm sm:col-span-2 lg:col-span-3"
                 >
                     <span class="text-neutral-600">Base on a transaction</span>
-                    <select
+                    <TransactionPicker
                         v-model="billSourceId"
-                        class="mt-1 w-full rounded border px-3"
+                        class="mt-1"
+                        preset="source"
+                        placeholder="Optional — pick a past charge"
+                        clearable
+                        :options="
+                            sourceTransactionsFor(createBillForm.category_id)
+                        "
+                        :merchants="merchants"
                         @change="onBillSourceChange"
-                    >
-                        <option value="">Optional — pick a past charge</option>
-                        <option
-                            v-for="option in sourceTransactionsFor(
-                                createBillForm.category_id,
-                            )"
-                            :key="option.id"
-                            :value="String(option.id)"
-                        >
-                            {{ option.posted_at }} ·
-                            {{ formatMoney(option.amount) }}
-                            <template v-if="option.description">
-                                · {{ option.description }}
-                            </template>
-                        </option>
-                    </select>
+                    />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Starts on</span>
@@ -1438,7 +1664,11 @@
                         </option>
                     </select>
                     <span class="mt-1 block text-xs text-neutral-500">
-                        Generate expected bills back to this month.
+                        {{
+                            Number(createBillForm.recurrence_months) > 1
+                                ? 'First due month in the billing cycle. Occurrences generate from here.'
+                                : 'Generate expected bills back to this month.'
+                        }}
                     </span>
                     <span
                         v-if="createBillForm.errors.occurrences_starts_on"
@@ -1446,6 +1676,29 @@
                         >{{
                             createBillForm.errors.occurrences_starts_on
                         }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Every N months</span>
+                    <input
+                        v-model.number="createBillForm.recurrence_months"
+                        type="number"
+                        min="1"
+                        max="24"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    />
+                    <span class="mt-1 block text-xs text-neutral-500">
+                        {{
+                            Number(createBillForm.recurrence_months) <= 1
+                                ? 'Monthly (every 1 month).'
+                                : `Every ${createBillForm.recurrence_months} months.`
+                        }}
+                    </span>
+                    <span
+                        v-if="createBillForm.errors.recurrence_months"
+                        class="mt-1 block text-red-600"
+                        >{{ createBillForm.errors.recurrence_months }}</span
                     >
                 </label>
                 <label class="block text-sm">
@@ -1550,6 +1803,208 @@
                 type="submit"
                 class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
                 :disabled="createBillForm.processing"
+            >
+                Create plan
+            </button>
+        </form>
+
+        <form
+            v-if="showCreate === 'expense' && expense_categories.length > 0"
+            class="space-y-3 rounded border px-4 py-3"
+            @submit.prevent="createExpense"
+        >
+            <p class="text-sm font-medium">New expense plan</p>
+            <p class="text-sm text-neutral-600">
+                Monthly auto-debits. The amount is reserved in leftover for
+                the paycheck that covers that day.
+            </p>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Name</span>
+                    <input
+                        v-model="createExpenseForm.name"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    />
+                    <span
+                        v-if="createExpenseForm.errors.name"
+                        class="mt-1 block text-red-600"
+                        >{{ createExpenseForm.errors.name }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Category</span>
+                    <select
+                        v-model="createExpenseForm.category_id"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    >
+                        <option
+                            v-for="category in expense_categories"
+                            :key="category.id"
+                            :value="category.id"
+                        >
+                            {{ category.name }}
+                        </option>
+                    </select>
+                    <span
+                        v-if="createExpenseForm.errors.category_id"
+                        class="mt-1 block text-red-600"
+                        >{{ createExpenseForm.errors.category_id }}</span
+                    >
+                </label>
+                <label
+                    v-if="
+                        sourceTransactionsFor(createExpenseForm.category_id)
+                            .length
+                    "
+                    class="block text-sm sm:col-span-2 lg:col-span-3"
+                >
+                    <span class="text-neutral-600">Base on a transaction</span>
+                    <TransactionPicker
+                        v-model="expenseSourceId"
+                        class="mt-1"
+                        preset="source"
+                        placeholder="Optional — pick a past charge"
+                        clearable
+                        :options="
+                            sourceTransactionsFor(createExpenseForm.category_id)
+                        "
+                        :merchants="merchants"
+                        @change="onExpenseSourceChange"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Starts on</span>
+                    <select
+                        v-model="createExpenseForm.occurrences_starts_on"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    >
+                        <option
+                            v-for="option in bill_occurrence_start_months"
+                            :key="option.value"
+                            :value="option.value"
+                        >
+                            {{ option.label }}
+                        </option>
+                    </select>
+                    <span class="mt-1 block text-xs text-neutral-500">
+                        Generate expected expenses back to this month.
+                    </span>
+                    <span
+                        v-if="createExpenseForm.errors.occurrences_starts_on"
+                        class="mt-1 block text-red-600"
+                        >{{
+                            createExpenseForm.errors.occurrences_starts_on
+                        }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Expected day</span>
+                    <input
+                        v-model.number="createExpenseForm.expected_day"
+                        type="number"
+                        min="1"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Expected amount</span>
+                    <input
+                        v-model="createExpenseForm.expected_amount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        class="mt-1 w-full rounded border px-3"
+                        required
+                    />
+                    <span
+                        v-if="createExpenseForm.errors.expected_amount"
+                        class="mt-1 block text-red-600"
+                        >{{ createExpenseForm.errors.expected_amount }}</span
+                    >
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Match mode</span>
+                    <select
+                        v-model="createExpenseForm.match_mode"
+                        class="mt-1 w-full rounded border px-3"
+                    >
+                        <option
+                            v-for="mode in expense_match_modes"
+                            :key="mode"
+                            :value="mode"
+                        >
+                            {{ matchModeLabel(mode) }}
+                        </option>
+                    </select>
+                </label>
+                <label
+                    v-if="needsPattern(createExpenseForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Memo / description</span>
+                    <input
+                        v-model="createExpenseForm.normalized_pattern"
+                        type="text"
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                    <span
+                        v-if="createExpenseForm.errors.normalized_pattern"
+                        class="mt-1 block text-red-600"
+                        >{{
+                            createExpenseForm.errors.normalized_pattern
+                        }}</span
+                    >
+                </label>
+                <label
+                    v-if="needsMerchant(createExpenseForm.match_mode)"
+                    class="block text-sm"
+                >
+                    <span class="text-neutral-600">Merchant</span>
+                    <select
+                        v-model="createExpenseForm.merchant_id"
+                        class="mt-1 w-full rounded border px-3"
+                    >
+                        <option value="">Select merchant</option>
+                        <option
+                            v-for="merchant in merchants"
+                            :key="merchant.id"
+                            :value="merchant.id"
+                        >
+                            {{ merchant.name }}
+                        </option>
+                    </select>
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Look back (days)</span>
+                    <input
+                        v-model.number="createExpenseForm.lookback_days"
+                        type="number"
+                        min="0"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+                <label class="block text-sm">
+                    <span class="text-neutral-600">Look forward (days)</span>
+                    <input
+                        v-model.number="createExpenseForm.lookforward_days"
+                        type="number"
+                        min="0"
+                        max="31"
+                        class="mt-1 w-full rounded border px-3"
+                    />
+                </label>
+            </div>
+            <button
+                type="submit"
+                class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
+                :disabled="createExpenseForm.processing"
             >
                 Create plan
             </button>
@@ -1835,39 +2290,24 @@
                                                     "
                                                     class="flex flex-wrap items-center gap-2"
                                                 >
-                                                    <select
+                                                    <TransactionPicker
                                                         v-model="
                                                             linkTransactionId
                                                         "
-                                                        class="rounded border px-2"
-                                                    >
-                                                        <option value="">
-                                                            Select credit
-                                                        </option>
-                                                        <option
-                                                            v-for="candidate in paycheck_link_candidates"
-                                                            :key="candidate.id"
-                                                            :value="
-                                                                String(
-                                                                    candidate.id,
-                                                                )
-                                                            "
-                                                        >
-                                                            {{
-                                                                candidate.posted_at
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                formatMoney(
-                                                                    candidate.amount,
-                                                                )
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                candidate.description
-                                                            }}
-                                                        </option>
-                                                    </select>
+                                                        class="min-w-72 flex-1"
+                                                        preset="link"
+                                                        placeholder="Select credit"
+                                                        clearable
+                                                        :options="
+                                                            paycheck_link_candidates
+                                                        "
+                                                        :target-amount="
+                                                            occurrence.expected_amount
+                                                        "
+                                                        :target-date="
+                                                            occurrence.expected_date
+                                                        "
+                                                    />
                                                     <button
                                                         type="button"
                                                         class="btn rounded border px-2 text-xs"
@@ -2098,41 +2538,24 @@
                                                     "
                                                     class="flex flex-wrap items-center gap-2"
                                                 >
-                                                    <select
+                                                    <TransactionPicker
                                                         v-model="
                                                             linkTransactionId
                                                         "
-                                                        class="rounded border px-2"
-                                                    >
-                                                        <option value="">
-                                                            Select debit
-                                                        </option>
-                                                        <option
-                                                            v-for="candidate in bill_link_candidates"
-                                                            :key="candidate.id"
-                                                            :value="
-                                                                String(
-                                                                    candidate.id,
-                                                                )
-                                                            "
-                                                        >
-                                                            {{
-                                                                candidate.posted_at
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                formatMoney(
-                                                                    Math.abs(
-                                                                        candidate.amount,
-                                                                    ),
-                                                                )
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                candidate.description
-                                                            }}
-                                                        </option>
-                                                    </select>
+                                                        class="min-w-72 flex-1"
+                                                        preset="link"
+                                                        placeholder="Select debit"
+                                                        clearable
+                                                        :options="
+                                                            bill_link_candidates
+                                                        "
+                                                        :target-amount="
+                                                            occurrence.expected_amount
+                                                        "
+                                                        :target-date="
+                                                            occurrence.expected_date
+                                                        "
+                                                    />
                                                     <button
                                                         type="button"
                                                         class="btn rounded border px-2 text-xs"
@@ -2157,6 +2580,198 @@
                                                 </button>
                                             </template>
                                         </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <h3 class="font-medium">Expenses</h3>
+                <p
+                    v-if="expense_occurrences.length === 0"
+                    class="text-sm text-neutral-600"
+                >
+                    {{ emptyOccurrencesCopy('expense') }}
+                </p>
+                <div v-else class="overflow-x-auto rounded border">
+                    <table class="min-w-full text-left text-sm">
+                        <thead class="border-b bg-neutral-50 text-neutral-600">
+                            <tr>
+                                <th class="px-3 py-2 font-medium">Expected</th>
+                                <th class="px-3 py-2 font-medium">Plan</th>
+                                <th class="px-3 py-2 font-medium">Status</th>
+                                <th class="px-3 py-2 font-medium">Amount</th>
+                                <th class="px-3 py-2 font-medium">Posted</th>
+                                <th class="px-3 py-2 font-medium"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="occurrence in expense_occurrences"
+                                :key="occurrence.id"
+                                class="border-b last:border-0"
+                            >
+                                <td class="px-3 py-2 tabular-nums">
+                                    <template
+                                        v-if="
+                                            editingOccurrenceId ===
+                                            occurrence.id
+                                        "
+                                    >
+                                        <input
+                                            v-model="
+                                                occurrenceForm.expected_date
+                                            "
+                                            type="date"
+                                            class="rounded border px-2"
+                                        />
+                                    </template>
+                                    <template v-else>
+                                        {{ occurrence.expected_date }}
+                                    </template>
+                                </td>
+                                <td class="px-3 py-2">
+                                    {{ occurrence.template_name || 'One-off' }}
+                                </td>
+                                <td class="px-3 py-2 capitalize">
+                                    {{ occurrence.status }}
+                                </td>
+                                <td class="px-3 py-2 tabular-nums">
+                                    <template
+                                        v-if="
+                                            editingOccurrenceId ===
+                                            occurrence.id
+                                        "
+                                    >
+                                        <input
+                                            v-model="
+                                                occurrenceForm.expected_amount
+                                            "
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            class="w-28 rounded border px-2"
+                                        />
+                                    </template>
+                                    <template v-else>
+                                        {{ formatMoney(occurrence.amount) }}
+                                    </template>
+                                </td>
+                                <td class="px-3 py-2 text-neutral-600">
+                                    <template v-if="occurrence.bank_transaction">
+                                        {{
+                                            occurrence.bank_transaction
+                                                .posted_at
+                                        }}
+                                        ·
+                                        {{
+                                            formatMoney(
+                                                Math.abs(
+                                                    occurrence.bank_transaction
+                                                        .amount,
+                                                ),
+                                            )
+                                        }}
+                                    </template>
+                                    <template v-else>—</template>
+                                </td>
+                                <td class="px-3 py-2">
+                                    <div
+                                        v-if="occurrence.status === 'planned'"
+                                        class="flex flex-wrap items-center gap-2"
+                                    >
+                                        <template
+                                            v-if="
+                                                editingOccurrenceId ===
+                                                occurrence.id
+                                            "
+                                        >
+                                            <button
+                                                type="button"
+                                                class="btn rounded border px-2 text-xs"
+                                                :disabled="
+                                                    occurrenceForm.processing
+                                                "
+                                                @click="
+                                                    saveOccurrence(occurrence)
+                                                "
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="text-xs underline"
+                                                @click="
+                                                    editingOccurrenceId = null
+                                                "
+                                            >
+                                                Cancel
+                                            </button>
+                                        </template>
+                                        <button
+                                            v-else
+                                            type="button"
+                                            class="text-xs underline"
+                                            @click="
+                                                startEditOccurrence(occurrence)
+                                            "
+                                        >
+                                            Adjust
+                                        </button>
+                                        <template
+                                            v-if="
+                                                editingOccurrenceId !==
+                                                    occurrence.id &&
+                                                expense_link_candidates.length >
+                                                    0
+                                            "
+                                        >
+                                            <div
+                                                v-if="
+                                                    linkForId === occurrence.id
+                                                "
+                                                class="flex flex-wrap items-center gap-2"
+                                            >
+                                                <TransactionPicker
+                                                    v-model="linkTransactionId"
+                                                    class="min-w-72 flex-1"
+                                                    preset="link"
+                                                    placeholder="Select debit"
+                                                    clearable
+                                                    :options="
+                                                        expense_link_candidates
+                                                    "
+                                                    :target-amount="
+                                                        occurrence.expected_amount
+                                                    "
+                                                    :target-date="
+                                                        occurrence.expected_date
+                                                    "
+                                                />
+                                                <button
+                                                    type="button"
+                                                    class="btn rounded border px-2 text-xs"
+                                                    @click="
+                                                        linkOccurrence(
+                                                            occurrence,
+                                                        )
+                                                    "
+                                                >
+                                                    Link
+                                                </button>
+                                            </div>
+                                            <button
+                                                v-else
+                                                type="button"
+                                                class="text-xs underline"
+                                                @click="startLink(occurrence)"
+                                            >
+                                                Link transaction
+                                            </button>
+                                        </template>
                                     </div>
                                 </td>
                             </tr>
@@ -2231,6 +2846,10 @@
                 <p class="text-sm tabular-nums">
                     Paycheck {{ formatMoney(template.expected_amount) }} −
                     bills {{ formatMoney(assignedBillsTotal(template)) }}
+                    <template v-if="plannedExpensesTotal(template) > 0">
+                        − expenses
+                        {{ formatMoney(plannedExpensesTotal(template)) }}
+                    </template>
                     =
                     <span
                         class="font-medium"
@@ -2279,10 +2898,28 @@
                             {{ bill.name }} · Day {{ bill.expected_day }} ·
                             {{ formatMoney(bill.expected_amount) }}
                             <span
+                                v-if="Number(bill.recurrence_months ?? 1) > 1"
+                                class="text-neutral-500"
+                            >
+                                · every {{ bill.recurrence_months }} months
+                            </span>
+                            <span
                                 v-if="billCoversNextMonth(template, bill)"
                                 class="text-neutral-500"
                             >
                                 · next month
+                            </span>
+                            <span
+                                v-if="
+                                    isBillSelected(template, bill) &&
+                                    assignedBillAmountForPaycheck(
+                                        template,
+                                        bill,
+                                    ) === 0
+                                "
+                                class="text-neutral-500"
+                            >
+                                · $0 this paycheck
                             </span>
                             <span
                                 v-if="!bill.is_active"
@@ -2468,12 +3105,14 @@
                             {{ planMatchSummary(template) }}
                         </p>
                         <p class="text-sm text-neutral-600">
-                            Occurrences from
+                            {{ billRecurrenceLabel(template) }} · from
                             {{
                                 billOccurrenceStartLabel(
                                     template.occurrences_starts_on,
                                 )
                             }}
+                            · Day {{ template.expected_day }} ·
+                            {{ formatMoney(template.expected_amount) }}
                         </p>
                         <p class="text-sm text-neutral-600">
                             {{
@@ -2550,8 +3189,11 @@
                             </option>
                         </select>
                         <span class="mt-1 block text-xs text-neutral-500">
-                            Moving earlier adds missing months. Moving later
-                            leaves existing occurrences in place.
+                            {{
+                                Number(editForm.recurrence_months) > 1
+                                    ? 'First due month in the billing cycle.'
+                                    : 'Moving earlier adds missing months. Moving later leaves existing occurrences in place.'
+                            }}
                         </span>
                         <span
                             v-if="editForm.errors.occurrences_starts_on"
@@ -2560,6 +3202,17 @@
                                 editForm.errors.occurrences_starts_on
                             }}</span
                         >
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Every N months</span>
+                        <input
+                            v-model.number="editForm.recurrence_months"
+                            type="number"
+                            min="1"
+                            max="24"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        />
                     </label>
                     <label class="block text-sm">
                         <span class="text-neutral-600">Expected day</span>
@@ -2589,6 +3242,222 @@
                         >
                             <option
                                 v-for="mode in bill_match_modes"
+                                :key="mode"
+                                :value="mode"
+                            >
+                                {{ matchModeLabel(mode) }}
+                            </option>
+                        </select>
+                    </label>
+                    <label
+                        v-if="needsPattern(editForm.match_mode)"
+                        class="block text-sm"
+                    >
+                        <span class="text-neutral-600">Memo / description</span>
+                        <input
+                            v-model="editForm.normalized_pattern"
+                            type="text"
+                            class="mt-1 w-full rounded border px-3"
+                        />
+                    </label>
+                    <label
+                        v-if="needsMerchant(editForm.match_mode)"
+                        class="block text-sm"
+                    >
+                        <span class="text-neutral-600">Merchant</span>
+                        <select
+                            v-model="editForm.merchant_id"
+                            class="mt-1 w-full rounded border px-3"
+                        >
+                            <option value="">Select merchant</option>
+                            <option
+                                v-for="merchant in merchants"
+                                :key="merchant.id"
+                                :value="merchant.id"
+                            >
+                                {{ merchant.name }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Look back (days)</span>
+                        <input
+                            v-model.number="editForm.lookback_days"
+                            type="number"
+                            min="0"
+                            max="31"
+                            class="mt-1 w-full rounded border px-3"
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Look forward (days)</span>
+                        <input
+                            v-model.number="editForm.lookforward_days"
+                            type="number"
+                            min="0"
+                            max="31"
+                            class="mt-1 w-full rounded border px-3"
+                        />
+                    </label>
+                    <label class="flex items-center gap-2 text-sm">
+                        <input v-model="editForm.is_active" type="checkbox" />
+                        Active
+                    </label>
+                    <div class="sm:col-span-2 lg:col-span-3">
+                        <button
+                            type="submit"
+                            class="btn rounded bg-brand hover:bg-brand-hover px-4 text-sm text-white disabled:opacity-50"
+                            :disabled="editForm.processing"
+                        >
+                            Save plan
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <section class="space-y-3">
+            <h2 class="text-lg font-medium">Expense plans</h2>
+            <p class="text-sm text-neutral-600">
+                Monthly expenses reserved in leftover. They are not assigned
+                to a paycheck; each one counts in the paycheck window that
+                contains its day.
+            </p>
+            <p
+                v-if="expense_templates.length === 0"
+                class="text-sm text-neutral-600"
+            >
+                No expense plans yet.
+            </p>
+            <div
+                v-for="template in expense_templates"
+                :key="template.id"
+                class="space-y-3 rounded border px-4 py-3"
+            >
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1">
+                        <p class="font-medium">
+                            {{ template.name }}
+                            <span
+                                v-if="!template.is_active"
+                                class="ml-2 text-xs font-normal text-neutral-500"
+                                >Inactive</span
+                            >
+                        </p>
+                        <p
+                            class="truncate text-sm text-neutral-600"
+                            :title="planMatchSummary(template)"
+                        >
+                            {{ planMatchSummary(template) }}
+                        </p>
+                        <p class="text-sm text-neutral-600">
+                            Monthly · from
+                            {{
+                                billOccurrenceStartLabel(
+                                    template.occurrences_starts_on,
+                                )
+                            }}
+                            · Day {{ template.expected_day }} ·
+                            {{ formatMoney(template.expected_amount) }}
+                        </p>
+                    </div>
+                    <div class="flex shrink-0 gap-2">
+                        <button
+                            type="button"
+                            class="btn rounded border px-3 text-sm hover:bg-neutral-50"
+                            @click="
+                                editingId === template.id
+                                    ? (editingId = null)
+                                    : startEdit(template)
+                            "
+                        >
+                            {{ editingId === template.id ? 'Close' : 'Edit' }}
+                        </button>
+                        <button
+                            type="button"
+                            class="btn rounded border px-3 text-sm text-red-700 hover:bg-red-50"
+                            @click="deleteTemplate(template)"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+
+                <form
+                    v-if="editingId === template.id"
+                    class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                    @submit.prevent="saveEdit(template)"
+                >
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Name</span>
+                        <input
+                            v-model="editForm.name"
+                            type="text"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Category</span>
+                        <select
+                            v-model="editForm.category_id"
+                            class="mt-1 w-full rounded border px-3"
+                        >
+                            <option
+                                v-for="category in expense_categories"
+                                :key="category.id"
+                                :value="category.id"
+                            >
+                                {{ category.name }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Starts on</span>
+                        <select
+                            v-model="editForm.occurrences_starts_on"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        >
+                            <option
+                                v-for="option in bill_occurrence_start_months"
+                                :key="option.value"
+                                :value="option.value"
+                            >
+                                {{ option.label }}
+                            </option>
+                        </select>
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Expected day</span>
+                        <input
+                            v-model.number="editForm.expected_day"
+                            type="number"
+                            min="1"
+                            max="31"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Expected amount</span>
+                        <input
+                            v-model="editForm.expected_amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="mt-1 w-full rounded border px-3"
+                            required
+                        />
+                    </label>
+                    <label class="block text-sm">
+                        <span class="text-neutral-600">Match mode</span>
+                        <select
+                            v-model="editForm.match_mode"
+                            class="mt-1 w-full rounded border px-3"
+                        >
+                            <option
+                                v-for="mode in expense_match_modes"
                                 :key="mode"
                                 :value="mode"
                             >

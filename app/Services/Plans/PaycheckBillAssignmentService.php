@@ -13,9 +13,23 @@ class PaycheckBillAssignmentService
 {
     /**
      * @param  Collection<int, PlannedTemplate>|null  $bills
+     * @param  Collection<int, Collection<int, PlannedOccurrence>>|null  $occurrencesByTemplateId
      */
-    public function leftover(PlannedTemplate $paycheck, ?Collection $bills = null): float
-    {
+    public function leftover(
+        PlannedTemplate $paycheck,
+        ?Collection $bills = null,
+        ?CarbonInterface $paycheckMonth = null,
+        ?Collection $occurrencesByTemplateId = null,
+    ): float {
+        if ($paycheckMonth !== null && $occurrencesByTemplateId !== null) {
+            return $this->contributionForPaycheck(
+                $paycheck,
+                null,
+                $paycheckMonth,
+                $occurrencesByTemplateId,
+            )['leftover'];
+        }
+
         $bills ??= $paycheck->assignedBills;
 
         $billsAmount = round(
@@ -102,7 +116,9 @@ class PaycheckBillAssignmentService
                 $occurrencesByTemplateId->get((int) $bill->id),
                 $billMonth,
             );
-            $billAmount = $this->amountFor($billOccurrence, (float) $bill->expected_amount);
+            $billAmount = $billOccurrence !== null
+                ? $this->amountFor($billOccurrence, (float) $bill->expected_amount)
+                : 0.0;
             $billDate = $billOccurrence?->expected_date
                 ?? PlannedOccurrence::expectedDateForMonth($billMonth, (int) $bill->expected_day);
 
@@ -296,7 +312,7 @@ class PaycheckBillAssignmentService
     /**
      * @return Collection<int, Collection<int, PlannedOccurrence>>
      */
-    protected function occurrencesByTemplateId(
+    public function occurrencesByTemplateId(
         int $userId,
         CarbonInterface $from,
         CarbonInterface $until,

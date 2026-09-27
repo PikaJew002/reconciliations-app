@@ -213,6 +213,12 @@
                     {{ formatMoney(paycheckBroughtForward) }}
                     + {{ paycheck_leftover.paycheck.name }} after bills
                     {{ formatMoney(paycheck_leftover.planned_leftover) }}
+                    <template
+                        v-if="(paycheck_leftover.planned_expenses ?? 0) > 0"
+                    >
+                        − planned expenses
+                        {{ formatMoney(paycheck_leftover.planned_expenses) }}
+                    </template>
                     <template v-if="(paycheck_leftover.credited ?? 0) > 0">
                         + credits
                         {{ formatMoney(paycheck_leftover.credited) }}

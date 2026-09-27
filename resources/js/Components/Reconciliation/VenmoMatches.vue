@@ -1,4 +1,5 @@
 <script setup>
+    import TransactionPicker from '../TransactionPicker.vue';
     import {
         accountLabel,
         formatMoney,
@@ -213,25 +214,24 @@
                             <span class="mb-1 block text-neutral-600"
                                 >Bank transaction</span
                             >
-                            <select
-                                class="w-full rounded border px-3"
-                                :value="candidateId(activity)"
-                                @change="
-                                    selectedCandidateIds[activity.id] =
-                                        $event.target.value
+                            <TransactionPicker
+                                :model-value="candidateId(activity)"
+                                preset="venmo"
+                                placeholder="Select transaction"
+                                :options="activity.candidates"
+                                :target-amount="activity.amount"
+                                :target-date="
+                                    activity.occurred_at
+                                        ? String(activity.occurred_at).slice(
+                                              0,
+                                              10,
+                                          )
+                                        : ''
                                 "
-                            >
-                                <option
-                                    v-for="candidate in activity.candidates"
-                                    :key="candidate.id"
-                                    :value="String(candidate.id)"
-                                >
-                                    {{ candidate.posted_at || 'No date' }}
-                                    · {{ accountLabel(candidate) }}
-                                    · {{ candidate.description }}
-                                    · {{ formatMoney(candidate.amount) }}
-                                </option>
-                            </select>
+                                @update:model-value="
+                                    selectedCandidateIds[activity.id] = $event
+                                "
+                            />
                         </label>
                         <button
                             type="submit"

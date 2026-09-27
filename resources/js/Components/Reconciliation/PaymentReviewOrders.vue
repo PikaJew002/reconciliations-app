@@ -1,4 +1,5 @@
 <script setup>
+    import TransactionPicker from '../TransactionPicker.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
     import { router } from '@inertiajs/vue3';
     import { reactive, ref, watch } from 'vue';
@@ -404,40 +405,30 @@
                                 <span class="text-neutral-600"
                                     >Bank transaction</span
                                 >
-                                <select
+                                <TransactionPicker
                                     v-model="
                                         paymentForms[order.id][paymentIndex]
                                             .bank_transaction_id
                                     "
-                                    class="w-full rounded border px-2"
+                                    preset="payment"
+                                    placeholder="Select transaction…"
                                     required
+                                    :options="payment.candidate_transactions"
+                                    :target-amount="
+                                        paymentForms[order.id][paymentIndex]
+                                            .amount
+                                    "
+                                    :target-date="order.ordered_at || ''"
+                                    :target-card-last-four="
+                                        payment.last_four || ''
+                                    "
                                     @change="
                                         onPaymentTransactionSelected(
                                             order,
                                             paymentIndex,
                                         )
                                     "
-                                >
-                                    <option value="">
-                                        Select transaction…
-                                    </option>
-                                    <option
-                                        v-for="tx in payment.candidate_transactions"
-                                        :key="tx.id"
-                                        :value="tx.id"
-                                    >
-                                        {{ formatMoney(tx.amount) }} ·
-                                        {{
-                                            tx.transaction_date ||
-                                            tx.posted_at ||
-                                            'No date'
-                                        }}
-                                        <template v-if="tx.card_last_four">
-                                            · card
-                                            {{ tx.card_last_four }}</template
-                                        >
-                                    </option>
-                                </select>
+                                />
                             </label>
 
                             <p v-else class="self-end text-neutral-600">
