@@ -1,6 +1,7 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import StickyToasts from '../../Components/StickyToasts.vue';
+    import TransactionPicker from '../../Components/TransactionPicker.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
@@ -1456,26 +1457,18 @@
                     class="block text-sm sm:col-span-2 lg:col-span-3"
                 >
                     <span class="text-neutral-600">Base on a transaction</span>
-                    <select
+                    <TransactionPicker
                         v-model="paycheckSourceId"
-                        class="mt-1 w-full rounded border px-3"
+                        class="mt-1"
+                        preset="source"
+                        placeholder="Optional — pick a past credit"
+                        clearable
+                        :options="
+                            sourceTransactionsFor(createPaycheckForm.category_id)
+                        "
+                        :merchants="merchants"
                         @change="onPaycheckSourceChange"
-                    >
-                        <option value="">Optional — pick a past credit</option>
-                        <option
-                            v-for="option in sourceTransactionsFor(
-                                createPaycheckForm.category_id,
-                            )"
-                            :key="option.id"
-                            :value="String(option.id)"
-                        >
-                            {{ option.posted_at }} ·
-                            {{ formatMoney(option.amount) }}
-                            <template v-if="option.description">
-                                · {{ option.description }}
-                            </template>
-                        </option>
-                    </select>
+                    />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Expected day</span>
@@ -1642,26 +1635,18 @@
                     class="block text-sm sm:col-span-2 lg:col-span-3"
                 >
                     <span class="text-neutral-600">Base on a transaction</span>
-                    <select
+                    <TransactionPicker
                         v-model="billSourceId"
-                        class="mt-1 w-full rounded border px-3"
+                        class="mt-1"
+                        preset="source"
+                        placeholder="Optional — pick a past charge"
+                        clearable
+                        :options="
+                            sourceTransactionsFor(createBillForm.category_id)
+                        "
+                        :merchants="merchants"
                         @change="onBillSourceChange"
-                    >
-                        <option value="">Optional — pick a past charge</option>
-                        <option
-                            v-for="option in sourceTransactionsFor(
-                                createBillForm.category_id,
-                            )"
-                            :key="option.id"
-                            :value="String(option.id)"
-                        >
-                            {{ option.posted_at }} ·
-                            {{ formatMoney(option.amount) }}
-                            <template v-if="option.description">
-                                · {{ option.description }}
-                            </template>
-                        </option>
-                    </select>
+                    />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Starts on</span>
@@ -1877,26 +1862,18 @@
                     class="block text-sm sm:col-span-2 lg:col-span-3"
                 >
                     <span class="text-neutral-600">Base on a transaction</span>
-                    <select
+                    <TransactionPicker
                         v-model="expenseSourceId"
-                        class="mt-1 w-full rounded border px-3"
+                        class="mt-1"
+                        preset="source"
+                        placeholder="Optional — pick a past charge"
+                        clearable
+                        :options="
+                            sourceTransactionsFor(createExpenseForm.category_id)
+                        "
+                        :merchants="merchants"
                         @change="onExpenseSourceChange"
-                    >
-                        <option value="">Optional — pick a past charge</option>
-                        <option
-                            v-for="option in sourceTransactionsFor(
-                                createExpenseForm.category_id,
-                            )"
-                            :key="option.id"
-                            :value="String(option.id)"
-                        >
-                            {{ option.posted_at }} ·
-                            {{ formatMoney(option.amount) }}
-                            <template v-if="option.description">
-                                · {{ option.description }}
-                            </template>
-                        </option>
-                    </select>
+                    />
                 </label>
                 <label class="block text-sm">
                     <span class="text-neutral-600">Starts on</span>
@@ -2313,39 +2290,24 @@
                                                     "
                                                     class="flex flex-wrap items-center gap-2"
                                                 >
-                                                    <select
+                                                    <TransactionPicker
                                                         v-model="
                                                             linkTransactionId
                                                         "
-                                                        class="rounded border px-2"
-                                                    >
-                                                        <option value="">
-                                                            Select credit
-                                                        </option>
-                                                        <option
-                                                            v-for="candidate in paycheck_link_candidates"
-                                                            :key="candidate.id"
-                                                            :value="
-                                                                String(
-                                                                    candidate.id,
-                                                                )
-                                                            "
-                                                        >
-                                                            {{
-                                                                candidate.posted_at
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                formatMoney(
-                                                                    candidate.amount,
-                                                                )
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                candidate.description
-                                                            }}
-                                                        </option>
-                                                    </select>
+                                                        class="min-w-72 flex-1"
+                                                        preset="link"
+                                                        placeholder="Select credit"
+                                                        clearable
+                                                        :options="
+                                                            paycheck_link_candidates
+                                                        "
+                                                        :target-amount="
+                                                            occurrence.expected_amount
+                                                        "
+                                                        :target-date="
+                                                            occurrence.expected_date
+                                                        "
+                                                    />
                                                     <button
                                                         type="button"
                                                         class="btn rounded border px-2 text-xs"
@@ -2576,41 +2538,24 @@
                                                     "
                                                     class="flex flex-wrap items-center gap-2"
                                                 >
-                                                    <select
+                                                    <TransactionPicker
                                                         v-model="
                                                             linkTransactionId
                                                         "
-                                                        class="rounded border px-2"
-                                                    >
-                                                        <option value="">
-                                                            Select debit
-                                                        </option>
-                                                        <option
-                                                            v-for="candidate in bill_link_candidates"
-                                                            :key="candidate.id"
-                                                            :value="
-                                                                String(
-                                                                    candidate.id,
-                                                                )
-                                                            "
-                                                        >
-                                                            {{
-                                                                candidate.posted_at
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                formatMoney(
-                                                                    Math.abs(
-                                                                        candidate.amount,
-                                                                    ),
-                                                                )
-                                                            }}
-                                                            ·
-                                                            {{
-                                                                candidate.description
-                                                            }}
-                                                        </option>
-                                                    </select>
+                                                        class="min-w-72 flex-1"
+                                                        preset="link"
+                                                        placeholder="Select debit"
+                                                        clearable
+                                                        :options="
+                                                            bill_link_candidates
+                                                        "
+                                                        :target-amount="
+                                                            occurrence.expected_amount
+                                                        "
+                                                        :target-date="
+                                                            occurrence.expected_date
+                                                        "
+                                                    />
                                                     <button
                                                         type="button"
                                                         class="btn rounded border px-2 text-xs"
@@ -2790,37 +2735,22 @@
                                                 "
                                                 class="flex flex-wrap items-center gap-2"
                                             >
-                                                <select
+                                                <TransactionPicker
                                                     v-model="linkTransactionId"
-                                                    class="rounded border px-2"
-                                                >
-                                                    <option value="">
-                                                        Select debit
-                                                    </option>
-                                                    <option
-                                                        v-for="candidate in expense_link_candidates"
-                                                        :key="candidate.id"
-                                                        :value="
-                                                            String(candidate.id)
-                                                        "
-                                                    >
-                                                        {{
-                                                            candidate.posted_at
-                                                        }}
-                                                        ·
-                                                        {{
-                                                            formatMoney(
-                                                                Math.abs(
-                                                                    candidate.amount,
-                                                                ),
-                                                            )
-                                                        }}
-                                                        ·
-                                                        {{
-                                                            candidate.description
-                                                        }}
-                                                    </option>
-                                                </select>
+                                                    class="min-w-72 flex-1"
+                                                    preset="link"
+                                                    placeholder="Select debit"
+                                                    clearable
+                                                    :options="
+                                                        expense_link_candidates
+                                                    "
+                                                    :target-amount="
+                                                        occurrence.expected_amount
+                                                    "
+                                                    :target-date="
+                                                        occurrence.expected_date
+                                                    "
+                                                />
                                                 <button
                                                     type="button"
                                                     class="btn rounded border px-2 text-xs"

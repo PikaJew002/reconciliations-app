@@ -1,4 +1,5 @@
 <script setup>
+    import TransactionPicker from '../TransactionPicker.vue';
     import {
         accountLabel,
         formatMoney,
@@ -289,23 +290,13 @@
                             <span class="text-neutral-600"
                                 >Add transaction</span
                             >
-                            <select
+                            <TransactionPicker
                                 v-model="addToGroupSelections[group.id]"
-                                class="w-full rounded border px-2"
-                            >
-                                <option value="">Select…</option>
-                                <option
-                                    v-for="transaction in eligibleForGroup(
-                                        group,
-                                    )"
-                                    :key="`elig-${group.id}-${transaction.id}`"
-                                    :value="transaction.id"
-                                >
-                                    {{ transaction.posted_at || 'No date' }} ·
-                                    {{ transaction.description }} ·
-                                    {{ formatMoney(transaction.amount) }}
-                                </option>
-                            </select>
+                                preset="reimbursement"
+                                placeholder="Select…"
+                                clearable
+                                :options="eligibleForGroup(group)"
+                            />
                         </label>
                         <button
                             type="button"
