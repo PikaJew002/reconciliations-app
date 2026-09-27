@@ -118,7 +118,7 @@ class OrderPaymentResolutionService
             $order->refresh();
             $order->load(['components.allocations', 'merchant', 'importBatch']);
 
-            $componentSum = round((float) $order->components->sum('amount'), 2);
+            $componentSum = $order->payableComponentSum();
 
             if (abs($componentSum - (float) $order->total) >= 0.01) {
                 throw new RuntimeException('Order components must balance before resolving payments.');
@@ -398,7 +398,7 @@ class OrderPaymentResolutionService
             return false;
         }
 
-        $componentSum = round((float) $order->components->sum('amount'), 2);
+        $componentSum = $order->payableComponentSum();
 
         return abs($componentSum - (float) $order->total) < 0.01;
     }

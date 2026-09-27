@@ -172,6 +172,7 @@ class OrderDetailTest extends TestCase
                 ->where('order.gap', 0)
                 ->where('order.components_balanced', true)
                 ->where('order.payment_last_four', '1111')
+                ->where('order.can_edit', true)
                 ->where('can_delete', true)
                 ->where('has_allocations', false)
                 ->has('order.payments', 1)
@@ -187,9 +188,20 @@ class OrderDetailTest extends TestCase
                 ->where('components.0.id', $productComponent->id)
                 ->where('components.0.type', 'product')
                 ->where('components.0.category.name', 'Household')
+                ->where('components.0.category_id', $category->id)
+                ->where('components.0.order_item_id', $item->id)
+                ->where('components.0.quantity', 1)
+                ->where('components.0.unit_price', 6.97)
+                ->where('components.0.can_edit_quantity', true)
+                ->where('components.0.can_delete', true)
                 ->where('components.0.allocated_amount', 0)
                 ->where('components.1.type', 'tax')
-                ->where('components.1.description', 'Sales Tax'));
+                ->where('components.1.can_edit_quantity', false)
+                ->where('components.1.can_delete', true)
+                ->where('components.1.description', 'Sales Tax')
+                ->has('categories', 1)
+                ->where('categories.0.name', 'Household')
+                ->where('categories.0.kind', 'expense'));
     }
 
     public function test_amazon_detail_flags_unbalanced_components(): void
@@ -226,6 +238,116 @@ class OrderDetailTest extends TestCase
                 ->where('order.components_balanced', false)
                 ->where('order.component_sum', 36.8)
                 ->where('order.gap', 5.5));
+    }
+
+    public function test_component_edits_from_the_detail_page_return_there(): void
+    {
+        $user = User::factory()->create();
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+        $category = Category::factory()->expense()->create([
+            'user_id' => $user->id,
+            'name' => 'Household',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'order_number' => 'AMZ-EDIT',
+            'total' => 10.00,
+            'status' => 'imported',
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'quantity' => 1,
+            'unit_price' => 10.00,
+            'extended_price' => 10.00,
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'description' => 'Carabiner',
+            'amount' => 10.00,
+            'category_id' => null,
+        ]);
+        $detail = route('orders.detail', ['merchant' => 'amazon', 'order' => $order->id]);
+
+        $this->actingAs($user)
+            ->from($detail)
+            ->patch(route('reconciliation.orders.items.update', [$order, $item]), [
+                'quantity' => 2,
+            ])
+            ->assertRedirect($detail);
+
+        $this->actingAs($user)
+            ->from($detail)
+            ->patch(route('reconciliation.orders.components.category.update', [$order, $component]), [
+                'category_id' => $category->id,
+            ])
+            ->assertRedirect($detail);
+
+        $this->actingAs($user)
+            ->from($detail)
+            ->post(route('reconciliation.orders.components.store', $order), [
+                'type' => 'delivery',
+                'description' => 'Fast delivery fee',
+                'amount' => 5.00,
+            ])
+            ->assertRedirect($detail);
+
+        $fee = OrderComponent::query()
+            ->where('order_id', $order->id)
+            ->where('type', 'delivery')
+            ->first();
+
+        $this->actingAs($user)
+            ->from($detail)
+            ->delete(route('reconciliation.orders.components.destroy', [$order, $fee]))
+            ->assertRedirect($detail);
+    }
+
+    public function test_reconciled_detail_locks_component_editing(): void
+    {
+        $user = User::factory()->create();
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'order_number' => 'AMZ-LOCKED',
+            'total' => 7.39,
+            'status' => 'reconciled',
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'quantity' => 1,
+            'unit_price' => 7.39,
+            'extended_price' => 7.39,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'description' => 'Carabiner',
+            'amount' => 7.39,
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.detail', ['merchant' => 'amazon', 'order' => $order->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('order.can_edit', false)
+                ->where('order.can_edit_total', false)
+                ->where('components.0.can_edit_quantity', false)
+                ->where('components.0.can_delete', false)
+                ->where('components.0.can_refund', false));
     }
 
     public function test_destroy_removes_order_and_unwinds_bank_matches(): void

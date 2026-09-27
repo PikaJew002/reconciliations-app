@@ -9,6 +9,14 @@ class TransactionAllocation extends Model
 {
     use HasFactory;
 
+    public const TYPE_AUTOMATIC = 'automatic';
+
+    public const TYPE_MANUAL = 'manual';
+
+    public const TYPE_IMPORTED = 'imported';
+
+    public const TYPE_REFUND = 'refund';
+
     protected $fillable = [
         'bank_transaction_id',
         'order_component_id',
@@ -56,7 +64,7 @@ class TransactionAllocation extends Model
             'bank_transaction_id' => ['required', 'exists:bank_transactions,id'],
             'order_component_id' => ['required', 'exists:order_components,id'],
             'allocated_amount' => ['required', 'numeric'],
-            'allocation_type' => ['required', 'in:automatic,manual,imported'],
+            'allocation_type' => ['required', 'in:automatic,manual,imported,refund'],
             'match_confidence' => ['nullable', 'numeric', 'between:0,100'],
         ];
     }

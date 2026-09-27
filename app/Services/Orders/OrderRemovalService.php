@@ -90,7 +90,7 @@ class OrderRemovalService
         $order->unsetRelation('components');
         $order->load('components');
 
-        $componentSum = round((float) $order->components->sum('amount'), 2);
+        $componentSum = $order->payableComponentSum();
         $total = round((float) $order->total, 2);
 
         if ($order->status === 'reconciled' && abs($total - $componentSum) >= 0.01) {

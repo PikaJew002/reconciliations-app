@@ -221,7 +221,7 @@ class ReconciliationReviewService
             ->orderByDesc('id')
             ->get()
             ->map(function (Order $order): ?array {
-                $componentSum = round((float) $order->components->sum('amount'), 2);
+                $componentSum = $order->payableComponentSum();
                 $total = round((float) $order->total, 2);
                 $gap = round($total - $componentSum, 2);
 
@@ -229,13 +229,19 @@ class ReconciliationReviewService
                     return null;
                 }
 
+                $hasAllocations = $order->components->contains(
+                    fn ($component): bool => (int) $component->allocations_count > 0,
+                );
+
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
                     'ordered_at' => $order->ordered_at?->toDateString(),
                     'total' => $total,
+                    'imported_total' => round((float) $order->imported_total, 2),
                     'component_sum' => $componentSum,
                     'gap' => $gap,
+                    'can_edit_total' => ! $hasAllocations,
                     'payment_last_four' => $order->payment_last_four,
                     'status' => $order->status,
                     'merchant' => $order->merchant?->name,
@@ -249,6 +255,11 @@ class ReconciliationReviewService
                                 'type' => $component->type,
                                 'description' => $component->description,
                                 'amount' => (float) $component->amount,
+                                'refund_amount' => $component->refund_amount !== null
+                                    ? (float) $component->refund_amount
+                                    : null,
+                                'refund_kind' => $component->refund_kind,
+                                'can_refund' => $unallocated,
                                 'category_id' => $component->category_id,
                                 'is_user_modified' => (bool) $component->is_user_modified,
                                 'can_delete' => $unallocated,
@@ -284,7 +295,7 @@ class ReconciliationReviewService
             ->values()
             ->map(function (Order $order): array {
                 $payments = $this->paymentResolution->normalizedPayments($order);
-                $componentSum = round((float) $order->components->sum('amount'), 2);
+                $componentSum = $order->payableComponentSum();
                 $componentsBalanced = abs($componentSum - (float) $order->total) < 0.01;
 
                 return [
