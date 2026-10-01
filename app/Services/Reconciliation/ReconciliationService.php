@@ -18,7 +18,7 @@ class ReconciliationService
         protected int $dateWindowDays = 7,
         protected int $preCoverageLookbackDays = 10,
         protected int $subsetCandidateCap = 12,
-        protected int $refundCreditWindowDays = 30,
+        protected int $refundCreditWindowDays = 90,
     ) {}
 
     /**
@@ -248,11 +248,18 @@ class ReconciliationService
                 continue;
             }
 
-            if ($paymentResolution->needsPaymentReview($order)) {
+            if ($paymentResolution->blocksRefundMatching($order)) {
                 continue;
             }
 
-            $debits = $this->candidateTransactions($userId, $order)->values();
+            $offBook = $paymentResolution->offBookPaymentTotal($order);
+            $expectedDebit = round((float) $order->total + $bankRefund - $offBook, 2);
+
+            if ($expectedDebit < 0.01) {
+                continue;
+            }
+
+            $debits = $this->candidateRefundDebitTransactions($userId, $order)->values();
             $credits = $this->candidateCreditTransactions($userId, $order)->values();
 
             if (
@@ -264,8 +271,7 @@ class ReconciliationService
                 continue;
             }
 
-            $grossCents = $this->toCents((float) $order->total + $bankRefund);
-            $debitSubset = $this->findUniqueExactSubset($debits, $grossCents);
+            $debitSubset = $this->findUniqueExactSubset($debits, $this->toCents($expectedDebit));
             $creditSubset = $this->findUniqueExactSubset($credits, $this->toCents($bankRefund));
 
             if ($debitSubset === null || $creditSubset === null) {
@@ -282,6 +288,33 @@ class ReconciliationService
         }
 
         return $matchedTransactionIds;
+    }
+
+    /**
+     * Unmatched charges for a refund, with no post-date window.
+     * The original debit often posts within a week, while the credit can
+     * arrive months later; the 7-day window stays on ordinary matching.
+     *
+     * @return Collection<int, BankTransaction>
+     */
+    protected function candidateRefundDebitTransactions(int $userId, Order $order): Collection
+    {
+        return BankTransaction::query()
+            ->where('user_id', $userId)
+            ->where('merchant_id', $order->merchant_id)
+            ->availableForExpenseMatching()
+            ->where('amount', '<', 0)
+            ->whereNotNull('merchant_id')
+            ->where(function ($query): void {
+                $query->whereNull('metadata->source')
+                    ->orWhere('metadata->source', '!=', 'non_bank_tender');
+            })
+            ->with(['account.cardAliases'])
+            ->orderBy('posted_at')
+            ->orderBy('id')
+            ->get()
+            ->filter(fn (BankTransaction $transaction): bool => $this->paymentInstrumentsAlign($order, $transaction))
+            ->values();
     }
 
     /**
@@ -331,13 +364,16 @@ class ReconciliationService
 
         $order->loadMissing('components');
         $bankRefund = $order->bankRefundTotal();
+        $paymentResolution = app(OrderPaymentResolutionService::class);
+        $offBook = $paymentResolution->offBookPaymentTotal($order);
         $debitSum = round($debits->sum(fn (BankTransaction $transaction): float => abs((float) $transaction->amount)), 2);
         $creditSum = round($credits->sum(fn (BankTransaction $transaction): float => (float) $transaction->amount), 2);
-        $expectedDebit = round((float) $order->total + $bankRefund, 2);
+        $expectedDebit = round((float) $order->total + $bankRefund - $offBook, 2);
 
         if (
             $debits->isEmpty()
             || $credits->isEmpty()
+            || $expectedDebit < 0.01
             || abs($debitSum - $expectedDebit) >= 0.01
             || abs($creditSum - $bankRefund) >= 0.01
             || abs($order->payableComponentSum() - (float) $order->total) >= 0.01
@@ -346,11 +382,15 @@ class ReconciliationService
         }
 
         try {
-            DB::transaction(function () use ($debits, $credits, $order): void {
+            DB::transaction(function () use ($debits, $credits, $order, $paymentResolution): void {
                 $order->refresh();
                 $order->load(['components.allocations']);
 
-                if ($order->status === 'reconciled' || $this->orderRemainingAmount($order) < 0.01) {
+                $hasAllocations = $order->components->contains(
+                    fn (OrderComponent $component): bool => $component->allocations->isNotEmpty(),
+                );
+
+                if ($order->status === 'reconciled' || $hasAllocations) {
                     throw new \RuntimeException('Order is not allocatable.');
                 }
 
@@ -360,6 +400,10 @@ class ReconciliationService
                     if ($transaction->status !== 'unmatched' || abs((float) $transaction->remaining_amount) < 0.01) {
                         throw new \RuntimeException('Transaction is not allocatable.');
                     }
+                }
+
+                foreach ($paymentResolution->createOffBookTenderDebits($order) as $synthetic) {
+                    $this->allocateDebitAcrossComponents($synthetic, $order);
                 }
 
                 foreach ($debits as $transaction) {

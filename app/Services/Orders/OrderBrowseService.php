@@ -187,9 +187,10 @@ class OrderBrowseService
         ]);
 
         $canEdit = $order->status !== 'reconciled';
+        $reconciled = $order->status === 'reconciled';
 
         $components = $order->components
-            ->map(function (OrderComponent $component) use ($canEdit): array {
+            ->map(function (OrderComponent $component) use ($canEdit, $reconciled): array {
                 $hasAllocations = $component->allocations->isNotEmpty();
                 $allocated = round((float) $component->allocations
                     ->where('allocation_type', '!=', 'refund')
@@ -212,7 +213,7 @@ class OrderBrowseService
                     'is_user_modified' => (bool) $component->is_user_modified,
                     'allocated_amount' => $allocated,
                     'remaining_amount' => round($amount - $allocated, 2),
-                    'can_refund' => $canEdit && $unallocated,
+                    'can_refund' => $unallocated || $reconciled,
                     'can_delete' => $canEdit && $unallocated,
                     'order_item_id' => $component->order_item_id,
                     'quantity' => $item !== null ? (float) $item->quantity : null,
@@ -250,7 +251,7 @@ class OrderBrowseService
                 'total' => (float) $order->total,
                 'imported_total' => (float) $order->imported_total,
                 'can_edit' => $canEdit,
-                'can_edit_total' => $canEdit && ! $hasAllocations,
+                'can_edit_total' => ! $hasAllocations || $reconciled,
                 ...$balance,
             ],
             'items' => $order->items

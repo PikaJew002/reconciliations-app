@@ -5,6 +5,7 @@ namespace App\Services\Reconciliation;
 use App\Models\BankTransaction;
 use App\Models\Order;
 use App\Services\Accounts\OffBookAccountService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -319,6 +320,68 @@ class OrderPaymentResolutionService
         }
 
         return $order->payment_last_four === null;
+    }
+
+    /**
+     * Refund matching can use a split tender once every payment amount is known.
+     * A missing amount still belongs in payment review.
+     */
+    public function blocksRefundMatching(Order $order): bool
+    {
+        $payments = $this->normalizedPayments($order);
+
+        if (count($payments) < 2) {
+            return false;
+        }
+
+        foreach ($payments as $payment) {
+            if ($payment['amount'] === null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function offBookPaymentTotal(Order $order): float
+    {
+        $total = 0.0;
+
+        foreach ($this->normalizedPayments($order) as $payment) {
+            if (! self::isOffBookKind($payment['kind']) || $payment['amount'] === null) {
+                continue;
+            }
+
+            $total += (float) $payment['amount'];
+        }
+
+        return round($total, 2);
+    }
+
+    /**
+     * Gift card and other non-bank tenders that are not card charges.
+     *
+     * @return Collection<int, BankTransaction>
+     */
+    public function createOffBookTenderDebits(Order $order): Collection
+    {
+        $transactions = collect();
+
+        foreach ($this->normalizedPayments($order) as $payment) {
+            if (! self::isOffBookKind($payment['kind']) || $payment['amount'] === null) {
+                continue;
+            }
+
+            $amount = (float) $payment['amount'];
+
+            if ($amount < 0.01) {
+                continue;
+            }
+
+            $transactions->push($this->createNonBankTenderTransaction($order, $payment, $amount));
+        }
+
+        return $transactions;
     }
 
     /**
