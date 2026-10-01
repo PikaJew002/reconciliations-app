@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 class ReconciliationService
 {
     public function __construct(
+        protected PaymentInstrumentAligner $paymentInstruments,
         protected int $dateWindowDays = 7,
         protected int $preCoverageLookbackDays = 10,
         protected int $subsetCandidateCap = 12,
@@ -146,6 +147,7 @@ class ReconciliationService
             ->availableForExpenseMatching()
             ->where('amount', '<', 0)
             ->whereNotNull('merchant_id')
+            ->with(['account.cardAliases'])
             ->orderBy('posted_at')
             ->orderBy('id')
             ->get()
@@ -295,6 +297,7 @@ class ReconciliationService
             ->availableForExpenseMatching()
             ->where('amount', '>', 0)
             ->whereNotNull('merchant_id')
+            ->with(['account.cardAliases'])
             ->orderBy('posted_at')
             ->orderBy('id')
             ->get()
@@ -620,11 +623,7 @@ class ReconciliationService
 
     protected function paymentInstrumentsAlign(Order $order, BankTransaction $transaction): bool
     {
-        if ($order->payment_last_four === null || $transaction->card_last_four === null) {
-            return true;
-        }
-
-        return $order->payment_last_four === $transaction->card_last_four;
+        return $this->paymentInstruments->align($order->payment_last_four, $transaction);
     }
 
     protected function amountsEqual(float $left, float $right): bool

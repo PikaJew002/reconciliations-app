@@ -5,6 +5,7 @@ namespace App\Http\Requests\Accounts;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class UpdateAccountRequest extends FormRequest
 {
@@ -29,6 +30,27 @@ class UpdateAccountRequest extends FormRequest
                 ? $this->input('default_classification')
                 : BankTransaction::CLASSIFICATION_EXPENSE,
         ]);
+
+        if (! $this->exists('card_aliases')) {
+            return;
+        }
+
+        $aliases = $this->input('card_aliases');
+
+        if (is_string($aliases)) {
+            $aliases = preg_split('/[\s,]+/', $aliases) ?: [];
+        }
+
+        if (! is_array($aliases)) {
+            return;
+        }
+
+        $this->merge([
+            'card_aliases' => array_values(array_unique(array_filter(
+                array_map(fn (mixed $value): string => trim((string) $value), $aliases),
+                fn (string $value): bool => $value !== '',
+            ))),
+        ]);
     }
 
     /**
@@ -36,6 +58,27 @@ class UpdateAccountRequest extends FormRequest
      */
     public function rules(): array
     {
-        return (new Account)->validationRules();
+        return [
+            ...(new Account)->validationRules(),
+            'card_aliases' => ['sometimes', 'array', 'max:20'],
+            'card_aliases.*' => ['distinct', 'digits:4'],
+        ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            $lastFour = $this->input('last_four');
+            $aliases = $this->input('card_aliases', []);
+
+            if (! is_string($lastFour) || ! is_array($aliases) || ! in_array($lastFour, $aliases, true)) {
+                return;
+            }
+
+            $validator->errors()->add(
+                'card_aliases',
+                'The account last four is already saved on the account.',
+            );
+        });
     }
 }

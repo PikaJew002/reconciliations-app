@@ -36,6 +36,19 @@
             props.account.default_classification ?? 'expense',
         currency: props.account.currency ?? 'USD',
         last_four: props.account.last_four ?? '',
+        card_aliases: (props.account.card_aliases ?? []).join('\n'),
+    });
+
+    let cardAliasError = computed(() => {
+        if (form.errors.card_aliases) {
+            return form.errors.card_aliases;
+        }
+
+        let indexed = Object.entries(form.errors).find(([key]) =>
+            key.startsWith('card_aliases.'),
+        );
+
+        return indexed ? indexed[1] : '';
     });
 
     let accountTypeLabel = (type) => {
@@ -47,7 +60,13 @@
     };
 
     let submit = () => {
-        form.put(`/accounts/${props.account.id}`);
+        form.transform((data) => ({
+            ...data,
+            card_aliases: data.card_aliases
+                .split(/[\s,]+/)
+                .map((value) => value.trim())
+                .filter((value) => value !== ''),
+        })).put(`/accounts/${props.account.id}`);
     };
 </script>
 
@@ -229,6 +248,34 @@
                         {{ form.errors.last_four }}
                     </p>
                 </div>
+            </div>
+
+            <div>
+                <label class="mb-1 block text-sm" for="card_aliases"
+                    >Other card numbers
+                    <span class="text-neutral-500">(optional)</span></label
+                >
+                <textarea
+                    id="card_aliases"
+                    v-model="form.card_aliases"
+                    rows="3"
+                    class="w-full rounded border px-3"
+                    placeholder="9876"
+                ></textarea>
+                <p class="mt-1 text-xs text-neutral-500">
+                    Apple Pay device numbers that belong to this card. One
+                    number per line.
+                </p>
+                <p
+                    v-if="account.seen_card_last_fours?.length"
+                    class="mt-1 text-xs text-neutral-500"
+                >
+                    Already on transactions:
+                    {{ account.seen_card_last_fours.join(', ') }}
+                </p>
+                <p v-if="cardAliasError" class="mt-1 text-sm text-red-600">
+                    {{ cardAliasError }}
+                </p>
             </div>
 
             <div class="flex flex-wrap gap-2">

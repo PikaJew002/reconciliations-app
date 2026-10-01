@@ -60,6 +60,7 @@ class OrderPaymentResolutionService
     public function __construct(
         protected ReconciliationService $reconciliation,
         protected OffBookAccountService $offBookAccounts,
+        protected PaymentInstrumentAligner $paymentInstruments,
         protected int $dateWindowDays = 7,
     ) {}
 
@@ -168,11 +169,7 @@ class OrderPaymentResolutionService
                         throw new InvalidArgumentException('Bank transaction amount must match the payment amount.');
                     }
 
-                    if (
-                        $payment['last_four'] !== null
-                        && $transaction->card_last_four !== null
-                        && $payment['last_four'] !== $transaction->card_last_four
-                    ) {
+                    if (! $this->paymentInstruments->align($payment['last_four'], $transaction)) {
                         throw new InvalidArgumentException('Bank transaction card does not match the payment method.');
                     }
 
@@ -421,7 +418,7 @@ class OrderPaymentResolutionService
             ->where('amount', '<', 0)
             ->when(
                 $payment['last_four'] !== null,
-                fn ($query) => $query->where('card_last_four', $payment['last_four']),
+                fn ($query) => $this->paymentInstruments->applyLastFourConstraint($query, $payment['last_four']),
             )
             ->orderByDesc('posted_at')
             ->orderByDesc('id')

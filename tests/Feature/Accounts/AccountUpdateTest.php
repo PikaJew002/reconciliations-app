@@ -3,7 +3,9 @@
 namespace Tests\Feature\Accounts;
 
 use App\Models\Account;
+use App\Models\AccountCardAlias;
 use App\Models\BankTransaction;
+use App\Models\ImportBatch;
 use App\Models\User;
 use App\Services\Imports\Banks\CapitalOneCreditCardTransactionImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -161,5 +163,78 @@ class AccountUpdateTest extends TestCase
 
         $this->assertSame(Account::OFF_BOOK_NAME, $account->fresh()->name);
         $this->assertTrue($account->fresh()->isOffBook());
+    }
+
+    public function test_authenticated_user_can_save_and_replace_card_aliases(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Credit Card',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+            'currency' => 'USD',
+            'last_four' => '1234',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'card_last_four' => '1234',
+        ]);
+        $account->cardAliases()->create(['last_four' => '1111']);
+
+        $this->actingAs($user)
+            ->get(route('accounts.edit', $account))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('account.card_aliases', ['1111'])
+                ->where('account.seen_card_last_fours', ['1234']));
+
+        $this->actingAs($user)->put(route('accounts.update', $account), [
+            'name' => 'Credit Card',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+            'currency' => 'USD',
+            'last_four' => '1234',
+            'card_aliases' => ['9876', '9876', ''],
+        ])->assertRedirect(route('accounts.edit', $account));
+
+        $this->assertSame(['9876'], $account->cardAliases()->orderBy('last_four')->pluck('last_four')->all());
+
+        $this->actingAs($user)->put(route('accounts.update', $account), [
+            'name' => 'Credit Card',
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+            'currency' => 'USD',
+            'last_four' => '1234',
+            'card_aliases' => [],
+        ])->assertRedirect(route('accounts.edit', $account));
+
+        $this->assertSame(0, AccountCardAlias::query()->count());
+    }
+
+    public function test_card_alias_cannot_repeat_the_account_last_four(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+            'currency' => 'USD',
+            'last_four' => '1234',
+        ]);
+
+        $this->actingAs($user)->put(route('accounts.update', $account), [
+            'name' => $account->name,
+            'institution_name' => CapitalOneCreditCardTransactionImporter::INSTITUTION_NAME,
+            'account_type' => Account::CREDIT_CARD,
+            'currency' => 'USD',
+            'last_four' => '1234',
+            'card_aliases' => ['1234'],
+        ])->assertSessionHasErrors('card_aliases');
+
+        $this->assertSame(0, AccountCardAlias::query()->count());
     }
 }
