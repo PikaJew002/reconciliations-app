@@ -344,10 +344,10 @@ class OrderDetailTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('order.can_edit', false)
-                ->where('order.can_edit_total', false)
+                ->where('order.can_edit_total', true)
                 ->where('components.0.can_edit_quantity', false)
                 ->where('components.0.can_delete', false)
-                ->where('components.0.can_refund', false));
+                ->where('components.0.can_refund', true));
     }
 
     public function test_destroy_removes_order_and_unwinds_bank_matches(): void

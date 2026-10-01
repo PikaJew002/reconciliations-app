@@ -723,4 +723,133 @@ class OrderPaymentResolutionTest extends TestCase
             ->delete(route('reconciliation.orders.payments.destroy', [$order, 0]))
             ->assertForbidden();
     }
+
+    public function test_payment_candidates_include_an_apple_pay_alias_of_the_account_card(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '1234',
+        ]);
+        $account->cardAliases()->create(['last_four' => '9876']);
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-18',
+            'total' => 40.00,
+            'status' => 'imported',
+        ]);
+
+        $matching = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-07-19',
+            'amount' => -40.00,
+            'card_last_four' => '1234',
+            'status' => 'unmatched',
+        ]);
+
+        $otherCard = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-07-19',
+            'amount' => -40.00,
+            'card_last_four' => '5678',
+            'status' => 'unmatched',
+        ]);
+
+        $candidates = app(OrderPaymentResolutionService::class)->candidateTransactionsForPayment($order, [
+            'ending' => 'Visa ending in 9876',
+            'last_four' => '9876',
+            'kind' => 'card',
+        ]);
+
+        $this->assertSame([$matching->id], array_column($candidates, 'id'));
+        $this->assertNotContains($otherCard->id, array_column($candidates, 'id'));
+    }
+
+    public function test_resolving_a_payment_accepts_an_apple_pay_alias(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '1234',
+            'is_active' => true,
+        ]);
+        $account->cardAliases()->create(['last_four' => '9876']);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'supports_order_import' => true,
+        ]);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-18',
+            'total' => 40.00,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Ending in 8723',
+                        'last_four' => '8723',
+                        'amount' => null,
+                        'kind' => 'gift_card',
+                    ],
+                    [
+                        'ending' => 'Visa ending in 9876',
+                        'last_four' => '9876',
+                        'amount' => null,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Groceries',
+            'amount' => 40.00,
+            'order_item_id' => null,
+        ]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-07-19',
+            'amount' => -15.00,
+            'card_last_four' => '1234',
+            'status' => 'unmatched',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.orders.resolve-payments', $order), [
+                'payments' => [
+                    ['index' => 0, 'amount' => 25.00, 'bank_transaction_id' => null],
+                    ['index' => 1, 'amount' => 15.00, 'bank_transaction_id' => $transaction->id],
+                ],
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHas('success');
+
+        $this->assertSame('matched', $transaction->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+    }
 }

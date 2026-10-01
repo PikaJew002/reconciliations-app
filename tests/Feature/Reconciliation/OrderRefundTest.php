@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\TransactionAllocation;
 use App\Models\User;
+use App\Services\Reconciliation\OrderPaymentResolutionService;
 use App\Services\Reconciliation\ReconciliationService;
 use App\Services\Reporting\CategorySpendQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -295,6 +296,233 @@ class OrderRefundTest extends TestCase
                 }));
     }
 
+    public function test_reconciled_amazon_card_refund_reopens_and_matches_the_later_credit(): void
+    {
+        [$user, $order, $item, $tax, $category, $merchant, $batch, $account, $debit] = $this->reconciledAmazonCharge();
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.components.refund.update', [$order, $item]), [
+                'refund_amount' => 21.60,
+                'refund_kind' => 'bank',
+            ])
+            ->assertRedirect();
+
+        $order->refresh();
+        $item->refresh();
+        $tax->refresh();
+        $debit->refresh();
+
+        $this->assertSame('imported', $order->status);
+        $this->assertSame('unmatched', $debit->status);
+        $this->assertSame(0, TransactionAllocation::query()->where('bank_transaction_id', $debit->id)->count());
+        $this->assertSame('21.60', $item->refund_amount);
+        $this->assertSame('bank', $item->refund_kind);
+        $this->assertSame('1.60', $tax->amount);
+        $this->assertNull($tax->refund_amount);
+        $this->assertEqualsWithDelta(0.0, $order->payableComponentSum(), 0.01);
+        $this->assertSame('21.60', $order->imported_total);
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.total.update', $order), [
+                'total' => 0,
+            ])
+            ->assertRedirect();
+
+        $credit = $this->bankTransaction($user, $account, $batch, $merchant, 21.60, '2026-07-20', '1111');
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(2, $matched);
+        $this->assertSame('matched', $debit->fresh()->status);
+        $this->assertSame('matched', $credit->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+        $this->assertSame('refund', TransactionAllocation::query()->where('bank_transaction_id', $credit->id)->value('allocation_type'));
+        $this->assertEqualsWithDelta(
+            -1.60,
+            app(CategorySpendQuery::class)->orderComponentCategoryTotalsForUser($user->id)[$category->id],
+            0.01,
+        );
+    }
+
+    public function test_bank_total_edit_reopens_a_reconciled_amazon_order(): void
+    {
+        [$user, $order, , , , , , , $debit] = $this->reconciledAmazonCharge();
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.total.update', $order), [
+                'total' => 0,
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('imported', $order->fresh()->status);
+        $this->assertSame('0.00', $order->fresh()->total);
+        $this->assertSame('21.60', $order->fresh()->imported_total);
+        $this->assertSame('unmatched', $debit->fresh()->status);
+        $this->assertSame(0, TransactionAllocation::query()->where('bank_transaction_id', $debit->id)->count());
+    }
+
+    public function test_amazon_split_tender_refund_matches_the_card_without_a_gift_card_charge(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-01',
+            'total' => 34.16,
+            'imported_total' => 41.37,
+            'subtotal' => 41.37,
+            'tax' => 0,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 4444',
+                        'last_four' => '4444',
+                        'amount' => 7.21,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Amazon gift card balance',
+                        'last_four' => null,
+                        'amount' => 34.16,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Gift card item',
+            'amount' => 34.16,
+        ]);
+
+        $cardItem = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Card item',
+            'amount' => 7.21,
+            'refund_amount' => 7.21,
+            'refund_kind' => 'bank',
+        ]);
+
+        $resolution = app(OrderPaymentResolutionService::class);
+
+        $this->assertTrue($resolution->needsPaymentReview($order));
+        $this->assertFalse($resolution->blocksRefundMatching($order));
+        $this->assertEqualsWithDelta(34.16, $order->payableComponentSum(), 0.01);
+
+        $debit = $this->bankTransaction($user, $account, $batch, $merchant, -7.21, '2026-07-02', '4444');
+        $credit = $this->bankTransaction($user, $account, $batch, $merchant, 7.21, '2026-07-20', '4444');
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(2, $matched);
+        $this->assertSame('matched', $debit->fresh()->status);
+        $this->assertSame('matched', $credit->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+        $this->assertSame('refund', TransactionAllocation::query()->where('bank_transaction_id', $credit->id)->value('allocation_type'));
+        $this->assertSame($cardItem->id, (int) TransactionAllocation::query()->where('bank_transaction_id', $credit->id)->value('order_component_id'));
+
+        $gift = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('amount', -34.16)
+            ->first();
+
+        $this->assertNotNull($gift);
+        $this->assertSame('non_bank_tender', $gift->metadata['source']);
+        $this->assertTrue($gift->account->isOffBook());
+        $this->assertNotSame($account->id, $gift->account_id);
+    }
+
+    public function test_amazon_refund_credit_after_day_7_still_matches(): void
+    {
+        [$user, $order, $merchant, $batch, $account] = $this->openAmazonRefund('2026-07-02');
+        $credit = $this->bankTransaction($user, $account, $batch, $merchant, 21.60, '2026-07-12', '1111');
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(2, $matched);
+        $this->assertSame('matched', $credit->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+    }
+
+    public function test_amazon_refund_credit_after_day_30_and_a_late_debit_still_match(): void
+    {
+        [$user, $order, $merchant, $batch, $account] = $this->openAmazonRefund('2026-07-21');
+        $credit = $this->bankTransaction($user, $account, $batch, $merchant, 21.60, '2026-08-20', '1111');
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(2, $matched);
+        $this->assertSame('matched', $credit->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+    }
+
+    public function test_amazon_refund_credit_outside_90_days_does_not_match(): void
+    {
+        [$user, $order, $merchant, $batch, $account, $debit] = $this->openAmazonRefund('2026-07-02');
+        $credit = $this->bankTransaction($user, $account, $batch, $merchant, 21.60, '2026-09-30', '1111');
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(0, $matched);
+        $this->assertSame('unmatched', $debit->fresh()->status);
+        $this->assertSame('unmatched', $credit->fresh()->status);
+        $this->assertSame('imported', $order->fresh()->status);
+    }
+
+    public function test_clearing_a_matched_amazon_refund_unwinds_allocations_and_leaves_the_order_open(): void
+    {
+        [$user, $order, $item, , , $merchant, $batch, $account, $debit] = $this->reconciledAmazonCharge();
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.components.refund.update', [$order, $item]), [
+                'refund_amount' => 21.60,
+                'refund_kind' => 'bank',
+            ])
+            ->assertRedirect();
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.total.update', $order), [
+                'total' => 0,
+            ])
+            ->assertRedirect();
+
+        $credit = $this->bankTransaction($user, $account, $batch, $merchant, 21.60, '2026-07-20', '1111');
+
+        $this->assertSame(2, app(ReconciliationService::class)->reconcileForUser($user->id));
+        $this->assertSame('reconciled', $order->fresh()->status);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.components.refund.destroy', [$order, $item]))
+            ->assertRedirect();
+
+        $item->refresh();
+        $order->refresh();
+
+        $this->assertNull($item->refund_amount);
+        $this->assertNull($item->refund_kind);
+        $this->assertSame('imported', $order->status);
+        $this->assertSame('unmatched', $debit->fresh()->status);
+        $this->assertSame('unmatched', $credit->fresh()->status);
+        $this->assertSame(0, TransactionAllocation::query()->whereIn('order_component_id', $order->components()->pluck('id'))->count());
+        $this->assertEqualsWithDelta(21.60, $order->payableComponentSum(), 0.01);
+    }
+
     /**
      * @return array{0: User, 1: Order, 2: OrderComponent, 3: OrderComponent, 4: Category, 5: Merchant, 6: ImportBatch}
      */
@@ -364,6 +592,7 @@ class OrderRefundTest extends TestCase
         Merchant $merchant,
         float $amount,
         string $postedAt,
+        string $lastFour = '2195',
     ): BankTransaction {
         return BankTransaction::factory()->create([
             'user_id' => $user->id,
@@ -373,9 +602,131 @@ class OrderRefundTest extends TestCase
             'posted_at' => $postedAt,
             'transaction_date' => $postedAt,
             'amount' => $amount,
-            'card_last_four' => '2195',
+            'card_last_four' => $lastFour,
             'status' => 'unmatched',
             'classification' => null,
         ]);
+    }
+
+    /**
+     * @return array{0: User, 1: Order, 2: OrderComponent, 3: OrderComponent, 4: Category, 5: Merchant, 6: ImportBatch, 7: Account, 8: BankTransaction}
+     */
+    protected function reconciledAmazonCharge(): array
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-01',
+            'total' => 21.60,
+            'tax' => 1.60,
+            'subtotal' => 20,
+            'payment_last_four' => '1111',
+            'status' => 'reconciled',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Mastercard ending in 1111',
+                        'last_four' => '1111',
+                        'amount' => 21.60,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $item = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Returned item',
+            'amount' => 20,
+            'category_id' => $category->id,
+        ]);
+
+        $tax = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tax',
+            'description' => 'Sales Tax',
+            'amount' => 1.60,
+        ]);
+
+        $debit = $this->bankTransaction($user, $account, $batch, $merchant, -21.60, '2026-07-02', '1111');
+        $debit->update(['status' => 'matched']);
+
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $debit->id,
+            'order_component_id' => $item->id,
+            'allocated_amount' => 20,
+            'allocation_type' => 'automatic',
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $debit->id,
+            'order_component_id' => $tax->id,
+            'allocated_amount' => 1.60,
+            'allocation_type' => 'automatic',
+        ]);
+
+        return [$user, $order, $item, $tax, $category, $merchant, $batch, $account, $debit];
+    }
+
+    /**
+     * @return array{0: User, 1: Order, 2: Merchant, 3: ImportBatch, 4: Account, 5: BankTransaction}
+     */
+    protected function openAmazonRefund(string $debitPostedAt): array
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create();
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-01',
+            'total' => 0,
+            'tax' => 1.60,
+            'subtotal' => 20,
+            'payment_last_four' => '1111',
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Returned item',
+            'amount' => 20,
+            'refund_amount' => 21.60,
+            'refund_kind' => 'bank',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tax',
+            'description' => 'Sales Tax',
+            'amount' => 1.60,
+        ]);
+
+        $debit = $this->bankTransaction($user, $account, $batch, $merchant, -21.60, $debitPostedAt, '1111');
+
+        return [$user, $order, $merchant, $batch, $account, $debit];
     }
 }

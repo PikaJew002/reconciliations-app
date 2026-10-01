@@ -60,6 +60,38 @@ class Account extends Model
         return $this->hasMany(PendingSpend::class);
     }
 
+    public function cardAliases()
+    {
+        return $this->hasMany(AccountCardAlias::class);
+    }
+
+    /**
+     * @param  list<string>  $lastFours
+     */
+    public function syncCardAliases(array $lastFours): void
+    {
+        $lastFours = collect($lastFours)
+            ->map(fn (mixed $value): string => (string) $value)
+            ->unique()
+            ->values();
+
+        if ($lastFours->isEmpty()) {
+            $this->cardAliases()->delete();
+
+            return;
+        }
+
+        $this->cardAliases()->whereNotIn('last_four', $lastFours->all())->delete();
+
+        $existing = $this->cardAliases()->pluck('last_four');
+
+        foreach ($lastFours->diff($existing) as $lastFour) {
+            $this->cardAliases()->create([
+                'last_four' => $lastFour,
+            ]);
+        }
+    }
+
     public function isOffBook(): bool
     {
         return $this->external_id === self::OFF_BOOK_EXTERNAL_ID;

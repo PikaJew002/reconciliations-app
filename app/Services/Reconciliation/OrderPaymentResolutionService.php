@@ -5,6 +5,7 @@ namespace App\Services\Reconciliation;
 use App\Models\BankTransaction;
 use App\Models\Order;
 use App\Services\Accounts\OffBookAccountService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -60,6 +61,7 @@ class OrderPaymentResolutionService
     public function __construct(
         protected ReconciliationService $reconciliation,
         protected OffBookAccountService $offBookAccounts,
+        protected PaymentInstrumentAligner $paymentInstruments,
         protected int $dateWindowDays = 7,
     ) {}
 
@@ -168,11 +170,7 @@ class OrderPaymentResolutionService
                         throw new InvalidArgumentException('Bank transaction amount must match the payment amount.');
                     }
 
-                    if (
-                        $payment['last_four'] !== null
-                        && $transaction->card_last_four !== null
-                        && $payment['last_four'] !== $transaction->card_last_four
-                    ) {
+                    if (! $this->paymentInstruments->align($payment['last_four'], $transaction)) {
                         throw new InvalidArgumentException('Bank transaction card does not match the payment method.');
                     }
 
@@ -325,6 +323,68 @@ class OrderPaymentResolutionService
     }
 
     /**
+     * Refund matching can use a split tender once every payment amount is known.
+     * A missing amount still belongs in payment review.
+     */
+    public function blocksRefundMatching(Order $order): bool
+    {
+        $payments = $this->normalizedPayments($order);
+
+        if (count($payments) < 2) {
+            return false;
+        }
+
+        foreach ($payments as $payment) {
+            if ($payment['amount'] === null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function offBookPaymentTotal(Order $order): float
+    {
+        $total = 0.0;
+
+        foreach ($this->normalizedPayments($order) as $payment) {
+            if (! self::isOffBookKind($payment['kind']) || $payment['amount'] === null) {
+                continue;
+            }
+
+            $total += (float) $payment['amount'];
+        }
+
+        return round($total, 2);
+    }
+
+    /**
+     * Gift card and other non-bank tenders that are not card charges.
+     *
+     * @return Collection<int, BankTransaction>
+     */
+    public function createOffBookTenderDebits(Order $order): Collection
+    {
+        $transactions = collect();
+
+        foreach ($this->normalizedPayments($order) as $payment) {
+            if (! self::isOffBookKind($payment['kind']) || $payment['amount'] === null) {
+                continue;
+            }
+
+            $amount = (float) $payment['amount'];
+
+            if ($amount < 0.01) {
+                continue;
+            }
+
+            $transactions->push($this->createNonBankTenderTransaction($order, $payment, $amount));
+        }
+
+        return $transactions;
+    }
+
+    /**
      * Auto-reconcile orders paid only with known non-bank tenders (gift card / balance).
      *
      * @return int Number of orders resolved.
@@ -421,7 +481,7 @@ class OrderPaymentResolutionService
             ->where('amount', '<', 0)
             ->when(
                 $payment['last_four'] !== null,
-                fn ($query) => $query->where('card_last_four', $payment['last_four']),
+                fn ($query) => $this->paymentInstruments->applyLastFourConstraint($query, $payment['last_four']),
             )
             ->orderByDesc('posted_at')
             ->orderByDesc('id')

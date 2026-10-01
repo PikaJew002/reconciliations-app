@@ -86,6 +86,13 @@ class AccountController extends Controller
                 'default_classification' => $account->default_classification,
                 'currency' => $account->currency,
                 'last_four' => $account->last_four,
+                'card_aliases' => $account->cardAliases()->orderBy('last_four')->pluck('last_four'),
+                'seen_card_last_fours' => BankTransaction::query()
+                    ->where('account_id', $account->id)
+                    ->whereNotNull('card_last_four')
+                    ->distinct()
+                    ->orderBy('card_last_four')
+                    ->pluck('card_last_four'),
             ],
             'institutions' => $institutions->names(),
             'accountTypes' => [
@@ -105,7 +112,17 @@ class AccountController extends Controller
     {
         $this->authorize('update', $account);
 
-        $account->update($request->validated());
+        $validated = $request->validated();
+        $aliases = array_key_exists('card_aliases', $validated)
+            ? $validated['card_aliases']
+            : null;
+        unset($validated['card_aliases']);
+
+        $account->update($validated);
+
+        if (is_array($aliases)) {
+            $account->syncCardAliases($aliases);
+        }
 
         return redirect()
             ->route('accounts.edit', $account)
