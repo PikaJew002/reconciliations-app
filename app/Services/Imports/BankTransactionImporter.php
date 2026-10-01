@@ -35,23 +35,20 @@ abstract class BankTransactionImporter implements Importer
                 throw new RuntimeException('Bank transaction imports require an external_id for deduplication.');
             }
 
-            $transaction = BankTransaction::query()->firstOrCreate(
-                [
-                    'account_id' => $accountId,
-                    'external_id' => $externalId,
-                ],
-                [
-                    ...$attributes,
-                    'user_id' => $batch->user_id,
-                    'import_batch_id' => $batch->id,
-                    'status' => 'unmatched',
-                    'metadata' => $row,
-                ],
-            );
-
-            if ($transaction->wasRecentlyCreated) {
-                $created++;
+            if (BankTransactionIdentity::find($accountId, $attributes) instanceof BankTransaction) {
+                continue;
             }
+
+            BankTransaction::query()->create([
+                ...$attributes,
+                'user_id' => $batch->user_id,
+                'import_batch_id' => $batch->id,
+                'account_id' => $accountId,
+                'status' => 'unmatched',
+                'metadata' => $row,
+            ]);
+
+            $created++;
         }
 
         return $created;
@@ -62,9 +59,7 @@ abstract class BankTransactionImporter implements Importer
      */
     protected function fingerprintExternalId(string $postedAt, float|string $amount, string $description): string
     {
-        $normalizedAmount = number_format((float) $amount, 2, '.', '');
-
-        return hash('sha256', implode('|', [$postedAt, $normalizedAmount, $description]));
+        return BankTransactionIdentity::fingerprint($postedAt, $amount, $description);
     }
 
     /**

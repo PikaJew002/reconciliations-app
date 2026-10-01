@@ -208,6 +208,8 @@ class ApiTokenPageTest extends TestCase
                 ->where('tokens.0.name', 'Google Sheets')
                 ->where('tokens.0.abilities', ['transactions:import'])
                 ->has('endpoint')
+                ->where('connection.callback_url', '')
+                ->where('connection.webhook_secret', '')
                 ->missing('tokens.0.token')
                 ->missing('tokens.0.plainTextToken'));
     }
@@ -339,6 +341,29 @@ class ApiTokenPageTest extends TestCase
             ->assertSessionHas('success');
 
         $this->assertSame(0, $user->tokens()->count());
+    }
+
+    public function test_user_can_save_a_tiller_connection_and_regenerate_its_secret(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->put(route('api-tokens.transaction-import.connection.update'), [
+                'callback_url' => 'https://script.google.com/macros/s/abc/exec',
+            ])
+            ->assertRedirect(route('api-tokens.transaction-import'));
+
+        $connection = $user->tillerConnection()->first();
+        $this->assertNotNull($connection);
+        $this->assertSame('https://script.google.com/macros/s/abc/exec', $connection->callback_url);
+        $this->assertNotSame('', $connection->webhook_secret);
+        $secret = $connection->webhook_secret;
+
+        $this->actingAs($user)
+            ->post(route('api-tokens.transaction-import.connection.secret'))
+            ->assertRedirect(route('api-tokens.transaction-import'));
+
+        $this->assertNotSame($secret, $connection->fresh()?->webhook_secret);
     }
 
     public function test_user_cannot_revoke_another_users_token(): void

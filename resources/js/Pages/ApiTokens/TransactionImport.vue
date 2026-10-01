@@ -7,7 +7,7 @@
 
     defineOptions({ layout: AuthenticatedLayout });
 
-    defineProps({
+    let props = defineProps({
         tokens: {
             type: Array,
             required: true,
@@ -20,10 +20,18 @@
             type: String,
             default: null,
         },
+        connection: {
+            type: Object,
+            required: true,
+        },
     });
 
     let form = useForm({
         name: 'Google Sheets',
+    });
+
+    let connectionForm = useForm({
+        callback_url: props.connection.callback_url,
     });
 
     let samplePayload = `{
@@ -54,6 +62,14 @@
 
     let submit = () => {
         form.post('/api-tokens/transaction-import');
+    };
+
+    let saveConnection = () => {
+        connectionForm.put('/api-tokens/transaction-import/connection');
+    };
+
+    let regenerateSecret = () => {
+        connectionForm.post('/api-tokens/transaction-import/connection/secret');
     };
 </script>
 
@@ -95,6 +111,53 @@
             </section>
 
             <ApiTokenList :tokens="tokens" />
+
+            <section class="space-y-3">
+                <h2 class="text-lg font-semibold">Sheet callback</h2>
+                <p class="text-sm text-neutral-600">
+                    After a sync is imported, this app sends the Tiller Transaction
+                    IDs to the Apps Script web app so it can fill Imported At.
+                    Paste the <code>/exec</code> URL, then copy the secret into
+                    the <code>WEBHOOK_KEY</code> script property.
+                </p>
+                <form class="space-y-3" @submit.prevent="saveConnection">
+                    <div>
+                        <label class="mb-1 block text-sm" for="callback_url">Callback URL</label>
+                        <input
+                            id="callback_url"
+                            v-model="connectionForm.callback_url"
+                            type="url"
+                            class="w-full rounded border px-3"
+                            required
+                        />
+                        <p v-if="connectionForm.errors.callback_url" class="mt-1 text-sm text-red-600">
+                            {{ connectionForm.errors.callback_url }}
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            type="submit"
+                            class="btn rounded bg-brand px-4 text-sm text-white hover:bg-brand-hover disabled:opacity-50"
+                            :disabled="connectionForm.processing"
+                        >
+                            Save connection
+                        </button>
+                        <button
+                            v-if="connection.webhook_secret"
+                            type="button"
+                            class="btn rounded border px-4 text-sm hover:bg-brand-wash disabled:opacity-50"
+                            :disabled="connectionForm.processing"
+                            @click="regenerateSecret"
+                        >
+                            Regenerate secret
+                        </button>
+                    </div>
+                </form>
+                <div v-if="connection.webhook_secret" class="space-y-1">
+                    <p class="text-sm font-medium">Webhook secret</p>
+                    <code class="block break-all rounded border bg-white px-3 py-2 text-sm">{{ connection.webhook_secret }}</code>
+                </div>
+            </section>
 
             <section class="space-y-3">
                 <h2 class="text-lg font-semibold">Import request</h2>
