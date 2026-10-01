@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\TransactionAllocation;
 use App\Models\User;
+use App\Services\Reconciliation\OrderPaymentResolutionService;
 use App\Services\Reconciliation\ReconciliationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -207,6 +208,18 @@ class ReconciliationServiceTest extends TestCase
             'category_id' => null,
         ]);
 
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-07-26',
+            'transaction_date' => '2026-07-25',
+            'amount' => -5.00,
+            'card_last_four' => '1234',
+            'status' => 'unmatched',
+        ]);
+
         $transaction = BankTransaction::factory()->create([
             'user_id' => $user->id,
             'import_batch_id' => $batch->id,
@@ -223,6 +236,57 @@ class ReconciliationServiceTest extends TestCase
 
         $this->assertSame(0, $matched);
         $this->assertSame('unmatched', $transaction->fresh()->status);
+    }
+
+    public function test_alias_matches_when_the_account_last_four_is_not_the_number_on_charges(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '6218',
+        ]);
+        $account->cardAliases()->create(['last_four' => '8517']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-09-28',
+            'total' => 81.25,
+            'payment_last_four' => '8517',
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 81.25,
+            'category_id' => null,
+        ]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-09-28',
+            'transaction_date' => '2026-09-28',
+            'amount' => -81.25,
+            'card_last_four' => '2195',
+            'status' => 'unmatched',
+        ]);
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(1, $matched);
+        $this->assertSame('matched', $transaction->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
     }
 
     public function test_does_not_partially_allocate_a_smaller_transaction(): void
@@ -590,6 +654,123 @@ class ReconciliationServiceTest extends TestCase
         $this->assertSame(0, $matched);
         $this->assertSame('imported', $order->fresh()->status);
         $this->assertCount(0, TransactionAllocation::all());
+    }
+
+    public function test_unique_exact_charge_matches_outside_the_date_window_including_the_last_bank_day(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '1234',
+        ]);
+        $account->cardAliases()->create(['last_four' => '9876']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $this->createRangeAnchorTransactions($user, $account, $batch, '2026-07-01', '2026-09-25');
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-09-05',
+            'total' => 51.81,
+            'payment_last_four' => '9876',
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Ending in 9876',
+                        'last_four' => '9876',
+                        'amount' => 51.81,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 51.81,
+            'category_id' => null,
+        ]);
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-09-25',
+            'transaction_date' => '2026-09-25',
+            'amount' => -51.81,
+            'card_last_four' => '1234',
+            'status' => 'unmatched',
+        ]);
+
+        $resolved = app(OrderPaymentResolutionService::class)
+            ->autoResolveNonBankOnlyOrders($user->id);
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(0, $resolved);
+        $this->assertSame(1, $matched);
+        $this->assertSame('matched', $transaction->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+        $this->assertFalse($transaction->fresh()->account->isOffBook());
+    }
+
+    public function test_duplicate_exact_amounts_still_require_the_date_window(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '2195',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-08-29',
+            'total' => 13.97,
+            'payment_last_four' => '2195',
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 13.97,
+            'category_id' => null,
+        ]);
+
+        foreach (['2026-06-16', '2026-09-09'] as $postedAt) {
+            BankTransaction::factory()->create([
+                'user_id' => $user->id,
+                'import_batch_id' => $batch->id,
+                'account_id' => $account->id,
+                'merchant_id' => $merchant->id,
+                'posted_at' => $postedAt,
+                'amount' => -13.97,
+                'card_last_four' => '2195',
+                'status' => 'unmatched',
+            ]);
+        }
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(0, $matched);
+        $this->assertSame('imported', $order->fresh()->status);
     }
 
     protected function createRangeAnchorTransactions(

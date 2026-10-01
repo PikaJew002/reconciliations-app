@@ -8,6 +8,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 class PaymentInstrumentAligner
 {
+    /**
+     * @var array<string, bool>
+     */
+    private array $primaryIsChargeCard = [];
+
     public function align(?string $orderLastFour, BankTransaction $transaction): bool
     {
         $transactionLastFour = $transaction->card_last_four;
@@ -32,11 +37,14 @@ class PaymentInstrumentAligner
             return false;
         }
 
-        if ($transactionLastFour === $account->last_four) {
+        if ($transactionLastFour === $account->last_four || $aliases->contains($transactionLastFour)) {
             return true;
         }
 
-        return $aliases->contains($transactionLastFour);
+        // The account last four is often the bank account number, not the
+        // number printed on charges. When it never appears on a charge, an
+        // alias belongs to whatever card numbers this account actually posts.
+        return ! $this->primaryLastFourIsChargeCard($account);
     }
 
     /**
@@ -64,6 +72,19 @@ class PaymentInstrumentAligner
                                 'account_card_aliases.last_four',
                                 'bank_transactions.card_last_four',
                             ),
+                        )->orWhereHas(
+                            'account',
+                            function (Builder $account): void {
+                                $account->where(function (Builder $account): void {
+                                    $account->whereNull('last_four')
+                                        ->orWhereNotExists(function ($charges): void {
+                                            $charges->selectRaw('1')
+                                                ->from('bank_transactions as charge_cards')
+                                                ->whereColumn('charge_cards.account_id', 'accounts.id')
+                                                ->whereColumn('charge_cards.card_last_four', 'accounts.last_four');
+                                        });
+                                });
+                            },
                         );
                     });
                 });
@@ -83,5 +104,23 @@ class PaymentInstrumentAligner
         $account->loadMissing('cardAliases');
 
         return $account;
+    }
+
+    private function primaryLastFourIsChargeCard(Account $account): bool
+    {
+        $key = (string) $account->id;
+
+        if (array_key_exists($key, $this->primaryIsChargeCard)) {
+            return $this->primaryIsChargeCard[$key];
+        }
+
+        if ($account->last_four === null || $account->last_four === '') {
+            return $this->primaryIsChargeCard[$key] = false;
+        }
+
+        return $this->primaryIsChargeCard[$key] = BankTransaction::query()
+            ->where('account_id', $account->id)
+            ->where('card_last_four', $account->last_four)
+            ->exists();
     }
 }

@@ -460,7 +460,18 @@ class OrderPaymentResolutionService
 
         $componentSum = $order->payableComponentSum();
 
-        return abs($componentSum - (float) $order->total) < 0.01;
+        if (abs($componentSum - (float) $order->total) >= 0.01) {
+            return false;
+        }
+
+        // Walmart records some real cards as "Ending in 1234", which looks like
+        // a gift card. Leave the order for bank matching when that card — or an
+        // alias of it — has one charge equal to the order total.
+        if ($order->payment_last_four === null || $order->payment_last_four === '') {
+            return true;
+        }
+
+        return $this->reconciliation->uniqueExactCharge($order->user_id, $order) === null;
     }
 
     /**
