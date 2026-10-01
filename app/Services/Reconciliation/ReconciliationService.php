@@ -58,14 +58,9 @@ class ReconciliationService
                 continue;
             }
 
-            $candidates = $this->candidateTransactions($userId, $order)
-                ->filter(fn (BankTransaction $transaction): bool => $this->amountsEqual(
-                    abs((float) $transaction->amount),
-                    (float) $order->total,
-                ))
-                ->values();
+            $candidates = $this->uniqueExactCharge($userId, $order);
 
-            if ($candidates->count() !== 1) {
+            if ($candidates === null) {
                 continue;
             }
 
@@ -135,9 +130,47 @@ class ReconciliationService
     }
 
     /**
+     * A single real charge equal to the order total, on the order's card
+     * (or a card alias). One charge in the whole history wins even when it
+     * posts outside the 7-day window or on the last imported bank day.
+     * Several charges fall back to that window so an older duplicate is not used.
+     *
+     * @return Collection<int, BankTransaction>|null
+     */
+    public function uniqueExactCharge(int $userId, Order $order): ?Collection
+    {
+        $exact = $this->candidateTransactions($userId, $order, false)
+            ->filter(fn (BankTransaction $transaction): bool => $this->amountsEqual(
+                abs((float) $transaction->amount),
+                (float) $order->total,
+            ))
+            ->values();
+
+        $cardIsKnown = $order->payment_last_four !== null && $order->payment_last_four !== '';
+
+        if ($cardIsKnown && $exact->count() === 1) {
+            return $exact;
+        }
+
+        $orderDate = $this->orderDate($order);
+        $withinWindow = $exact
+            ->filter(function (BankTransaction $transaction) use ($orderDate): bool {
+                return $orderDate === null
+                    || $this->datesAlign($this->postedAtDate($transaction), $orderDate);
+            })
+            ->values();
+
+        if ($withinWindow->count() === 1) {
+            return $withinWindow;
+        }
+
+        return null;
+    }
+
+    /**
      * @return Collection<int, BankTransaction>
      */
-    protected function candidateTransactions(int $userId, Order $order): Collection
+    protected function candidateTransactions(int $userId, Order $order, bool $requireDateAlignment = true): Collection
     {
         $orderDate = $this->orderDate($order);
 
@@ -147,16 +180,20 @@ class ReconciliationService
             ->availableForExpenseMatching()
             ->where('amount', '<', 0)
             ->whereNotNull('merchant_id')
+            ->where(function ($query): void {
+                $query->whereNull('metadata->source')
+                    ->orWhere('metadata->source', '!=', 'non_bank_tender');
+            })
             ->with(['account.cardAliases'])
             ->orderBy('posted_at')
             ->orderBy('id')
             ->get()
-            ->filter(function (BankTransaction $transaction) use ($order, $orderDate): bool {
+            ->filter(function (BankTransaction $transaction) use ($order, $orderDate, $requireDateAlignment): bool {
                 if (! $this->paymentInstrumentsAlign($order, $transaction)) {
                     return false;
                 }
 
-                if ($orderDate === null) {
+                if (! $requireDateAlignment || $orderDate === null) {
                     return true;
                 }
 

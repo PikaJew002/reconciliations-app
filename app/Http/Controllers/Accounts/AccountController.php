@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Accounts;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Accounts\StoreAccountRequest;
 use App\Http\Requests\Accounts\UpdateAccountRequest;
+use App\Jobs\RunReconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
 use App\Services\Accounts\AccountBrowseService;
@@ -122,6 +123,7 @@ class AccountController extends Controller
 
         if (is_array($aliases)) {
             $account->syncCardAliases($aliases);
+            RunReconciliation::dispatch($account->user_id);
         }
 
         return redirect()
