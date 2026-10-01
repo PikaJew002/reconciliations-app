@@ -21,6 +21,9 @@ class ApiTokenPageTest extends TestCase
 
         $this->get(route('api-tokens.retailer-scraper'))
             ->assertRedirect('/login');
+
+        $this->get(route('api-tokens.transaction-import'))
+            ->assertRedirect('/login');
     }
 
     public function test_guests_cannot_mint_tokens(): void
@@ -37,6 +40,10 @@ class ApiTokenPageTest extends TestCase
             'name' => 'Retailer scraper',
         ])->assertRedirect('/login');
 
+        $this->post(route('api-tokens.transaction-import.store'), [
+            'name' => 'Google Sheets',
+        ])->assertRedirect('/login');
+
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
@@ -46,6 +53,7 @@ class ApiTokenPageTest extends TestCase
         $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
         $user->createToken('iPhone Shortcut', ['pending-spend:create']);
         $user->createToken('Leftover reporting', ['leftover:read']);
+        $user->createToken('Google Sheets', ['transactions:import']);
 
         $this->actingAs($user)
             ->get(route('api-tokens.pending-spend'))
@@ -67,6 +75,7 @@ class ApiTokenPageTest extends TestCase
         $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
         $user->createToken('iPhone Shortcut', ['pending-spend:create']);
         $user->createToken('Leftover reporting', ['leftover:read']);
+        $user->createToken('Google Sheets', ['transactions:import']);
 
         $this->actingAs($user)
             ->get(route('api-tokens.leftover-reporting'))
@@ -88,6 +97,7 @@ class ApiTokenPageTest extends TestCase
         $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
         $user->createToken('iPhone Shortcut', ['pending-spend:create']);
         $user->createToken('Leftover reporting', ['leftover:read']);
+        $user->createToken('Google Sheets', ['transactions:import']);
 
         $this->actingAs($user)
             ->get(route('api-tokens.retailer-scraper'))
@@ -180,6 +190,28 @@ class ApiTokenPageTest extends TestCase
                 ->where('tokens.0.abilities', ['leftover:read']));
     }
 
+    public function test_transaction_import_page_lists_only_transaction_import_tokens(): void
+    {
+        $user = User::factory()->create();
+        $user->createToken('Amazon Chrome Extension:abc', ['amazon:import']);
+        $user->createToken('iPhone Shortcut', ['pending-spend:create']);
+        $user->createToken('Leftover reporting', ['leftover:read']);
+        $user->createToken('Google Sheets', ['transactions:import']);
+
+        $this->actingAs($user)
+            ->get(route('api-tokens.transaction-import'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ApiTokens/TransactionImport')
+                ->where('plainTextToken', null)
+                ->has('tokens', 1)
+                ->where('tokens.0.name', 'Google Sheets')
+                ->where('tokens.0.abilities', ['transactions:import'])
+                ->has('endpoint')
+                ->missing('tokens.0.token')
+                ->missing('tokens.0.plainTextToken'));
+    }
+
     public function test_authenticated_user_can_mint_a_retailer_scraper_token(): void
     {
         $user = User::factory()->create();
@@ -206,6 +238,39 @@ class ApiTokenPageTest extends TestCase
                 ->has('tokens', 1)
                 ->where('tokens.0.name', 'Retailer scraper')
                 ->where('tokens.0.abilities', ['amazon:import']));
+    }
+
+    public function test_authenticated_user_can_mint_a_transaction_import_token(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->post(route('api-tokens.transaction-import.store'), [
+            'name' => 'Google Sheets',
+        ]);
+
+        $response
+            ->assertRedirect(route('api-tokens.transaction-import'))
+            ->assertSessionHas('plainTextToken')
+            ->assertSessionHas('success');
+
+        $plainTextToken = session('plainTextToken');
+        $this->assertIsString($plainTextToken);
+        $this->assertStringContainsString('|', $plainTextToken);
+
+        $token = $user->tokens()->first();
+        $this->assertNotNull($token);
+        $this->assertSame('Google Sheets', $token->name);
+        $this->assertSame(['transactions:import'], $token->abilities);
+        $this->assertNull($token->expires_at);
+
+        $this->actingAs($user)
+            ->get(route('api-tokens.transaction-import'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ApiTokens/TransactionImport')
+                ->where('plainTextToken', $plainTextToken)
+                ->has('tokens', 1)
+                ->where('tokens.0.name', 'Google Sheets'));
     }
 
     public function test_minting_replaces_a_token_with_the_same_name(): void
@@ -258,6 +323,19 @@ class ApiTokenPageTest extends TestCase
         $this->actingAs($user)
             ->delete(route('api-tokens.destroy', $token->accessToken->id))
             ->assertRedirect(route('api-tokens.retailer-scraper'))
+            ->assertSessionHas('success');
+
+        $this->assertSame(0, $user->tokens()->count());
+    }
+
+    public function test_authenticated_user_can_revoke_their_transaction_import_token(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('Google Sheets', ['transactions:import']);
+
+        $this->actingAs($user)
+            ->delete(route('api-tokens.destroy', $token->accessToken->id))
+            ->assertRedirect(route('api-tokens.transaction-import'))
             ->assertSessionHas('success');
 
         $this->assertSame(0, $user->tokens()->count());

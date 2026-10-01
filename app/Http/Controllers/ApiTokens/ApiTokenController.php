@@ -18,6 +18,8 @@ class ApiTokenController extends Controller
 
     public const ABILITY_RETAILER_SCRAPER = 'amazon:import';
 
+    public const ABILITY_TRANSACTION_IMPORT = 'transactions:import';
+
     public function pendingSpend(Request $request): Response
     {
         return Inertia::render('ApiTokens/PendingSpend', [
@@ -46,6 +48,15 @@ class ApiTokenController extends Controller
         ]);
     }
 
+    public function transactionImport(Request $request): Response
+    {
+        return Inertia::render('ApiTokens/TransactionImport', [
+            'tokens' => $this->tokensForAbility($request->user(), self::ABILITY_TRANSACTION_IMPORT),
+            'endpoint' => url('/api/transactions/import'),
+            'plainTextToken' => $request->session()->pull('plainTextToken'),
+        ]);
+    }
+
     public function storePendingSpend(Request $request): RedirectResponse
     {
         return $this->mintToken($request, self::ABILITY_PENDING_SPEND, 'api-tokens.pending-spend');
@@ -61,6 +72,11 @@ class ApiTokenController extends Controller
         return $this->mintToken($request, self::ABILITY_RETAILER_SCRAPER, 'api-tokens.retailer-scraper');
     }
 
+    public function storeTransactionImport(Request $request): RedirectResponse
+    {
+        return $this->mintToken($request, self::ABILITY_TRANSACTION_IMPORT, 'api-tokens.transaction-import');
+    }
+
     public function destroy(Request $request, int $token): RedirectResponse
     {
         $tokenModel = $request->user()->tokens()->whereKey($token)->first();
@@ -72,6 +88,7 @@ class ApiTokenController extends Controller
         $redirectRoute = match (true) {
             $tokenModel->can(self::ABILITY_RETAILER_SCRAPER) => 'api-tokens.retailer-scraper',
             $tokenModel->can(self::ABILITY_LEFTOVER_REPORTING) => 'api-tokens.leftover-reporting',
+            $tokenModel->can(self::ABILITY_TRANSACTION_IMPORT) => 'api-tokens.transaction-import',
             default => 'api-tokens.pending-spend',
         };
 
