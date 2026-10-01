@@ -21,6 +21,7 @@ class ImporterResolver
             ['walmart', 'orders'] => app(WalmartOrderImporter::class),
             ['amazon', 'orders'] => app(AmazonScrapeOrderImporter::class),
             ['venmo', 'activity'] => app(VenmoActivityImporter::class),
+            ['tiller', 'transactions'] => app(TillerTransactionImporter::class),
             default => throw new InvalidArgumentException(
                 "No importer registered for source [{$batch->source}] and type [{$batch->type}].",
             ),

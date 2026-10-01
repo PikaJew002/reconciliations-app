@@ -165,7 +165,7 @@ class ImportBatchController extends Controller
         $accountId = $importBatch->metadata['account_id'] ?? null;
 
         if (
-            $importBatch->source !== 'bank'
+            ! in_array($importBatch->source, ['bank', 'tiller'], true)
             || $importBatch->type !== 'transactions'
             || (string) $accountId !== (string) $account->id
         ) {

@@ -29,6 +29,11 @@
             href: '/api-tokens/retailer-scraper',
             label: 'Retailer scraper',
         },
+        {
+            id: 'transaction-import',
+            href: '/api-tokens/transaction-import',
+            label: 'Transaction import',
+        },
     ];
 </script>
 
@@ -37,8 +42,9 @@
         <div>
             <h1 class="text-2xl font-semibold">API tokens</h1>
             <p class="text-sm text-neutral-600">
-                Mint a token for pending spend, leftover reporting, or the
-                retailer scraper, then paste it as a Bearer token.
+                Mint a token for pending spend, leftover reporting, the
+                retailer scraper, or transaction import, then paste it as a
+                Bearer token.
             </p>
         </div>
 

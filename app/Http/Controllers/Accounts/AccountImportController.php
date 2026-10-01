@@ -26,7 +26,7 @@ class AccountImportController extends Controller
 
         $batches = ImportBatch::query()
             ->where('user_id', $request->user()->id)
-            ->where('source', 'bank')
+            ->whereIn('source', ['bank', 'tiller'])
             ->where('type', 'transactions')
             ->where('metadata->account_id', $accountId)
             ->latest()

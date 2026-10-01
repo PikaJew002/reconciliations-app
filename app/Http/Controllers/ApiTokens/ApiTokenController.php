@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\ApiTokens;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ApiTokens\UpdateTillerConnectionRequest;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -17,6 +19,8 @@ class ApiTokenController extends Controller
     public const ABILITY_LEFTOVER_REPORTING = 'leftover:read';
 
     public const ABILITY_RETAILER_SCRAPER = 'amazon:import';
+
+    public const ABILITY_TRANSACTION_IMPORT = 'transactions:import';
 
     public function pendingSpend(Request $request): Response
     {
@@ -46,6 +50,57 @@ class ApiTokenController extends Controller
         ]);
     }
 
+    public function transactionImport(Request $request): Response
+    {
+        $connection = $request->user()->tillerConnection;
+
+        return Inertia::render('ApiTokens/TransactionImport', [
+            'tokens' => $this->tokensForAbility($request->user(), self::ABILITY_TRANSACTION_IMPORT),
+            'endpoint' => url('/api/transactions/import'),
+            'plainTextToken' => $request->session()->pull('plainTextToken'),
+            'connection' => [
+                'callback_url' => $connection?->callback_url ?? '',
+                'webhook_secret' => $connection?->webhook_secret ?? '',
+            ],
+        ]);
+    }
+
+    public function updateTransactionImportConnection(UpdateTillerConnectionRequest $request): RedirectResponse
+    {
+        $connection = $request->user()->tillerConnection()->firstOrNew([
+            'user_id' => $request->user()->id,
+        ]);
+
+        $connection->callback_url = $request->validated('callback_url');
+
+        if (! is_string($connection->webhook_secret) || $connection->webhook_secret === '') {
+            $connection->webhook_secret = Str::random(40);
+        }
+
+        $connection->save();
+
+        return redirect()
+            ->route('api-tokens.transaction-import')
+            ->with('success', 'Tiller connection saved.');
+    }
+
+    public function regenerateTransactionImportSecret(Request $request): RedirectResponse
+    {
+        $connection = $request->user()->tillerConnection;
+
+        if ($connection === null) {
+            abort(404);
+        }
+
+        $connection->update([
+            'webhook_secret' => Str::random(40),
+        ]);
+
+        return redirect()
+            ->route('api-tokens.transaction-import')
+            ->with('success', 'Webhook secret regenerated. Paste the new value into the Apps Script.');
+    }
+
     public function storePendingSpend(Request $request): RedirectResponse
     {
         return $this->mintToken($request, self::ABILITY_PENDING_SPEND, 'api-tokens.pending-spend');
@@ -61,6 +116,11 @@ class ApiTokenController extends Controller
         return $this->mintToken($request, self::ABILITY_RETAILER_SCRAPER, 'api-tokens.retailer-scraper');
     }
 
+    public function storeTransactionImport(Request $request): RedirectResponse
+    {
+        return $this->mintToken($request, self::ABILITY_TRANSACTION_IMPORT, 'api-tokens.transaction-import');
+    }
+
     public function destroy(Request $request, int $token): RedirectResponse
     {
         $tokenModel = $request->user()->tokens()->whereKey($token)->first();
@@ -72,6 +132,7 @@ class ApiTokenController extends Controller
         $redirectRoute = match (true) {
             $tokenModel->can(self::ABILITY_RETAILER_SCRAPER) => 'api-tokens.retailer-scraper',
             $tokenModel->can(self::ABILITY_LEFTOVER_REPORTING) => 'api-tokens.leftover-reporting',
+            $tokenModel->can(self::ABILITY_TRANSACTION_IMPORT) => 'api-tokens.transaction-import',
             default => 'api-tokens.pending-spend',
         };
 

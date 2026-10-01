@@ -39,7 +39,7 @@ class ProcessImportBatch implements ShouldQueue
 
         $jobs = [];
 
-        if ($batch->source === 'bank' && $batch->type === 'transactions') {
+        if ($this->importsBankTransactions($batch)) {
             $jobs[] = new PairCreditCardPayments($batch->user_id);
             $jobs[] = new PairTransfers($batch->user_id);
             $jobs[] = new CategorizeTransactions($batch->user_id);
@@ -52,7 +52,7 @@ class ProcessImportBatch implements ShouldQueue
             new MatchVenmoActivities($batch->user_id),
         ];
 
-        if ($batch->source === 'bank' && $batch->type === 'transactions') {
+        if ($this->importsBankTransactions($batch)) {
             $jobs[] = new MatchPlannedOccurrences($batch->user_id);
         }
 
@@ -60,5 +60,11 @@ class ProcessImportBatch implements ShouldQueue
         $jobs[] = new RunReconciliation($batch->user_id);
 
         Bus::chain($jobs)->dispatch();
+    }
+
+    private function importsBankTransactions(ImportBatch $batch): bool
+    {
+        return in_array($batch->source, ['bank', 'tiller'], true)
+            && $batch->type === 'transactions';
     }
 }

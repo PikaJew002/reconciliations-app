@@ -35,7 +35,7 @@ class ImportBatchRevertService
         }
 
         DB::transaction(function () use ($batch): void {
-            if ($batch->source === 'bank' && $batch->type === 'transactions') {
+            if (in_array($batch->source, ['bank', 'tiller'], true) && $batch->type === 'transactions') {
                 $this->revertBankBatch($batch);
             } elseif ($batch->source === 'venmo' && $batch->type === 'activity') {
                 $this->revertVenmoBatch($batch);

@@ -83,6 +83,14 @@ Route::middleware('auth')->group(function () {
         ->name('api-tokens.retailer-scraper');
     Route::post('/api-tokens/retailer-scraper', [ApiTokenController::class, 'storeRetailerScraper'])
         ->name('api-tokens.retailer-scraper.store');
+    Route::get('/api-tokens/transaction-import', [ApiTokenController::class, 'transactionImport'])
+        ->name('api-tokens.transaction-import');
+    Route::post('/api-tokens/transaction-import', [ApiTokenController::class, 'storeTransactionImport'])
+        ->name('api-tokens.transaction-import.store');
+    Route::put('/api-tokens/transaction-import/connection', [ApiTokenController::class, 'updateTransactionImportConnection'])
+        ->name('api-tokens.transaction-import.connection.update');
+    Route::post('/api-tokens/transaction-import/connection/secret', [ApiTokenController::class, 'regenerateTransactionImportSecret'])
+        ->name('api-tokens.transaction-import.connection.secret');
     Route::delete('/api-tokens/{token}', [ApiTokenController::class, 'destroy'])
         ->whereNumber('token')
         ->name('api-tokens.destroy');
