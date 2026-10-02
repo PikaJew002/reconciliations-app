@@ -102,6 +102,7 @@ Route::middleware('auth')->group(function () {
         ->name('onboarding.tours.update');
 
     Route::get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
+    Route::post('/accounts/tiller-sync', [AccountController::class, 'syncTiller'])->name('accounts.tiller-sync');
     Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');
     Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
     Route::get('/accounts/{account}/edit', [AccountController::class, 'edit'])->name('accounts.edit');

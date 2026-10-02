@@ -8,12 +8,15 @@ use App\Http\Requests\Accounts\UpdateAccountRequest;
 use App\Jobs\RunReconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\TillerConnection;
 use App\Services\Accounts\AccountBrowseService;
+use App\Services\Imports\TillerSheetSync;
 use App\Services\Institutions\InstitutionRegistry;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class AccountController extends Controller
 {
@@ -129,5 +132,41 @@ class AccountController extends Controller
         return redirect()
             ->route('accounts.edit', $account)
             ->with('success', "Account \"{$account->name}\" updated.");
+    }
+
+    public function syncTiller(Request $request, TillerSheetSync $sync): RedirectResponse
+    {
+        $connection = $request->user()->tillerConnection;
+
+        if (! $connection instanceof TillerConnection || $connection->callback_url === '' || $connection->webhook_secret === '') {
+            return redirect()
+                ->route('accounts.index')
+                ->with('error', 'Save a Tiller callback URL before syncing the sheet.');
+        }
+
+        try {
+            $sent = $sync->pull($connection);
+        } catch (RuntimeException $exception) {
+            return redirect()
+                ->route('accounts.index')
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('accounts.index')
+            ->with('success', $this->tillerSyncMessage($sent));
+    }
+
+    private function tillerSyncMessage(int $sent): string
+    {
+        if ($sent === 0) {
+            return 'Tiller had no new transactions.';
+        }
+
+        if ($sent === 1) {
+            return 'Tiller sync sent 1 transaction.';
+        }
+
+        return "Tiller sync sent {$sent} transactions.";
     }
 }

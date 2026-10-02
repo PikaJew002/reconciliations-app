@@ -12,7 +12,7 @@ Most everyday card spend never gets a line-item order. Those transactions are cl
 
 - **Backend:** Laravel 13, PHP 8.5+
 - **Frontend:** Vue 3, Inertia.js, Tailwind CSS 4, Vite
-- **API:** Laravel Sanctum (Chrome extension and pending-spend clients)
+- **API:** Laravel Sanctum (Chrome extension, pending-spend clients, and the Tiller Apps Script)
 
 ## Getting Started
 
@@ -43,7 +43,7 @@ After login, the nav covers the working surface:
 | Page | What it is for |
 | --- | --- |
 | **Home** | Month or year-to-month income, bills, and expenses vs budget, plus the current paycheck leftover window |
-| **Accounts** | Checking, savings, and credit card accounts; CSV imports; per-account transaction lists |
+| **Accounts** | Checking, savings, and credit card accounts; CSV imports and Tiller sync; per-account transaction lists |
 | **Categories** | User-owned bill, expense, and income categories |
 | **Budgets** | Monthly limits on a 12-month budget year |
 | **Plans** | Recurring paychecks and bills, assigned to each other, then matched to posted transactions |
@@ -63,8 +63,21 @@ A first-run onboarding checklist walks through: add accounts → import bank his
 | **Walmart** | Order history CSV |
 | **Amazon** | Chrome extension scrape → `POST /api/amazon/import` |
 | **Venmo** | Activity CSV |
+| **Tiller** | Apps Script on the Tiller spreadsheet → `POST /api/transactions/import` |
 
 Each upload becomes an `ImportBatch`. After a successful import, a job chain pairs transfers, applies rules, matches merchants, links Venmo and pending spends, generates order components, and tries to match orders to bank charges.
+
+### Tiller auto-import
+
+The Tiller spreadsheet can push new bank lines instead of a CSV upload. `resources/AppScript/Code.gs` is the Apps Script behind that: a GET of its web app sends Transactions rows whose **Imported At** cell is blank, and a POST writes that timestamp after this app accepts the ids.
+
+1. Create each account with a last four that matches the sheet’s Account #.
+2. On **API tokens → Transaction import**, mint a Sanctum token with the `transactions:import` ability and save it as the `TRANSACTION_IMPORT_TOKEN` script property.
+3. Save the Apps Script `/exec` URL as the callback on that page, then copy the webhook secret into the `WEBHOOK_KEY` script property.
+
+**Sync Tiller sheet** on Accounts calls that web app. A row is kept when the account is already linked to that Tiller account id, or when exactly one account has a matching last four and is not linked yet. That first match stores the Tiller account id on the account. Other rows are ignored.
+
+Each linked account becomes its own `ImportBatch` (`source = tiller`). The stored description is the sheet’s full description. A line already on the account — same Tiller transaction id, or the same date, amount, and description — is not inserted again. A later institution CSV of the same purchase matches that row the same way. Capital One also uses the card last four. After the import jobs finish, this app posts those transaction ids back — including rows that were already present — so the sheet can fill Imported At. A failed account stays unmarked and can be sent again.
 
 ### Reconciliation
 
@@ -95,7 +108,7 @@ Everything below is scoped to a `User`.
 
 A real financial account you import into. Types: checking, savings, credit card, cash.
 
-Each account has a default classification (`bill` or `expense`) used as a hint when categorizing its spend. A system **Off-book** account holds gift-card, cash, and similar tenders that never hit a bank CSV.
+Each account has a default classification (`bill` or `expense`) used as a hint when categorizing its spend. A Tiller-linked account stores the sheet account id in `external_id`. A system **Off-book** account uses that same field (`system:off-book`) for gift-card, cash, and similar tenders that never hit a bank CSV.
 
 ```
 Account
@@ -106,7 +119,7 @@ Account
 
 ### ImportBatch
 
-One import operation: a bank CSV, a Walmart CSV, an Amazon scrape, or a Venmo activity file.
+One import operation: a bank CSV, a Tiller sync, a Walmart CSV, an Amazon scrape, or a Venmo activity file.
 
 ```
 ImportBatch
@@ -240,6 +253,7 @@ TransactionAllocation
 | `ReimbursementGroup` | Expense + reimbursement legs; closed remainder can hit a category |
 | `PlannedTemplate` / `PlannedOccurrence` | Recurring paycheck or bill, and each month’s expected instance |
 | `BudgetYear` / `BudgetCategoryLimit` | A 12-month budget period and per-category monthly amounts |
+| `TillerConnection` | Callback URL and webhook secret for the Tiller Apps Script |
 
 ## Reporting
 
