@@ -110,16 +110,37 @@ class TransactionImportApiTest extends TestCase
             ->assertJsonValidationErrors('transactions.0.amount');
     }
 
-    public function test_zero_amount_is_rejected(): void
+    public function test_zero_amounts_are_accepted(): void
     {
         Sanctum::actingAs(User::factory()->create(), [ApiTokenController::ABILITY_TRANSACTION_IMPORT]);
 
         $this->postJson(route('api.transactions.import'), [
-            'transactions' => [$this->transaction([
-                'amount' => '$0.00',
-            ])],
-        ])->assertUnprocessable()
-            ->assertJsonValidationErrors('transactions.0.amount');
+            'transactions' => [
+                $this->transaction([
+                    'amount' => '$0.00',
+                    'transaction_id' => 'zeroCurrency00',
+                ]),
+                $this->transaction([
+                    'amount' => '$0.0',
+                    'transaction_id' => 'zeroCurrency0',
+                ]),
+                $this->transaction([
+                    'amount' => '-$0.00',
+                    'transaction_id' => 'zeroNegativeCurrency',
+                ]),
+                $this->transaction([
+                    'amount' => 0,
+                    'transaction_id' => 'zeroInteger',
+                ]),
+                $this->transaction([
+                    'amount' => 0.0,
+                    'transaction_id' => 'zeroFloat',
+                ]),
+            ],
+        ])->assertOk()
+            ->assertJson([
+                'received' => 5,
+            ]);
     }
 
     public function test_duplicate_transaction_ids_are_rejected(): void

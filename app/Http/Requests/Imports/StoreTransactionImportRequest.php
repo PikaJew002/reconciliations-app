@@ -16,7 +16,7 @@ class StoreTransactionImportRequest extends FormRequest
     {
         $transactions = $this->input('transactions');
 
-        if (! is_array($transactions)) {
+        if (!is_array($transactions)) {
             return;
         }
 
@@ -30,7 +30,7 @@ class StoreTransactionImportRequest extends FormRequest
 
         $this->merge([
             'transactions' => array_map(function (mixed $transaction) use ($nullable): mixed {
-                if (! is_array($transaction)) {
+                if (!is_array($transaction)) {
                     return $transaction;
                 }
 
@@ -46,11 +46,11 @@ class StoreTransactionImportRequest extends FormRequest
                     }
                 }
 
-                if (array_key_exists('account_number', $transaction) && is_numeric($transaction['account_number']) && ! is_string($transaction['account_number'])) {
+                if (array_key_exists('account_number', $transaction) && is_numeric($transaction['account_number']) && !is_string($transaction['account_number'])) {
                     $transaction['account_number'] = (string) $transaction['account_number'];
                 }
 
-                if (array_key_exists('check_number', $transaction) && is_numeric($transaction['check_number']) && ! is_string($transaction['check_number'])) {
+                if (array_key_exists('check_number', $transaction) && is_numeric($transaction['check_number']) && !is_string($transaction['check_number'])) {
                     $transaction['check_number'] = (string) $transaction['check_number'];
                 }
 
@@ -93,23 +93,11 @@ class StoreTransactionImportRequest extends FormRequest
     {
         return function (string $attribute, mixed $value, Closure $fail): void {
             if (is_int($value) || is_float($value)) {
-                if ($value == 0.0) {
-                    $fail('The amount must not be zero.');
-                }
-
                 return;
             }
 
-            if (! is_string($value) || preg_match('/^-?\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?$/', $value) !== 1) {
+            if (!is_string($value) || preg_match('/^-?\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?$/', $value) !== 1) {
                 $fail('The amount must be a number or a currency amount like -$278.04.');
-
-                return;
-            }
-
-            $normalized = (float) str_replace([',', '$'], '', $value);
-
-            if ($normalized == 0.0) {
-                $fail('The amount must not be zero.');
             }
         };
     }
