@@ -19,7 +19,7 @@ Almost every record is scoped to a `User`.
 | Area | Routes | Purpose |
 | --- | --- | --- |
 | Dashboard | `/` | Month or year-to-month income / bills / expenses vs budget, plus current paycheck leftover |
-| Accounts | `/accounts` | Create accounts, import bank CSVs, browse posted lines |
+| Accounts | `/accounts` | Create accounts, import bank CSVs, sync the Tiller sheet, browse posted lines |
 | Categories | `/categories` | User-owned `bill`, `expense`, and `income` categories |
 | Budgets | `/budgets` | Monthly limits on a 12-month `BudgetYear` |
 | Plans | `/plans` | Recurring paychecks and bills; assign bills to a paycheck; match occurrences |
@@ -27,13 +27,14 @@ Almost every record is scoped to a `User`.
 | Orders | `/orders` | Walmart / Amazon imports, other merchants, product categorization |
 | Reconciliation | `/reconciliation/unmatched-transactions`, `/reconciliation/needs-review` | Classify, confirm suggestions, resolve payments, run the pipeline |
 | Venmo | `/venmo/imports` | Activity CSV import |
-| API tokens | `/api-tokens/pending-spend`, `/api-tokens/retailer-scraper` | Sanctum tokens for clients |
+| API tokens | `/api-tokens/pending-spend`, `/api-tokens/retailer-scraper`, `/api-tokens/transaction-import` | Sanctum tokens for clients |
 | Onboarding | checklist + tours | Add account → import bank → optionally import orders → categorize |
 
 External clients:
 
 - Chrome extension signs in at `/extension/auth` and posts Amazon scrapes to `POST /api/amazon/import` (`amazon:import` ability).
 - Pending-spend clients call `GET /api/pending-spends/options` and `POST /api/pending-spends` (`pending-spend:create` ability).
+- The Tiller Apps Script (`resources/AppScript/Code.gs`) posts unmarked sheet rows to `POST /api/transactions/import` (`transactions:import` ability). After import, this app posts accepted Tiller transaction ids back to the script’s web app so it can fill Imported At. **Sync Tiller sheet** on Accounts starts that pull.
 
 ---
 
@@ -46,6 +47,8 @@ Types: `checking`, `savings`, `credit_card`, `cash`.
 `default_classification` is `bill` or `expense` and is used as a hint when categorizing that account’s spend.
 
 A system **Off-book** account (`external_id = system:off-book`) is created as needed for gift cards, cash, Walmart balance, and other tenders that never appear on a bank CSV. Off-book accounts are excluded from “tracked” account lists and onboarding.
+
+`external_id` also stores a Tiller account id once that sheet account is linked. Linking happens on import: an existing `external_id` match, or exactly one tracked account whose `last_four` equals the sheet account number and whose `external_id` is still null. Off-book accounts are never linked. Zero or several last-four matches leave those rows out of the import.
 
 ```
 Account
@@ -65,6 +68,7 @@ Current sources:
 | `source` / `type` | Importer |
 | --- | --- |
 | `bank` / `transactions` | Institution-specific CSV importer from `InstitutionRegistry` |
+| `tiller` / `transactions` | `TillerTransactionImporter` |
 | `walmart` / `orders` | `WalmartOrderImporter` |
 | `amazon` / `orders` | `AmazonScrapeOrderImporter` |
 | `venmo` / `activity` | `VenmoActivityImporter` |
@@ -84,6 +88,20 @@ ImportBatch
 ```
 
 After a successful import, `ProcessImportBatch` chains follow-up jobs (transfers, categorization, merchant matching, Venmo, planned occurrences, pending spends, order matching). A user can also enqueue the full `RunUserReconciliationPipeline` from the reconciliation page.
+
+### Tiller
+
+`TillerConnection` stores one callback URL and an encrypted webhook secret per user. Both the pull and the callback append that secret as `?key=`. The Apps Script checks it against the `WEBHOOK_KEY` script property. The Sanctum token lives in `TRANSACTION_IMPORT_TOKEN`.
+
+`TillerSheetSync` GETs the web app. The script sends Transactions rows with a blank Imported At, 500 at a time. `POST /api/transactions/import` accepts up to 2,000 rows and responds with `{ received }`.
+
+`TillerImportStarter` groups rows with `TillerAccountLinker` and writes one pending `ImportBatch` per linked account. Batches from one request share `metadata.tiller_sync_id`. Unlinked rows create no batch.
+
+`ImportTillerTransactions` runs `ProcessImportBatch` for each pending batch in that sync, then `TillerSheetCallback` POSTs the acknowledged Tiller transaction ids from **completed** batches. The script stamps Imported At on those rows. A failed batch is left unmarked. Rows that already exist are still acknowledged, so the sheet does not send them again.
+
+`TillerTransactionImporter` stores `full_description` as the bank description and the raw sheet row in transaction `metadata`. `card_last_four` comes from a `C#1234` marker in the description, or from the account last four when the institution is Capital One. Identity goes through `BankTransactionIdentity`: the Tiller transaction id (`external_id`), or posted date + amount + description (and card last four when present). A CSV of the same purchase therefore inserts nothing, whether the CSV or the Tiller sync arrived first.
+
+Tiller batches use the same follow-up job chain as a bank CSV. Reverting one account’s batch leaves the other accounts from that sync in place.
 
 ---
 
@@ -449,7 +467,7 @@ BudgetCategoryLimit
 10. Auto-resolve orders that are entirely off-book
 11. Match remaining open orders to bank transactions
 
-A bank import runs a shorter chain of the same pieces. Order and Venmo imports skip the bank-only pairing/categorization/planned-occurrence steps.
+A bank or Tiller import runs a shorter chain of the same pieces. Order and Venmo imports skip the bank-only pairing/categorization/planned-occurrence steps.
 
 Needs-review holds suggested transfers, Venmo matches, and ambiguous rule or pending-spend hits for confirm/reject.
 

@@ -1,6 +1,6 @@
 <script setup>
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router, usePage } from '@inertiajs/vue3';
+    import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -22,6 +22,12 @@
 
     let page = usePage();
     let flashSuccess = computed(() => page.props.flash?.success);
+    let flashError = computed(() => page.props.flash?.error);
+    let tillerSyncForm = useForm({});
+
+    let syncTiller = () => {
+        tillerSyncForm.post('/accounts/tiller-sync');
+    };
 
     let search = ref(props.filters.q ?? '');
 
@@ -74,6 +80,14 @@
                 >
                     Import Venmo statement
                 </Link>
+                <button
+                    type="button"
+                    class="btn rounded border px-4 text-sm disabled:opacity-50"
+                    :disabled="tillerSyncForm.processing"
+                    @click="syncTiller"
+                >
+                    Sync Tiller sheet
+                </button>
             </div>
         </div>
 
@@ -82,6 +96,12 @@
             class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
         >
             {{ flashSuccess }}
+        </p>
+        <p
+            v-if="flashError"
+            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+            {{ flashError }}
         </p>
 
         <div v-if="bankCoverage" class="rounded border px-4 py-3 text-sm">
