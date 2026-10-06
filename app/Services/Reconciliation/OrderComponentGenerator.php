@@ -10,6 +10,7 @@ class OrderComponentGenerator
 {
     public function __construct(
         protected VacationWindowService $vacationWindows,
+        protected OrderTaxReconciler $taxReconciler,
     ) {}
 
     /**
@@ -84,6 +85,8 @@ class OrderComponentGenerator
         $this->createOrderLevelComponent($order, 'delivery', 'Delivery Fee', (float) $order->delivery_fee);
         $this->createOrderLevelComponent($order, 'tip', 'Driver Tip', (float) $order->tip);
         $this->createOrderLevelComponent($order, 'discount', 'Discount', -abs((float) $order->discount));
+
+        $this->taxReconciler->tryAutoClose($order);
 
         return true;
     }

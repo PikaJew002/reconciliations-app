@@ -10,6 +10,7 @@ use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Services\Plans\VacationWindowService;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
+use App\Services\Reconciliation\OrderTaxReconciler;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -27,6 +28,7 @@ class OrderBrowseService
     public function __construct(
         protected VacationWindowService $vacationWindows,
         protected OrderPaymentResolutionService $paymentResolution,
+        protected OrderTaxReconciler $taxReconciler,
         protected int $preCoverageLookbackDays = 10,
         protected int $listLimit = 50,
     ) {}
@@ -173,7 +175,8 @@ class OrderBrowseService
      *     components: list<array<string, mixed>>,
      *     categories: list<array{id: int, name: string, kind: string}>,
      *     can_delete: bool,
-     *     has_allocations: bool
+     *     has_allocations: bool,
+     *     tax_reconciliation: ?array<string, mixed>
      * }
      */
     public function detail(int $userId, string $merchantNormalized, int $orderId): array
@@ -205,6 +208,7 @@ class OrderBrowseService
                 $amount = (float) $component->amount;
                 $item = $component->orderItem;
                 $unallocated = ! $hasAllocations;
+                $showItemPrice = $component->type === 'product' && $item !== null;
 
                 return [
                     'id' => $component->id,
@@ -223,9 +227,9 @@ class OrderBrowseService
                     'can_refund' => $unallocated || $reconciled,
                     'can_delete' => $canEdit && $unallocated,
                     'order_item_id' => $component->order_item_id,
-                    'quantity' => $item !== null ? (float) $item->quantity : null,
-                    'unit_price' => $item !== null ? (float) $item->unit_price : null,
-                    'can_edit_quantity' => $canEdit && $item !== null && $unallocated,
+                    'quantity' => $showItemPrice ? (float) $item->quantity : null,
+                    'unit_price' => $showItemPrice ? (float) $item->unit_price : null,
+                    'can_edit_quantity' => $canEdit && $showItemPrice && $unallocated,
                 ];
             })
             ->values()
@@ -279,6 +283,7 @@ class OrderBrowseService
             'categories' => $this->categoriesForUser($userId),
             'can_delete' => true,
             'has_allocations' => $hasAllocations,
+            'tax_reconciliation' => $this->taxReconciler->present($order),
         ];
     }
 

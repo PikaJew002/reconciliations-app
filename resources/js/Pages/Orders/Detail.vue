@@ -3,7 +3,7 @@
     import OrderComponentRefundForm from '../../Components/Reconciliation/OrderComponentRefundForm.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
-    import { Link, router } from '@inertiajs/vue3';
+    import { Link, router, usePage } from '@inertiajs/vue3';
     import { computed, reactive, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -37,8 +37,15 @@
             type: Boolean,
             required: true,
         },
+        tax_reconciliation: {
+            type: Object,
+            default: null,
+        },
     });
 
+    let page = usePage();
+
+    let flashSuccess = computed(() => page.props.flash?.success);
     let deleting = ref(false);
     let closingAsGiftCard = ref(false);
     let componentForm = ref(null);
@@ -250,10 +257,164 @@
             },
         );
     };
+
+    let taxRate = ref('0.06000');
+    let taxSelected = reactive({});
+    let savingTax = ref(false);
+
+    function scaleTaxRate(rate) {
+        let text = String(rate ?? '').trim();
+
+        if (!/^\d+(\.\d+)?$/.test(text)) {
+            return null;
+        }
+
+        let [whole, fraction = ''] = text.split('.');
+        let fraction5 = (fraction + '00000').slice(0, 5);
+
+        return Number(whole) * 100000 + Number(fraction5);
+    }
+
+    function formatTaxFive(nanos) {
+        let negative = nanos < 0;
+        let absolute = Math.abs(nanos);
+        let scaled = Math.floor((absolute + 50) / 100);
+        let whole = Math.floor(scaled / 100000);
+        let fraction = String(scaled % 100000).padStart(5, '0');
+
+        return `${negative ? '-' : ''}${whole}.${fraction}`;
+    }
+
+    watch(
+        () => props.tax_reconciliation,
+        (tax) => {
+            if (tax == null) {
+                return;
+            }
+
+            taxRate.value = tax.rate;
+
+            for (let key of Object.keys(taxSelected)) {
+                delete taxSelected[key];
+            }
+
+            for (let line of tax.lines) {
+                taxSelected[line.id] = line.selected;
+            }
+        },
+        { immediate: true },
+    );
+
+    let taxRateScaled = computed(() => scaleTaxRate(taxRate.value));
+
+    let taxLines = computed(() => {
+        if (props.tax_reconciliation == null) {
+            return [];
+        }
+
+        return props.tax_reconciliation.lines.map((line) => ({
+            ...line,
+            checked: Boolean(taxSelected[line.id]),
+            line_tax:
+                taxRateScaled.value == null
+                    ? ''
+                    : formatTaxFive(line.price_cents * taxRateScaled.value),
+        }));
+    });
+
+    let selectedTaxCents = computed(() =>
+        taxLines.value
+            .filter((line) => line.checked)
+            .reduce((sum, line) => sum + line.price_cents, 0),
+    );
+
+    let rawTaxNanos = computed(() => {
+        if (taxRateScaled.value == null) {
+            return 0;
+        }
+
+        return selectedTaxCents.value * taxRateScaled.value;
+    });
+
+    let rawTaxTotal = computed(() => formatTaxFive(rawTaxNanos.value));
+
+    let roundedTaxCents = computed(() => {
+        if (taxRateScaled.value == null) {
+            return null;
+        }
+
+        return Math.floor(
+            (selectedTaxCents.value * taxRateScaled.value + 50000) / 100000,
+        );
+    });
+
+    let taxMatches = computed(
+        () =>
+            roundedTaxCents.value != null &&
+            props.tax_reconciliation != null &&
+            roundedTaxCents.value === props.tax_reconciliation.tax_cents,
+    );
+
+    let taxGap = computed(() => {
+        if (
+            roundedTaxCents.value == null ||
+            props.tax_reconciliation == null
+        ) {
+            return null;
+        }
+
+        return (
+            (roundedTaxCents.value - props.tax_reconciliation.tax_cents) / 100
+        );
+    });
+
+    let taxError = computed(() => {
+        let error = page.props.errors?.component_ids;
+
+        if (Array.isArray(error)) {
+            return error[0] ?? '';
+        }
+
+        return error ?? '';
+    });
+
+    function saveTaxReconciliation() {
+        if (
+            !taxMatches.value ||
+            savingTax.value ||
+            props.tax_reconciliation == null
+        ) {
+            return;
+        }
+
+        savingTax.value = true;
+
+        router.post(
+            `/reconciliation/orders/${props.order.id}/tax-reconciliation`,
+            {
+                rate: taxRate.value,
+                component_ids: taxLines.value
+                    .filter((line) => line.checked)
+                    .map((line) => line.id),
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    savingTax.value = false;
+                },
+            },
+        );
+    }
 </script>
 
 <template>
     <div class="space-y-6">
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
         <div>
             <p class="text-sm text-neutral-600">
                 <Link href="/orders" class="underline">Orders</Link>
@@ -463,6 +624,92 @@
                     </p>
                 </li>
             </ul>
+        </section>
+
+        <section v-if="tax_reconciliation" class="space-y-3">
+            <div>
+                <h2 class="text-base font-semibold">Sales tax</h2>
+                <p class="text-sm text-neutral-600">
+                    Uncheck lines that were not taxed. The total keeps three
+                    extra decimal places and rounds once. Save when that
+                    rounded total matches the order tax.
+                </p>
+            </div>
+            <label class="flex items-center gap-2 text-sm">
+                <span class="text-neutral-600">Rate</span>
+                <input
+                    v-model="taxRate"
+                    type="text"
+                    inputmode="decimal"
+                    class="w-32 rounded border px-2"
+                />
+            </label>
+            <ul class="divide-y rounded border text-sm">
+                <li
+                    v-for="line in taxLines"
+                    :key="line.id"
+                    class="flex items-start justify-between gap-4 px-4 py-3"
+                >
+                    <label class="flex items-start gap-3">
+                        <input
+                            v-model="taxSelected[line.id]"
+                            type="checkbox"
+                            class="mt-1"
+                        />
+                        <span>
+                            <span class="font-medium">{{ line.description }}</span>
+                            <span class="block text-neutral-600">
+                                {{ line.type }}
+                                <template v-if="line.tax_status === false">
+                                    · learned exempt
+                                </template>
+                                <template v-else-if="line.tax_status === true">
+                                    · learned taxable
+                                </template>
+                            </span>
+                        </span>
+                    </label>
+                    <span class="text-right">
+                        <span class="block font-medium">
+                            {{ formatMoney(line.price_cents / 100) }}
+                        </span>
+                        <span class="text-neutral-600">{{ line.line_tax }}</span>
+                    </span>
+                </li>
+            </ul>
+            <div class="space-y-1 text-sm">
+                <p>
+                    Raw total
+                    <span class="font-medium">{{ rawTaxTotal }}</span>
+                </p>
+                <p>
+                    Rounded
+                    <span class="font-medium">{{
+                        formatMoney((roundedTaxCents ?? 0) / 100)
+                    }}</span>
+                    · Order tax
+                    <span class="font-medium">{{
+                        formatMoney(tax_reconciliation.tax_cents / 100)
+                    }}</span>
+                </p>
+                <p :class="taxMatches ? 'text-green-800' : 'text-neutral-600'">
+                    <template v-if="taxMatches">
+                        Rounded total matches the order tax.
+                    </template>
+                    <template v-else-if="taxGap != null">
+                        Off by {{ formatMoney(taxGap) }}.
+                    </template>
+                </p>
+                <p v-if="taxError" class="text-red-700">{{ taxError }}</p>
+            </div>
+            <button
+                type="button"
+                class="btn rounded bg-brand px-3 text-white hover:bg-brand-hover disabled:opacity-50"
+                :disabled="!taxMatches || savingTax"
+                @click="saveTaxReconciliation"
+            >
+                {{ savingTax ? 'Saving…' : 'Save sales tax' }}
+            </button>
         </section>
 
         <section class="space-y-3">

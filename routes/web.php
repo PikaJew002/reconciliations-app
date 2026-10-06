@@ -28,6 +28,7 @@ use App\Http\Controllers\Reconciliation\OrderComponentController;
 use App\Http\Controllers\Reconciliation\OrderComponentRefundController;
 use App\Http\Controllers\Reconciliation\OrderItemController;
 use App\Http\Controllers\Reconciliation\OrderPaymentResolutionController;
+use App\Http\Controllers\Reconciliation\OrderTaxReconciliationController;
 use App\Http\Controllers\Reconciliation\OrderTotalController;
 use App\Http\Controllers\Reconciliation\ReconciliationController;
 use App\Http\Controllers\Reconciliation\ReimbursementGroupController;
@@ -239,6 +240,8 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.orders.components.destroy');
     Route::patch('/reconciliation/orders/{order}/items/{item}', [OrderItemController::class, 'update'])
         ->name('reconciliation.orders.items.update');
+    Route::post('/reconciliation/orders/{order}/tax-reconciliation', [OrderTaxReconciliationController::class, 'store'])
+        ->name('reconciliation.orders.tax-reconciliation');
     Route::post('/reconciliation/orders/{order}/resolve-payments', [OrderPaymentResolutionController::class, 'store'])
         ->name('reconciliation.orders.resolve-payments');
     Route::post('/reconciliation/orders/{order}/close-as-gift-card', [OrderPaymentResolutionController::class, 'closeAsGiftCard'])

@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password'])]
+#[Fillable(['name', 'email', 'password', 'sales_tax_rate'])]
 #[Hidden([
     'password',
     'remember_token',
@@ -40,6 +40,7 @@ class User extends Authenticatable
             'onboarding_tours' => 'array',
             'leftover_starts_on' => 'date',
             'leftover_carry_over' => 'decimal:2',
+            'sales_tax_rate' => 'decimal:5',
         ];
     }
 
