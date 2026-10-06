@@ -247,11 +247,8 @@ class WalmartOrderImporter implements Importer
             return 'card';
         }
 
-        // Bare "Ending in 1234" from Walmart is typically a gift card.
-        if ($lastFour !== null && preg_match('/^ending in \d{4}$/', $lower) === 1) {
-            return 'gift_card';
-        }
-
+        // Bare "Ending in 1234" is a card. Walmart uses that wording for real
+        // cards as well as gift cards, so gift card is a manual choice.
         if ($lastFour !== null) {
             return 'card';
         }

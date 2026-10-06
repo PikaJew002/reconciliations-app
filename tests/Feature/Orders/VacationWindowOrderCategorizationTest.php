@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Orders;
 
+use App\Models\Account;
+use App\Models\BankTransaction;
 use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\Merchant;
@@ -12,6 +14,7 @@ use App\Models\Product;
 use App\Models\User;
 use App\Models\VacationWindow;
 use App\Services\Reconciliation\OrderComponentGenerator;
+use App\Services\Reconciliation\ReconciliationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -83,6 +86,151 @@ class VacationWindowOrderCategorizationTest extends TestCase
                 ->where('type', 'product')
                 ->value('category_id'),
         );
+    }
+
+    public function test_vacation_walmart_charge_still_reconciles_without_categorizing_components(): void
+    {
+        $user = User::factory()->create();
+        VacationWindow::factory()->create([
+            'user_id' => $user->id,
+            'starts_on' => '2026-08-01',
+            'ends_on' => '2026-08-10',
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $account = Account::factory()->create();
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => $category->id,
+            'name' => 'Milk',
+            'normalized_name' => 'milk',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-LINK',
+            'ordered_at' => '2026-08-05 12:00:00',
+            'subtotal' => 12.50,
+            'tax' => 0,
+            'delivery_fee' => 0,
+            'tip' => 0,
+            'discount' => 0,
+            'total' => 12.50,
+            'payment_last_four' => '2195',
+            'status' => 'imported',
+        ]);
+        OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'description' => 'Milk gallon',
+            'quantity' => 1,
+            'unit_price' => 12.50,
+            'extended_price' => 12.50,
+        ]);
+
+        $this->assertTrue(app(OrderComponentGenerator::class)->generateForOrder($order));
+
+        $transaction = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $walmart->id,
+            'posted_at' => '2026-08-06',
+            'amount' => -12.50,
+            'card_last_four' => '2195',
+            'description' => 'WALMART',
+            'status' => 'unmatched',
+        ]);
+
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $this->assertSame(1, $matched);
+        $this->assertSame('matched', $transaction->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
+        $this->assertNull(
+            OrderComponent::query()
+                ->where('order_id', $order->id)
+                ->where('type', 'product')
+                ->value('category_id'),
+        );
+        $this->assertSame($category->id, $product->fresh()->category_id);
+
+        $this->actingAs($user)
+            ->get(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Detail')
+                ->where('order.status', 'reconciled')
+                ->where('order.can_edit', false)
+                ->where('order.in_vacation_window', true)
+                ->where('components.0.category', null)
+                ->where('components.0.category_id', null)
+                ->has('order.allocated_transactions', 1)
+                ->where('order.allocated_transactions.0.id', $transaction->id)
+                ->where('order.allocated_transactions.0.description', 'WALMART')
+                ->where('order.allocated_transactions.0.amount', -12.5)
+                ->where('order.allocated_transactions.0.status', 'matched')
+                ->where('order.allocated_transactions.0.tender_label', null)
+                ->has('categories', 1));
+    }
+
+    public function test_order_page_category_save_does_not_rewrite_product_inside_window(): void
+    {
+        $user = User::factory()->create();
+        VacationWindow::factory()->create([
+            'user_id' => $user->id,
+            'starts_on' => '2026-08-01',
+            'ends_on' => '2026-08-10',
+        ]);
+        $groceries = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $vacation = Category::factory()->for($user)->expense()->create(['name' => 'Vacation']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $product = Product::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'category_id' => $groceries->id,
+            'name' => 'Milk',
+            'normalized_name' => 'milk',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'import_batch_id' => $batch->id,
+            'ordered_at' => '2026-08-05 12:00:00',
+            'status' => 'reconciled',
+        ]);
+        $item = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]))
+            ->patch(route('reconciliation.orders.components.category.update', [$order, $component]), [
+                'category_id' => $vacation->id,
+            ])
+            ->assertRedirect(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]));
+
+        $this->assertSame($vacation->id, $component->fresh()->category_id);
+        $this->assertTrue($component->fresh()->is_user_modified);
+        $this->assertSame($groceries->id, $product->fresh()->category_id);
     }
 
     public function test_product_category_update_does_not_paint_vacation_window_components(): void
