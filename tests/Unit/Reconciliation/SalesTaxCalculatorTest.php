@@ -25,4 +25,18 @@ class SalesTaxCalculatorTest extends TestCase
             SalesTaxCalculator::lineNanos(8989, '0.06000'),
         ));
     }
+
+    public function test_quantity_is_applied_after_each_unit_is_rounded(): void
+    {
+        $this->assertSame(45, SalesTaxCalculator::roundedCents(744, '0.06000'));
+        $this->assertSame(90, SalesTaxCalculator::extendedTaxCents(744, '2.000', '0.06000'));
+        $this->assertSame(146, SalesTaxCalculator::extendedTaxCents(1214, 2, '0.06000'));
+        $this->assertSame(20, SalesTaxCalculator::extendedTaxCents(336, 1, '0.06000'));
+        $this->assertSame(30, SalesTaxCalculator::extendedTaxCents(497, 1, '0.06000'));
+        $this->assertSame(60, SalesTaxCalculator::extendedTaxCents(998, 1, '0.06000'));
+
+        $total = 90 + 146 + 20 + 30 + 60;
+
+        $this->assertSame(346, $total);
+    }
 }

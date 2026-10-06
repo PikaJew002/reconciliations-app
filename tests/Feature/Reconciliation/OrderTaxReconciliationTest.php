@@ -343,6 +343,30 @@ class OrderTaxReconciliationTest extends TestCase
         $this->assertNull($soap->fresh()->is_taxable);
     }
 
+    public function test_a_quantity_is_taxed_after_each_unit_is_rounded(): void
+    {
+        [$user, $merchant, $batch] = $this->walmartContext();
+        $chains = $this->product($user, $merchant, 'Pull chains', '333');
+        $order = $this->order($user, $merchant, $batch, '14.88', '0.90', '15.78');
+        $item = $this->item($order, $chains, 1, '14.88', 'Pull chains');
+        $item->update([
+            'quantity' => '2.000',
+            'unit_price' => '7.44',
+        ]);
+        $component = $this->productComponent($order, $item, null);
+        $this->lumpTax($order, '0.90');
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.orders.tax-reconciliation', $order), [
+                'rate' => '0.06000',
+                'component_ids' => [$component->id],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame('0.90', $order->components()->where('type', 'tax')->value('amount'));
+    }
+
     /**
      * @return array{0: User, 1: Merchant, 2: ImportBatch}
      */

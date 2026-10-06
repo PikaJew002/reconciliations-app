@@ -27,6 +27,8 @@ class OrderTaxReconciler
      *         type: string,
      *         description: string,
      *         price_cents: int,
+     *         unit_cents: int,
+     *         quantity_thousandths: int,
      *         tax_status: ?bool,
      *         selected: bool
      *     }>
@@ -47,11 +49,14 @@ class OrderTaxReconciler
 
         foreach ($this->candidates($order) as $component) {
             $status = $this->knownStatus($component, $rules);
+            [$unitCents, $quantity] = $this->taxBasis($component);
             $lines[] = [
                 'id' => $component->id,
                 'type' => $component->type,
                 'description' => $component->description,
                 'price_cents' => SalesTaxCalculator::cents($component->amount),
+                'unit_cents' => $unitCents,
+                'quantity_thousandths' => SalesTaxCalculator::scaleQuantity($quantity),
                 'tax_status' => $status,
                 'selected' => $status !== false,
             ];
@@ -233,11 +238,32 @@ class OrderTaxReconciler
         }
 
         $selected = $this->candidates($order)->whereIn('id', $selectedIds);
-        $priceCents = (int) $selected->sum(
-            fn (OrderComponent $component): int => SalesTaxCalculator::cents($component->amount),
+        $taxCents = (int) $selected->sum(
+            fn (OrderComponent $component): int => $this->componentTaxCents($component, $rate),
         );
 
-        return SalesTaxCalculator::roundedCents($priceCents, $rate) === SalesTaxCalculator::cents($lump->amount);
+        return $taxCents === SalesTaxCalculator::cents($lump->amount);
+    }
+
+    /**
+     * @return array{0: int, 1: string}
+     */
+    protected function taxBasis(OrderComponent $component): array
+    {
+        $item = $component->orderItem;
+
+        if ($component->type === 'product' && $item !== null && $item->unit_price !== null) {
+            return [SalesTaxCalculator::cents((string) $item->unit_price), (string) $item->quantity];
+        }
+
+        return [SalesTaxCalculator::cents($component->amount), '1'];
+    }
+
+    protected function componentTaxCents(OrderComponent $component, string|int|float $rate): int
+    {
+        [$unitCents, $quantity] = $this->taxBasis($component);
+
+        return SalesTaxCalculator::extendedTaxCents($unitCents, $quantity, $rate);
     }
 
     /**

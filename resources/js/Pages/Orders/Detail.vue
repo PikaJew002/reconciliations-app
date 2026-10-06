@@ -320,14 +320,29 @@
         return Number(whole) * 100000 + Number(fraction5);
     }
 
-    function formatTaxFive(nanos) {
-        let negative = nanos < 0;
-        let absolute = Math.abs(nanos);
-        let scaled = Math.floor((absolute + 50) / 100);
-        let whole = Math.floor(scaled / 100000);
-        let fraction = String(scaled % 100000).padStart(5, '0');
+    function unitTaxCents(unitCents, rateScaled) {
+        if (unitCents < 0) {
+            return -unitTaxCents(-unitCents, rateScaled);
+        }
 
-        return `${negative ? '-' : ''}${whole}.${fraction}`;
+        return Math.floor((unitCents * rateScaled + 50000) / 100000);
+    }
+
+    function lineTaxCents(line) {
+        if (taxRateScaled.value == null) {
+            return null;
+        }
+
+        let negative = line.unit_cents < 0;
+        let unit = unitTaxCents(
+            Math.abs(line.unit_cents),
+            taxRateScaled.value,
+        );
+        let cents = Math.floor(
+            (unit * line.quantity_thousandths + 500) / 1000,
+        );
+
+        return negative ? -cents : cents;
     }
 
     watch(
@@ -357,14 +372,16 @@
             return [];
         }
 
-        return props.tax_reconciliation.lines.map((line) => ({
-            ...line,
-            checked: Boolean(taxSelected[line.id]),
-            line_tax:
-                taxRateScaled.value == null
-                    ? ''
-                    : formatTaxFive(line.price_cents * taxRateScaled.value),
-        }));
+        return props.tax_reconciliation.lines.map((line) => {
+            let taxCents = lineTaxCents(line);
+
+            return {
+                ...line,
+                checked: Boolean(taxSelected[line.id]),
+                tax_cents: taxCents,
+                line_tax: taxCents == null ? '' : formatMoney(taxCents / 100),
+            };
+        });
     });
 
     function quantityForComponents(ids) {
@@ -408,6 +425,9 @@
                 (sum, line) => sum + line.price_cents,
                 0,
             );
+            let taxCents = members.every((line) => line.tax_cents == null)
+                ? null
+                : members.reduce((sum, line) => sum + (line.tax_cents ?? 0), 0);
 
             groups.push({
                 key: ids.join('-'),
@@ -417,10 +437,7 @@
                 tax_status: members[0].tax_status,
                 quantity: quantityForComponents(ids),
                 price_cents: priceCents,
-                line_tax:
-                    taxRateScaled.value == null
-                        ? ''
-                        : formatTaxFive(priceCents * taxRateScaled.value),
+                line_tax: taxCents == null ? '' : formatMoney(taxCents / 100),
             });
         }
 
@@ -470,30 +487,14 @@
         }
     }
 
-    let selectedTaxCents = computed(() =>
-        taxLines.value
-            .filter((line) => line.checked)
-            .reduce((sum, line) => sum + line.price_cents, 0),
-    );
-
-    let rawTaxNanos = computed(() => {
-        if (taxRateScaled.value == null) {
-            return 0;
-        }
-
-        return selectedTaxCents.value * taxRateScaled.value;
-    });
-
-    let rawTaxTotal = computed(() => formatTaxFive(rawTaxNanos.value));
-
     let roundedTaxCents = computed(() => {
         if (taxRateScaled.value == null) {
             return null;
         }
 
-        return Math.floor(
-            (selectedTaxCents.value * taxRateScaled.value + 50000) / 100000,
-        );
+        return taxLines.value
+            .filter((line) => line.checked)
+            .reduce((sum, line) => sum + line.tax_cents, 0);
     });
 
     let taxMatches = computed(
@@ -748,9 +749,9 @@
                 <h2 class="text-base font-semibold">Sales tax</h2>
                 <p class="text-sm text-neutral-600">
                     Uncheck lines that were not taxed. Repeated items show once
-                    with a quantity and count together. The total keeps three
-                    extra decimal places and rounds once. Save when that
-                    rounded total matches the order tax.
+                    with a quantity and count together. Each unit is rounded to
+                    the cent, then multiplied by its quantity. Save when that
+                    total matches the order tax.
                 </p>
             </div>
             <label class="flex items-center gap-2 text-sm">
@@ -801,11 +802,7 @@
             </ul>
             <div class="space-y-1 text-sm">
                 <p>
-                    Raw total
-                    <span class="font-medium">{{ rawTaxTotal }}</span>
-                </p>
-                <p>
-                    Rounded
+                    Tax
                     <span class="font-medium">{{
                         formatMoney((roundedTaxCents ?? 0) / 100)
                     }}</span>
@@ -816,7 +813,7 @@
                 </p>
                 <p :class="taxMatches ? 'text-green-800' : 'text-neutral-600'">
                     <template v-if="taxMatches">
-                        Rounded total matches the order tax.
+                        Tax total matches the order tax.
                     </template>
                     <template v-else-if="taxGap != null">
                         Off by {{ formatMoney(taxGap) }}.

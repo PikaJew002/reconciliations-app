@@ -56,6 +56,38 @@ class SalesTaxCalculator
         return intdiv($priceCents * $scaled + 50000, 100000);
     }
 
+    /**
+     * Quantity in thousandths, matching order item quantities stored to 3 decimals.
+     */
+    public static function scaleQuantity(string|int|float $quantity): int
+    {
+        $text = is_string($quantity) ? trim($quantity) : number_format((float) $quantity, 3, '.', '');
+
+        if (preg_match('/^(\d+)$/', $text, $whole) === 1) {
+            return ((int) $whole[1]) * 1000;
+        }
+
+        if (preg_match('/^(\d+)\.(\d+)$/', $text, $parts) !== 1) {
+            throw new InvalidArgumentException('Invalid quantity.');
+        }
+
+        $fraction = substr(str_pad($parts[2], 3, '0'), 0, 3);
+
+        return ((int) $parts[1]) * 1000 + (int) $fraction;
+    }
+
+    /**
+     * Round tax on one unit, then apply the quantity.
+     */
+    public static function extendedTaxCents(int $unitCents, string|int|float $quantity, string|int|float $rate): int
+    {
+        $negative = $unitCents < 0;
+        $unitTax = self::roundedCents(abs($unitCents), $rate);
+        $cents = intdiv($unitTax * self::scaleQuantity($quantity) + 500, 1000);
+
+        return $negative ? -$cents : $cents;
+    }
+
     public static function formatFiveDecimals(int $nanos): string
     {
         $negative = $nanos < 0;
