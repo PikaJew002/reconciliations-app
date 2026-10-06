@@ -106,6 +106,76 @@ class OrderTaxReconciler
     }
 
     /**
+     * Orders with no sales tax did not tax any line. Unknown products and fee
+     * rules on those orders become exempt. A status already saved as taxable
+     * stays taxable.
+     */
+    public function learnExemptFromUntaxedOrders(): int
+    {
+        $count = 0;
+
+        Order::query()
+            ->whereRaw('ABS(tax) < ?', [0.01])
+            ->orderBy('id')
+            ->each(function (Order $order) use (&$count): void {
+                if ($this->learnExemptFromUntaxedOrder($order)) {
+                    $count++;
+                }
+            });
+
+        return $count;
+    }
+
+    public function learnExemptFromUntaxedOrder(Order $order): bool
+    {
+        if (SalesTaxCalculator::cents((string) $order->tax) !== 0) {
+            return false;
+        }
+
+        $order->unsetRelation('components');
+        $order->load(['merchant', 'items.product', 'components']);
+
+        $lump = $this->lumpTax($order);
+
+        if ($lump !== null && SalesTaxCalculator::cents($lump->amount) !== 0) {
+            return false;
+        }
+
+        foreach ($order->items as $item) {
+            if ($item->taxable) {
+                $item->update(['taxable' => false]);
+            }
+
+            $linked = $this->productMatching->linkOrCreateForItem($item->fresh());
+            $product = $linked['product'] ?? $item->product;
+
+            if ($product !== null && $product->is_taxable === null) {
+                $product->update(['is_taxable' => false]);
+            }
+        }
+
+        if ($order->merchant_id !== null) {
+            foreach ($this->candidates($order) as $component) {
+                if (! in_array($component->type, ['delivery', 'fee'], true)) {
+                    continue;
+                }
+
+                ComponentTaxRule::query()->firstOrCreate(
+                    [
+                        'user_id' => $order->user_id,
+                        'merchant_id' => $order->merchant_id,
+                        'type' => $component->type,
+                        'normalized_description' => ComponentTaxRule::normalize($component->description),
+                    ],
+                    ['is_taxable' => false],
+                );
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * @param  list<int>  $selectedIds
      */
     public function apply(Order $order, User $user, string|int|float $rate, array $selectedIds, bool $manual = true): void

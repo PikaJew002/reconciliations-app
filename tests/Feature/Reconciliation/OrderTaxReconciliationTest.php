@@ -15,6 +15,7 @@ use App\Models\Product;
 use App\Models\TransactionAllocation;
 use App\Models\User;
 use App\Services\Reconciliation\OrderComponentGenerator;
+use App\Services\Reconciliation\OrderTaxReconciler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -277,6 +278,44 @@ class OrderTaxReconciliationTest extends TestCase
         ]);
         $this->assertSame('reconciled', $order->fresh()->status);
         $this->assertSame(0.6, $order->fresh()->allocated_amount);
+    }
+
+    public function test_untaxed_order_learns_unknown_items_as_exempt(): void
+    {
+        [$user, $merchant, $batch] = $this->walmartContext();
+        $taxable = $this->product($user, $merchant, 'Soap', '111', true);
+
+        $untaxed = $this->order($user, $merchant, $batch, '14.00', '0.00', '17.00', 'NO-TAX');
+        $untaxed->update(['delivery_fee' => 3]);
+        $untaxed->refresh();
+        $this->item($untaxed, null, 1, '10.00', 'Milk');
+        $this->item($untaxed, $taxable, 2, '4.00', 'Soap');
+
+        $this->assertTrue(app(OrderComponentGenerator::class)->generateForOrder($untaxed));
+
+        $milk = Product::query()->where('user_id', $user->id)->where('normalized_name', 'milk')->first();
+
+        $this->assertNotNull($milk);
+        $this->assertFalse($milk->is_taxable);
+        $this->assertTrue($taxable->fresh()->is_taxable);
+        $this->assertFalse((bool) OrderItem::query()->where('order_id', $untaxed->id)->where('description', 'Milk')->value('taxable'));
+        $this->assertFalse((bool) OrderItem::query()->where('order_id', $untaxed->id)->where('description', 'Soap')->value('taxable'));
+        $this->assertDatabaseHas('component_tax_rules', [
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'type' => 'delivery',
+            'normalized_description' => 'delivery fee',
+            'is_taxable' => false,
+        ]);
+
+        $alreadyBuilt = $this->order($user, $merchant, $batch, '6.00', '0.00', '6.00', 'NO-TAX-OLD');
+        $cereal = $this->product($user, $merchant, 'Cereal', '333');
+        $cerealItem = $this->item($alreadyBuilt, $cereal, 1, '6.00', 'Cereal');
+        $this->productComponent($alreadyBuilt, $cerealItem, null);
+
+        $this->assertFalse(app(OrderComponentGenerator::class)->generateForOrder($alreadyBuilt));
+        $this->assertSame(2, app(OrderTaxReconciler::class)->learnExemptFromUntaxedOrders());
+        $this->assertFalse($cereal->fresh()->is_taxable);
     }
 
     public function test_save_rejects_a_selection_that_does_not_match_the_tax(): void

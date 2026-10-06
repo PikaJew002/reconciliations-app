@@ -87,6 +87,7 @@ class OrderComponentGenerator
         $this->createOrderLevelComponent($order, 'discount', 'Discount', -abs((float) $order->discount));
 
         $this->taxReconciler->tryAutoClose($order);
+        $this->taxReconciler->learnExemptFromUntaxedOrder($order);
 
         return true;
     }
