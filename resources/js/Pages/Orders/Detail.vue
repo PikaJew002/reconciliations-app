@@ -25,6 +25,10 @@
             type: Array,
             required: true,
         },
+        component_rows: {
+            type: Array,
+            required: true,
+        },
         categories: {
             type: Array,
             default: () => [],
@@ -88,6 +92,18 @@
             }
 
             quantityForms[component.order_item_id] = Number(component.quantity);
+        }
+
+        for (let row of props.component_rows) {
+            if (
+                !row.can_edit_quantity ||
+                row.order_item_id == null ||
+                quantityForms[row.order_item_id] !== undefined
+            ) {
+                continue;
+            }
+
+            quantityForms[row.order_item_id] = Number(row.quantity);
         }
     }
 
@@ -153,31 +169,42 @@
         );
     }
 
-    function deleteComponent(component) {
-        if (!component.can_delete) {
+    function deleteComponent(row) {
+        if (!row.can_delete || row.component_ids.length === 0) {
             return;
+        }
+
+        let options = { preserveScroll: true };
+
+        if (row.component_ids.length > 1) {
+            options.data = { component_ids: row.component_ids };
         }
 
         router.delete(
-            `/reconciliation/orders/${props.order.id}/components/${component.id}`,
-            {
-                preserveScroll: true,
-            },
+            `/reconciliation/orders/${props.order.id}/components/${row.component_ids[0]}`,
+            options,
         );
     }
 
-    function saveComponentCategory(component) {
-        let categoryId = componentCategoryForms[component.id];
+    function saveComponentCategory(row) {
+        let primaryId = row.component_ids[0];
+        let categoryId = componentCategoryForms[primaryId];
 
-        if (!categoryId) {
+        if (!primaryId || !categoryId) {
             return;
         }
 
-        savingComponentCategoryKey.value = component.id;
+        savingComponentCategoryKey.value = primaryId;
+
+        let payload = { category_id: categoryId };
+
+        if (row.component_ids.length > 1) {
+            payload.component_ids = row.component_ids;
+        }
 
         router.patch(
-            `/reconciliation/orders/${props.order.id}/components/${component.id}/category`,
-            { category_id: categoryId },
+            `/reconciliation/orders/${props.order.id}/components/${primaryId}/category`,
+            payload,
             {
                 preserveScroll: true,
                 onFinish: () => {
@@ -187,8 +214,26 @@
         );
     }
 
+    function refundTarget(row) {
+        if (row.component_ids.length === 1) {
+            return (
+                props.components.find(
+                    (component) => component.id === row.component_ids[0],
+                ) ?? row
+            );
+        }
+
+        return {
+            id: row.component_ids[0],
+            amount: row.amount,
+            refund_amount: row.refund_amount,
+            refund_kind: row.refund_kind,
+            can_refund: row.can_refund,
+        };
+    }
+
     watch(
-        () => [props.order, props.components],
+        () => [props.order, props.components, props.component_rows],
         () => syncComponentForms(),
         { immediate: true },
     );
@@ -321,6 +366,109 @@
                     : formatTaxFive(line.price_cents * taxRateScaled.value),
         }));
     });
+
+    function quantityForComponents(ids) {
+        let seenItems = new Set();
+        let total = 0;
+        let any = false;
+
+        for (let component of props.components) {
+            if (!ids.includes(component.id) || component.quantity == null) {
+                continue;
+            }
+
+            if (component.order_item_id != null) {
+                if (seenItems.has(component.order_item_id)) {
+                    continue;
+                }
+
+                seenItems.add(component.order_item_id);
+            }
+
+            total += Number(component.quantity);
+            any = true;
+        }
+
+        return any ? total : null;
+    }
+
+    let taxGroups = computed(() => {
+        let lines = taxLines.value;
+        let lineById = new Map(lines.map((line) => [line.id, line]));
+        let claimed = new Set();
+        let groups = [];
+
+        function pushGroup(members) {
+            if (members.length === 0) {
+                return;
+            }
+
+            let ids = members.map((line) => line.id);
+            let priceCents = members.reduce(
+                (sum, line) => sum + line.price_cents,
+                0,
+            );
+
+            groups.push({
+                key: ids.join('-'),
+                ids,
+                description: members[0].description,
+                type: members[0].type,
+                tax_status: members[0].tax_status,
+                quantity: quantityForComponents(ids),
+                price_cents: priceCents,
+                line_tax:
+                    taxRateScaled.value == null
+                        ? ''
+                        : formatTaxFive(priceCents * taxRateScaled.value),
+            });
+        }
+
+        for (let row of props.component_rows) {
+            let members = row.component_ids
+                .map((id) => lineById.get(id))
+                .filter((line) => line != null);
+
+            if (members.length === 0) {
+                continue;
+            }
+
+            let byStatus = new Map();
+
+            for (let member of members) {
+                claimed.add(member.id);
+                let statusKey = String(member.tax_status);
+
+                if (!byStatus.has(statusKey)) {
+                    byStatus.set(statusKey, []);
+                }
+
+                byStatus.get(statusKey).push(member);
+            }
+
+            for (let groupMembers of byStatus.values()) {
+                pushGroup(groupMembers);
+            }
+        }
+
+        for (let line of lines) {
+            if (!claimed.has(line.id)) {
+                pushGroup([line]);
+            }
+        }
+
+        return groups;
+    });
+
+    function taxGroupChecked(group) {
+        return group.ids.every((id) => taxSelected[id]);
+    }
+
+    function setTaxGroup(group, checked) {
+        for (let id of group.ids) {
+            taxSelected[id] = checked;
+        }
+    }
 
     let selectedTaxCents = computed(() =>
         taxLines.value
@@ -595,42 +743,12 @@
             </ul>
         </section>
 
-        <section class="space-y-3">
-            <div>
-                <h2 class="text-base font-semibold">Items</h2>
-                <p class="text-sm text-neutral-600">
-                    Product lines imported from {{ merchant.name }}.
-                </p>
-            </div>
-            <p v-if="items.length === 0" class="text-sm text-neutral-600">
-                No items on this order.
-            </p>
-            <ul v-else class="divide-y rounded border text-sm">
-                <li
-                    v-for="item in items"
-                    :key="item.id"
-                    class="flex items-start justify-between gap-4 px-4 py-3"
-                >
-                    <div>
-                        <p class="font-medium">{{ item.description }}</p>
-                        <p class="text-neutral-600">
-                            <template v-if="item.sku">{{ item.sku }} · </template>
-                            Qty {{ formatQuantity(item.quantity) }}
-                            · {{ formatMoney(item.unit_price) }}/ea
-                        </p>
-                    </div>
-                    <p class="font-medium">
-                        {{ formatMoney(item.extended_price) }}
-                    </p>
-                </li>
-            </ul>
-        </section>
-
         <section v-if="tax_reconciliation" class="space-y-3">
             <div>
                 <h2 class="text-base font-semibold">Sales tax</h2>
                 <p class="text-sm text-neutral-600">
-                    Uncheck lines that were not taxed. The total keeps three
+                    Uncheck lines that were not taxed. Repeated items show once
+                    with a quantity and count together. The total keeps three
                     extra decimal places and rounds once. Save when that
                     rounded total matches the order tax.
                 </p>
@@ -646,24 +764,28 @@
             </label>
             <ul class="divide-y rounded border text-sm">
                 <li
-                    v-for="line in taxLines"
-                    :key="line.id"
+                    v-for="group in taxGroups"
+                    :key="group.key"
                     class="flex items-start justify-between gap-4 px-4 py-3"
                 >
                     <label class="flex items-start gap-3">
                         <input
-                            v-model="taxSelected[line.id]"
                             type="checkbox"
                             class="mt-1"
+                            :checked="taxGroupChecked(group)"
+                            @change="setTaxGroup(group, $event.target.checked)"
                         />
                         <span>
-                            <span class="font-medium">{{ line.description }}</span>
+                            <span class="font-medium">{{ group.description }}</span>
                             <span class="block text-neutral-600">
-                                {{ line.type }}
-                                <template v-if="line.tax_status === false">
+                                {{ group.type }}
+                                <template v-if="group.quantity != null">
+                                    · Qty {{ formatQuantity(group.quantity) }}
+                                </template>
+                                <template v-if="group.tax_status === false">
                                     · learned exempt
                                 </template>
-                                <template v-else-if="line.tax_status === true">
+                                <template v-else-if="group.tax_status === true">
                                     · learned taxable
                                 </template>
                             </span>
@@ -671,9 +793,9 @@
                     </label>
                     <span class="text-right">
                         <span class="block font-medium">
-                            {{ formatMoney(line.price_cents / 100) }}
+                            {{ formatMoney(group.price_cents / 100) }}
                         </span>
-                        <span class="text-neutral-600">{{ line.line_tax }}</span>
+                        <span class="text-neutral-600">{{ group.line_tax }}</span>
                     </span>
                 </li>
             </ul>
@@ -716,46 +838,62 @@
             <div>
                 <h2 class="text-base font-semibold">Components</h2>
                 <p class="text-sm text-neutral-600">
-                    Reconciliation breakdown: product lines plus tax, delivery,
-                    tip, and discount. Edit a quantity, assign a category, mark
-                    a refund, or add a missing fee here.
+                    Imported product lines, plus tax, delivery, tip, and
+                    discount. The same item shows once with its quantity. Edit
+                    a quantity, assign a category, mark a refund, or add a
+                    missing fee here.
                     <template v-if="!order.components_balanced">
                         Sum {{ formatMoney(order.component_sum) }} vs bank total
                         {{ formatMoney(order.total) }}.
                     </template>
                 </p>
             </div>
-            <p v-if="components.length === 0" class="text-sm text-neutral-600">
+            <p
+                v-if="component_rows.length === 0"
+                class="text-sm text-neutral-600"
+            >
                 No components generated yet.
             </p>
             <ul v-else class="divide-y rounded border text-sm">
                 <li
-                    v-for="component in components"
-                    :key="component.id"
+                    v-for="row in component_rows"
+                    :key="row.key"
                     class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between"
                 >
                     <div>
-                        <p class="font-medium">{{ component.description }}</p>
+                        <p class="font-medium">{{ row.description }}</p>
                         <p class="text-neutral-600">
-                            {{ component.type }}
+                            {{ row.type }}
                             ·
-                            {{
-                                component.category?.name || 'Uncategorized'
-                            }}
-                            <template v-if="component.unit_price != null">
-                                · {{ formatMoney(component.unit_price) }}/ea
+                            {{ row.category?.name || 'Uncategorized' }}
+                            <template v-if="row.sku"> · {{ row.sku }}</template>
+                            <template
+                                v-if="
+                                    row.quantity != null &&
+                                    !row.can_edit_quantity
+                                "
+                            >
+                                · Qty {{ formatQuantity(row.quantity) }}
                             </template>
-                            <template v-if="component.is_user_modified">
+                            <template v-if="row.unit_price != null">
+                                · {{ formatMoney(row.unit_price) }}/ea
+                            </template>
+                            <template v-if="row.component_ids.length === 0">
+                                · not included in the component total
+                            </template>
+                            <template v-if="row.is_user_modified">
                                 · manual
                             </template>
-                            · {{ allocationLabel(component) }}
+                            <template v-if="row.component_ids.length > 0">
+                                · {{ allocationLabel(row) }}
+                            </template>
                         </p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         <form
-                            v-if="component.can_edit_quantity"
+                            v-if="row.can_edit_quantity"
                             class="flex items-center gap-2"
-                            @submit.prevent="updateItemQuantity(component)"
+                            @submit.prevent="updateItemQuantity(row)"
                         >
                             <label
                                 class="flex items-center gap-1.5 text-neutral-600"
@@ -763,7 +901,7 @@
                                 <span>Qty</span>
                                 <input
                                     v-model.number="
-                                        quantityForms[component.order_item_id]
+                                        quantityForms[row.order_item_id]
                                     "
                                     type="number"
                                     min="0.001"
@@ -776,19 +914,24 @@
                                 type="submit"
                                 class="text-xs text-neutral-800 underline disabled:opacity-50"
                                 :disabled="
-                                    savingQuantityKey === component.order_item_id
+                                    savingQuantityKey === row.order_item_id
                                 "
                             >
                                 Update
                             </button>
                         </form>
                         <form
-                            v-if="expenseCategories.length > 0"
+                            v-if="
+                                expenseCategories.length > 0 &&
+                                row.component_ids.length > 0
+                            "
                             class="flex items-center gap-2"
-                            @submit.prevent="saveComponentCategory(component)"
+                            @submit.prevent="saveComponentCategory(row)"
                         >
                             <select
-                                v-model="componentCategoryForms[component.id]"
+                                v-model="
+                                    componentCategoryForms[row.component_ids[0]]
+                                "
                                 class="rounded border px-2 text-xs"
                             >
                                 <option disabled value="">Category</option>
@@ -805,25 +948,33 @@
                                 class="text-xs text-neutral-800 underline disabled:opacity-50"
                                 :disabled="
                                     savingComponentCategoryKey ===
-                                        component.id ||
-                                    !componentCategoryForms[component.id]
+                                        row.component_ids[0] ||
+                                    !componentCategoryForms[
+                                        row.component_ids[0]
+                                    ]
                                 "
                             >
                                 Save
                             </button>
                         </form>
                         <OrderComponentRefundForm
+                            v-if="row.component_ids.length > 0"
                             :order-id="order.id"
-                            :component="component"
+                            :component="refundTarget(row)"
+                            :component-ids="
+                                row.component_ids.length > 1
+                                    ? row.component_ids
+                                    : []
+                            "
                         />
                         <p class="font-medium">
-                            {{ formatMoney(component.amount) }}
+                            {{ formatMoney(row.amount) }}
                         </p>
                         <button
-                            v-if="component.can_delete"
+                            v-if="row.can_delete"
                             type="button"
                             class="text-xs text-red-700 underline"
-                            @click="deleteComponent(component)"
+                            @click="deleteComponent(row)"
                         >
                             Remove
                         </button>

@@ -29,6 +29,7 @@ class OrderBrowseService
         protected VacationWindowService $vacationWindows,
         protected OrderPaymentResolutionService $paymentResolution,
         protected OrderTaxReconciler $taxReconciler,
+        protected OrderComponentDisplayGrouper $componentRows,
         protected int $preCoverageLookbackDays = 10,
         protected int $listLimit = 50,
     ) {}
@@ -173,6 +174,7 @@ class OrderBrowseService
      *     order: array<string, mixed>,
      *     items: list<array<string, mixed>>,
      *     components: list<array<string, mixed>>,
+     *     component_rows: list<array<string, mixed>>,
      *     categories: list<array{id: int, name: string, kind: string}>,
      *     can_delete: bool,
      *     has_allocations: bool,
@@ -239,6 +241,18 @@ class OrderBrowseService
             fn (OrderComponent $component): bool => $component->allocations->isNotEmpty(),
         );
 
+        $items = $order->items
+            ->map(fn (OrderItem $item): array => [
+                'id' => $item->id,
+                'description' => $item->description,
+                'sku' => $item->sku,
+                'quantity' => (float) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+                'extended_price' => (float) $item->extended_price,
+            ])
+            ->values()
+            ->all();
+
         $balance = $this->componentBalance(
             (float) $order->total,
             $order->payableComponentSum(),
@@ -268,18 +282,9 @@ class OrderBrowseService
                 'allocated_transactions' => $this->allocatedTransactions($order),
                 ...$balance,
             ],
-            'items' => $order->items
-                ->map(fn (OrderItem $item): array => [
-                    'id' => $item->id,
-                    'description' => $item->description,
-                    'sku' => $item->sku,
-                    'quantity' => (float) $item->quantity,
-                    'unit_price' => (float) $item->unit_price,
-                    'extended_price' => (float) $item->extended_price,
-                ])
-                ->values()
-                ->all(),
+            'items' => $items,
             'components' => $components,
+            'component_rows' => $this->componentRows->rows($components, $items, $canEdit),
             'categories' => $this->categoriesForUser($userId),
             'can_delete' => true,
             'has_allocations' => $hasAllocations,

@@ -97,6 +97,96 @@ class OrderRefundTest extends TestCase
         $this->assertSame('80.00', $order->imported_total);
     }
 
+    public function test_grouped_refund_splits_across_the_selected_components(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+            'total' => 6.31,
+        ]);
+        $first = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+        ]);
+        $second = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+        ]);
+        $third = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+        ]);
+        $milk = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Milk',
+            'amount' => 4,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.components.refund.update', [$order, $first]), [
+                'refund_amount' => 2.31,
+                'refund_kind' => 'bank',
+                'component_ids' => [$first->id, $second->id, $third->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('0.77', $first->fresh()->refund_amount);
+        $this->assertSame('0.77', $second->fresh()->refund_amount);
+        $this->assertSame('0.77', $third->fresh()->refund_amount);
+        $this->assertSame('bank', $first->fresh()->refund_kind);
+        $this->assertNull($milk->fresh()->refund_amount);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.components.refund.destroy', [$order, $first]), [
+                'component_ids' => [$first->id, $second->id, $third->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($first->fresh()->refund_amount);
+        $this->assertNull($second->fresh()->refund_kind);
+        $this->assertNull($third->fresh()->refund_amount);
+    }
+
+    public function test_refund_above_a_grouped_total_lands_on_the_last_component(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+        ]);
+        $first = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'amount' => 1,
+        ]);
+        $second = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'amount' => 1,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.components.refund.update', [$order, $first]), [
+                'refund_amount' => 2.50,
+                'refund_kind' => 'bank',
+                'component_ids' => [$first->id, $second->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame('1.00', $first->fresh()->refund_amount);
+        $this->assertSame('1.50', $second->fresh()->refund_amount);
+    }
+
     public function test_refund_can_be_cleared(): void
     {
         [$user, $order, $item] = $this->refundableOrder();

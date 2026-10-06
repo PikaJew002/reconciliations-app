@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Reconciliation\StoreOrderComponentRequest;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Services\Orders\OrderComponentSelection;
 use App\Services\Orders\OrderRemovalService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,15 +42,22 @@ class OrderComponentController extends Controller
         Order $order,
         OrderComponent $component,
         OrderRemovalService $removal,
+        OrderComponentSelection $selection,
     ): RedirectResponse {
         abort_unless($order->user_id === $request->user()->id, 403);
         abort_unless($component->order_id === $order->id, 404);
 
-        $component->loadMissing('allocations');
-        $transactionIds = $component->allocations->pluck('bank_transaction_id');
+        $components = $selection->resolve($request, $order, $component);
+        $components->load('allocations');
+        $transactionIds = $components->flatMap(
+            fn (OrderComponent $row) => $row->allocations->pluck('bank_transaction_id'),
+        );
 
-        DB::transaction(function () use ($order, $component, $transactionIds, $removal): void {
-            $component->delete();
+        DB::transaction(function () use ($order, $components, $transactionIds, $removal): void {
+            foreach ($components as $row) {
+                $row->delete();
+            }
+
             $removal->reopenIfUnbalanced($order);
             $removal->refreshTransactionsAfterLineRemoval($transactionIds);
         });
