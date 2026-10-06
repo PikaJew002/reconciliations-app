@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -27,11 +28,22 @@ class Product extends Model
     ];
 
     protected $casts = [
-        'is_taxable' => 'boolean',
         'category_confidence' => 'decimal:2',
         'is_user_modified' => 'boolean',
         'metadata' => 'array',
     ];
+
+    /**
+     * Null means the tax status has not been learned.
+     * The boolean cast would turn that null into false.
+     */
+    protected function isTaxable(): Attribute
+    {
+        return Attribute::make(
+            get: fn (mixed $value): ?bool => $value === null ? null : (bool) $value,
+            set: fn (mixed $value): ?int => $value === null ? null : ($value ? 1 : 0),
+        );
+    }
 
     public function user()
     {

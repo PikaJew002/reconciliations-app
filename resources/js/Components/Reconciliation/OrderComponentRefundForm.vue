@@ -12,6 +12,10 @@
             type: Object,
             required: true,
         },
+        componentIds: {
+            type: Array,
+            default: () => [],
+        },
     });
 
     let editing = ref(false);
@@ -39,6 +43,16 @@
         return kind === 'off_book' ? 'store credit' : 'bank credit';
     }
 
+    function refundPayload(extra) {
+        let payload = { ...extra };
+
+        if (props.componentIds.length > 1) {
+            payload.component_ids = props.componentIds;
+        }
+
+        return payload;
+    }
+
     function saveRefund() {
         if (!props.component.can_refund || saving.value) {
             return;
@@ -48,10 +62,10 @@
 
         router.patch(
             `/reconciliation/orders/${props.orderId}/components/${props.component.id}/refund`,
-            {
+            refundPayload({
                 refund_amount: refundAmount.value,
                 refund_kind: refundKind.value,
-            },
+            }),
             {
                 preserveScroll: true,
                 onSuccess: () => {
@@ -71,17 +85,23 @@
 
         saving.value = true;
 
+        let options = {
+            preserveScroll: true,
+            onSuccess: () => {
+                editing.value = false;
+            },
+            onFinish: () => {
+                saving.value = false;
+            },
+        };
+
+        if (props.componentIds.length > 1) {
+            options.data = { component_ids: props.componentIds };
+        }
+
         router.delete(
             `/reconciliation/orders/${props.orderId}/components/${props.component.id}/refund`,
-            {
-                preserveScroll: true,
-                onSuccess: () => {
-                    editing.value = false;
-                },
-                onFinish: () => {
-                    saving.value = false;
-                },
-            },
+            options,
         );
     }
 </script>

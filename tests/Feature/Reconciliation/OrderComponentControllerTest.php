@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Reconciliation;
 
+use App\Models\Category;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
@@ -127,5 +128,115 @@ class OrderComponentControllerTest extends TestCase
                 'amount' => 1,
             ])
             ->assertForbidden();
+    }
+
+    public function test_deleting_a_grouped_row_removes_only_the_selected_components(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+        ]);
+        $first = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+        ]);
+        $second = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+        ]);
+        $kept = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Milk',
+            'amount' => 4,
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.components.destroy', [$order, $first]), [
+                'component_ids' => [$first->id, $second->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseMissing('order_components', ['id' => $first->id]);
+        $this->assertDatabaseMissing('order_components', ['id' => $second->id]);
+        $this->assertDatabaseHas('order_components', ['id' => $kept->id]);
+    }
+
+    public function test_grouped_delete_rejects_a_component_from_another_order(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+        ]);
+        $other = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+        ]);
+        $first = OrderComponent::factory()->create(['order_id' => $order->id]);
+        $foreign = OrderComponent::factory()->create(['order_id' => $other->id]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.components.destroy', [$order, $first]), [
+                'component_ids' => [$first->id, $foreign->id],
+            ])
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('order_components', ['id' => $first->id]);
+        $this->assertDatabaseHas('order_components', ['id' => $foreign->id]);
+    }
+
+    public function test_category_save_can_update_every_component_in_a_grouped_row(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $category = Category::factory()->expense()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'imported',
+        ]);
+        $first = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+            'category_id' => null,
+        ]);
+        $second = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Seasoning',
+            'amount' => 0.77,
+            'category_id' => null,
+        ]);
+        $milk = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Milk',
+            'amount' => 4,
+            'category_id' => null,
+        ]);
+
+        $this->actingAs($user)
+            ->patch(route('reconciliation.orders.components.category.update', [$order, $first]), [
+                'category_id' => $category->id,
+                'component_ids' => [$first->id, $second->id],
+            ])
+            ->assertRedirect();
+
+        $this->assertSame($category->id, $first->fresh()->category_id);
+        $this->assertSame($category->id, $second->fresh()->category_id);
+        $this->assertNull($milk->fresh()->category_id);
     }
 }

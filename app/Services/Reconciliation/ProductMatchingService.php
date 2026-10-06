@@ -147,7 +147,7 @@ class ProductMatchingService
             'name' => $item->description,
             'normalized_name' => $normalizedName,
             'sku' => $sku,
-            'is_taxable' => (bool) $item->taxable,
+            'is_taxable' => null,
             'category_confidence' => null,
             'is_user_modified' => false,
             'metadata' => [],

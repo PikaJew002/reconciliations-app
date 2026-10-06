@@ -199,11 +199,108 @@ class OrderDetailTest extends TestCase
                 ->where('components.1.can_edit_quantity', false)
                 ->where('components.1.can_delete', true)
                 ->where('components.1.description', 'Sales Tax')
+                ->has('component_rows', 2)
+                ->where('component_rows.0.component_ids.0', $productComponent->id)
+                ->where('component_rows.0.quantity', 1)
+                ->where('component_rows.0.sku', 'B0B6R34RD4')
+                ->where('component_rows.0.can_edit_quantity', true)
+                ->where('component_rows.1.type', 'tax')
+                ->where('component_rows.1.quantity', null)
                 ->where('order.in_vacation_window', false)
                 ->has('order.allocated_transactions', 0)
                 ->has('categories', 1)
                 ->where('categories.0.name', 'Household')
                 ->where('categories.0.kind', 'expense'));
+    }
+
+    public function test_detail_collapses_duplicate_products_without_merging_tax_lines(): void
+    {
+        $user = User::factory()->create();
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'order_number' => 'WM-DUPES',
+            'subtotal' => 6.31,
+            'tax' => 0.38,
+            'total' => 6.69,
+            'status' => 'imported',
+        ]);
+
+        foreach ([1, 2, 3] as $line) {
+            $item = OrderItem::factory()->create([
+                'order_id' => $order->id,
+                'product_id' => null,
+                'line_number' => $line,
+                'sku' => '149215159',
+                'description' => 'Great Value Fajita Seasoning Mix, 1.25 oz',
+                'quantity' => 1,
+                'unit_price' => 0.77,
+                'extended_price' => 0.77,
+            ]);
+
+            OrderComponent::factory()->create([
+                'order_id' => $order->id,
+                'order_item_id' => $item->id,
+                'type' => 'product',
+                'description' => 'Great Value Fajita Seasoning Mix, 1.25 oz',
+                'amount' => 0.77,
+                'category_id' => null,
+            ]);
+        }
+
+        $milk = OrderItem::factory()->create([
+            'order_id' => $order->id,
+            'product_id' => null,
+            'line_number' => 4,
+            'sku' => '10450114',
+            'description' => 'Milk',
+            'quantity' => 1,
+            'unit_price' => 4,
+            'extended_price' => 4,
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $milk->id,
+            'type' => 'product',
+            'description' => 'Milk',
+            'amount' => 4,
+            'category_id' => null,
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tax',
+            'description' => 'Sales Tax',
+            'amount' => 0.38,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('items', 4)
+                ->has('components', 5)
+                ->has('tax_reconciliation.lines', 4)
+                ->has('component_rows', 3)
+                ->where('component_rows.0.description', 'Great Value Fajita Seasoning Mix, 1.25 oz')
+                ->where('component_rows.0.quantity', 3)
+                ->where('component_rows.0.amount', 2.31)
+                ->where('component_rows.0.sku', '149215159')
+                ->where('component_rows.0.unit_price', 0.77)
+                ->where('component_rows.0.can_edit_quantity', false)
+                ->has('component_rows.0.component_ids', 3)
+                ->where('component_rows.1.description', 'Milk')
+                ->where('component_rows.1.quantity', 1)
+                ->where('component_rows.1.can_edit_quantity', true)
+                ->where('component_rows.2.type', 'tax')
+                ->where('component_rows.2.description', 'Sales Tax'));
     }
 
     public function test_detail_lists_allocated_charges_once_and_labels_non_bank_tenders(): void

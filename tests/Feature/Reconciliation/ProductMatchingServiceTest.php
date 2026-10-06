@@ -72,7 +72,9 @@ class ProductMatchingServiceTest extends TestCase
             'sku' => '12345',
             'name' => 'Great Value Milk',
             'category_id' => null,
+            'is_taxable' => null,
         ]);
+        $this->assertNull($firstItem->product->is_taxable);
     }
 
     public function test_walmart_item_without_sku_matches_on_normalized_description(): void

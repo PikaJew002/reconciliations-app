@@ -562,6 +562,120 @@ class OrderPaymentResolutionService
         return preg_match('/^ending in \d{4}$/', $lower) === 1;
     }
 
+    /**
+     * Orders already matched to a real bank charge, whose payment is still
+     * the old Walmart "Ending in 1234" gift-card label. The bank link stays;
+     * the payment kind becomes card. A gift card the user chose is left alone,
+     * as is any tender that only sits on the off-book account.
+     *
+     * @return int Number of orders corrected.
+     */
+    public function correctBankLinkedGiftCardPayments(?int $userId = null): int
+    {
+        $count = 0;
+
+        Order::query()
+            ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
+            ->whereHas(
+                'components.allocations.bankTransaction.account',
+                fn ($query) => $query->tracked(),
+            )
+            ->orderBy('id')
+            ->each(function (Order $order) use (&$count): void {
+                if ($this->correctBankLinkedGiftCardPayment($order)) {
+                    $count++;
+                }
+            });
+
+        return $count;
+    }
+
+    public function correctBankLinkedGiftCardPayment(Order $order): bool
+    {
+        if (! $this->hasTrackedBankAllocation($order)) {
+            return false;
+        }
+
+        $metadata = $order->metadata ?? [];
+        $raw = $metadata['payments'] ?? [];
+
+        if (! is_array($raw) || $raw === []) {
+            return false;
+        }
+
+        $changed = false;
+        $payments = [];
+
+        foreach ($raw as $payment) {
+            if (! is_array($payment)) {
+                $payments[] = $payment;
+
+                continue;
+            }
+
+            $ending = trim((string) ($payment['ending'] ?? ''));
+            $kind = isset($payment['kind']) && is_string($payment['kind']) ? $payment['kind'] : null;
+            $kindSource = isset($payment['kind_source']) && is_string($payment['kind_source'])
+                ? $payment['kind_source']
+                : null;
+
+            if (
+                $kind === self::KIND_GIFT_CARD
+                && $kindSource !== 'user'
+                && self::isBareCardEnding($ending)
+            ) {
+                $payment['kind'] = self::KIND_CARD;
+
+                $lastFour = $payment['last_four'] ?? null;
+
+                if (! is_string($lastFour) || $lastFour === '') {
+                    if (preg_match('/(\d{4})\s*$/', $ending, $matches) === 1) {
+                        $payment['last_four'] = $matches[1];
+                    }
+                }
+
+                $changed = true;
+            }
+
+            $payments[] = $payment;
+        }
+
+        if (! $changed) {
+            return false;
+        }
+
+        $metadata['payments'] = $payments;
+
+        $updates = [
+            'metadata' => $metadata,
+        ];
+
+        if ($order->payment_last_four === null || $order->payment_last_four === '') {
+            $updates['payment_last_four'] = $this->primaryPaymentLastFour(array_map(
+                fn (array $payment): array => [
+                    'last_four' => isset($payment['last_four']) && is_string($payment['last_four']) && $payment['last_four'] !== ''
+                        ? $payment['last_four']
+                        : null,
+                ],
+                array_values(array_filter($payments, is_array(...))),
+            ));
+        }
+
+        $order->update($updates);
+
+        return true;
+    }
+
+    protected function hasTrackedBankAllocation(Order $order): bool
+    {
+        return $order->components()
+            ->whereHas(
+                'allocations.bankTransaction.account',
+                fn ($query) => $query->tracked(),
+            )
+            ->exists();
+    }
+
     public function canCloseAsGiftCard(Order $order): bool
     {
         if ($order->status === 'reconciled') {

@@ -8,6 +8,7 @@ use App\Models\ImportBatch;
 use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
+use App\Models\TransactionAllocation;
 use App\Models\User;
 use App\Services\Imports\WalmartOrderImporter;
 use App\Services\Orders\OrderRemovalService;
@@ -952,5 +953,166 @@ class OrderPaymentResolutionTest extends TestCase
         $this->assertSame('gift_card', $order->metadata['payments'][0]['kind']);
         $this->assertSame('user', $order->metadata['payments'][0]['kind_source']);
         $this->assertSame('unmatched', $charge->status);
+    }
+
+    public function test_corrects_bank_linked_bare_endings_that_were_stored_as_gift_cards(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $checking = Account::factory()->create([
+            'user_id' => $user->id,
+            'account_type' => Account::CHECKING,
+        ]);
+        $offBook = Account::factory()->offBook()->create([
+            'user_id' => $user->id,
+        ]);
+
+        $bankLinked = $this->orderWithGiftCardPayment($user, $merchant, $batch, 'Ending in 2525', '2525', 97.04);
+        $charge = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $checking->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-08-10',
+            'description' => 'WALMART.COM',
+            'amount' => -97.04,
+            'card_last_four' => '2525',
+            'status' => 'matched',
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $charge->id,
+            'order_component_id' => $bankLinked->components->first()->id,
+            'allocated_amount' => 97.04,
+            'allocation_type' => 'automatic',
+        ]);
+
+        $realGiftCard = $this->orderWithGiftCardPayment($user, $merchant, $batch, 'Amazon gift card balance', null, 15.84);
+        $synthetic = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $offBook->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-08-10',
+            'description' => 'Amazon gift card balance',
+            'amount' => -15.84,
+            'status' => 'matched',
+            'metadata' => [
+                'source' => 'non_bank_tender',
+                'kind' => 'gift_card',
+            ],
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $synthetic->id,
+            'order_component_id' => $realGiftCard->components->first()->id,
+            'allocated_amount' => 15.84,
+            'allocation_type' => 'automatic',
+        ]);
+
+        $chosen = $this->orderWithGiftCardPayment($user, $merchant, $batch, 'Ending in 5394', '5394', 10, [
+            'kind_source' => 'user',
+        ]);
+        $chosenCharge = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $checking->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-08-11',
+            'amount' => -10,
+            'card_last_four' => '5394',
+            'status' => 'matched',
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $chosenCharge->id,
+            'order_component_id' => $chosen->components->first()->id,
+            'allocated_amount' => 10,
+            'allocation_type' => 'manual',
+        ]);
+
+        $offBookBare = $this->orderWithGiftCardPayment($user, $merchant, $batch, 'Ending in 8723', '8723', 8);
+        $offBookCharge = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $offBook->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-08-12',
+            'description' => 'Ending in 8723',
+            'amount' => -8,
+            'status' => 'matched',
+            'metadata' => [
+                'source' => 'non_bank_tender',
+                'kind' => 'gift_card',
+            ],
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $offBookCharge->id,
+            'order_component_id' => $offBookBare->components->first()->id,
+            'allocated_amount' => 8,
+            'allocation_type' => 'automatic',
+        ]);
+
+        $corrected = app(OrderPaymentResolutionService::class)->correctBankLinkedGiftCardPayments($user->id);
+
+        $bankLinked->refresh();
+        $realGiftCard->refresh();
+        $chosen->refresh();
+        $offBookBare->refresh();
+
+        $this->assertSame(1, $corrected);
+        $this->assertSame('card', $bankLinked->metadata['payments'][0]['kind']);
+        $this->assertSame('2525', $bankLinked->metadata['payments'][0]['last_four']);
+        $this->assertSame('reconciled', $bankLinked->status);
+        $this->assertSame('matched', $charge->fresh()->status);
+        $this->assertSame('gift_card', $realGiftCard->metadata['payments'][0]['kind']);
+        $this->assertSame('gift_card', $chosen->metadata['payments'][0]['kind']);
+        $this->assertSame('gift_card', $offBookBare->metadata['payments'][0]['kind']);
+        $this->assertSame(0, app(OrderPaymentResolutionService::class)->correctBankLinkedGiftCardPayments($user->id));
+    }
+
+    /**
+     * @param  array<string, mixed>  $extraPayment
+     */
+    protected function orderWithGiftCardPayment(
+        User $user,
+        Merchant $merchant,
+        ImportBatch $batch,
+        string $ending,
+        ?string $lastFour,
+        float $total,
+        array $extraPayment = [],
+    ): Order {
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-08-09',
+            'total' => $total,
+            'payment_last_four' => $lastFour,
+            'status' => 'reconciled',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => $ending,
+                        'last_four' => $lastFour,
+                        'amount' => $total,
+                        'kind' => 'gift_card',
+                        ...$extraPayment,
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Groceries',
+            'amount' => $total,
+        ]);
+
+        return $order->load('components');
     }
 }
