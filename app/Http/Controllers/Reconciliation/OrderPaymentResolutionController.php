@@ -53,4 +53,24 @@ class OrderPaymentResolutionController extends Controller
             ->route('reconciliation.needs-review')
             ->with('success', 'Payment method removed.');
     }
+
+    public function closeAsGiftCard(
+        Request $request,
+        Order $order,
+        OrderPaymentResolutionService $resolution,
+    ): RedirectResponse {
+        abort_unless($order->user_id === $request->user()->id, 403);
+
+        try {
+            $resolution->closeAsGiftCard($order);
+        } catch (InvalidArgumentException|RuntimeException $exception) {
+            return redirect()
+                ->back(fallback: route('reconciliation.needs-review'))
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->back(fallback: route('reconciliation.needs-review'))
+            ->with('success', 'Order closed as a gift card.');
+    }
 }

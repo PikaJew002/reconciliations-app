@@ -40,6 +40,7 @@
     });
 
     let deleting = ref(false);
+    let closingAsGiftCard = ref(false);
     let componentForm = ref(null);
     let quantityForms = reactive({});
     let componentCategoryForms = reactive({});
@@ -121,6 +122,25 @@
                 preserveScroll: true,
                 onFinish: () => {
                     savingQuantityKey.value = null;
+                },
+            },
+        );
+    }
+
+    function closeAsGiftCard() {
+        if (!props.order.can_close_as_gift_card || closingAsGiftCard.value) {
+            return;
+        }
+
+        closingAsGiftCard.value = true;
+
+        router.post(
+            `/reconciliation/orders/${props.order.id}/close-as-gift-card`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => {
+                    closingAsGiftCard.value = false;
                 },
             },
         );
@@ -370,6 +390,15 @@
                     </p>
                 </li>
             </ul>
+            <button
+                v-if="order.can_close_as_gift_card"
+                type="button"
+                class="text-sm text-neutral-800 underline disabled:opacity-50"
+                :disabled="closingAsGiftCard"
+                @click="closeAsGiftCard"
+            >
+                {{ closingAsGiftCard ? 'Closing…' : 'Close as gift card' }}
+            </button>
         </section>
 
         <section

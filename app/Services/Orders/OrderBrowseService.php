@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Services\Plans\VacationWindowService;
+use App\Services\Reconciliation\OrderPaymentResolutionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -25,6 +26,7 @@ class OrderBrowseService
 
     public function __construct(
         protected VacationWindowService $vacationWindows,
+        protected OrderPaymentResolutionService $paymentResolution,
         protected int $preCoverageLookbackDays = 10,
         protected int $listLimit = 50,
     ) {}
@@ -257,6 +259,7 @@ class OrderBrowseService
                 'imported_total' => (float) $order->imported_total,
                 'can_edit' => $canEdit,
                 'can_edit_total' => ! $hasAllocations || $reconciled,
+                'can_close_as_gift_card' => $this->paymentResolution->canCloseAsGiftCard($order),
                 'in_vacation_window' => $this->vacationWindows->covers($userId, $order->ordered_at),
                 'allocated_transactions' => $this->allocatedTransactions($order),
                 ...$balance,

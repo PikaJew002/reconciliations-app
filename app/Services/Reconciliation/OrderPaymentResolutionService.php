@@ -4,6 +4,7 @@ namespace App\Services\Reconciliation;
 
 use App\Models\BankTransaction;
 use App\Models\Order;
+use App\Models\OrderComponent;
 use App\Services\Accounts\OffBookAccountService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -140,6 +141,11 @@ class OrderPaymentResolutionService
 
                 $kind = $resolution['kind'] ?? $payment['kind'];
                 $payment = [...$payment, 'kind' => $kind];
+
+                if ($resolution['kind'] !== null) {
+                    $payment['kind_source'] = 'user';
+                }
+
                 $requiresBankTx = ! self::isOffBookKind($kind);
 
                 if ($requiresBankTx) {
@@ -272,7 +278,7 @@ class OrderPaymentResolutionService
             $lastFour = is_string($lastFour) && $lastFour !== '' ? $lastFour : null;
             $kind = $payment['kind'] ?? $this->classifyPaymentKind($ending, $lastFour);
 
-            $payments[] = [
+            $normalized = [
                 'ending' => $ending,
                 'last_four' => $lastFour,
                 'amount' => isset($payment['amount']) && $payment['amount'] !== null
@@ -280,6 +286,12 @@ class OrderPaymentResolutionService
                     : null,
                 'kind' => $kind,
             ];
+
+            if (($payment['kind_source'] ?? null) === 'user') {
+                $normalized['kind_source'] = 'user';
+            }
+
+            $payments[] = $normalized;
         }
 
         return $payments;
@@ -399,6 +411,8 @@ class OrderPaymentResolutionService
             ->with(['components', 'merchant', 'importBatch'])
             ->orderBy('id')
             ->each(function (Order $order) use (&$count): void {
+                $this->promoteAmbiguousCardPayments($order);
+
                 if (! $this->canAutoResolveNonBankOnly($order)) {
                     return;
                 }
@@ -464,14 +478,145 @@ class OrderPaymentResolutionService
             return false;
         }
 
-        // Walmart records some real cards as "Ending in 1234", which looks like
-        // a gift card. Leave the order for bank matching when that card — or an
-        // alias of it — has one charge equal to the order total.
-        if ($order->payment_last_four === null || $order->payment_last_four === '') {
-            return true;
+        return true;
+    }
+
+    /**
+     * Walmart stores some real cards as "Ending in 1234", which used to be
+     * classified as a gift card. Open orders with that wording become cards
+     * so bank matching can run. A gift card the user chose stays a gift card.
+     */
+    public function promoteAmbiguousCardPayments(Order $order): void
+    {
+        if ($order->status === 'reconciled') {
+            return;
         }
 
-        return $this->reconciliation->uniqueExactCharge($order->user_id, $order) === null;
+        $metadata = $order->metadata ?? [];
+        $raw = $metadata['payments'] ?? [];
+
+        if (! is_array($raw) || $raw === []) {
+            return;
+        }
+
+        $changed = false;
+        $payments = [];
+
+        foreach ($raw as $payment) {
+            if (! is_array($payment)) {
+                continue;
+            }
+
+            $ending = trim((string) ($payment['ending'] ?? ''));
+            $kind = isset($payment['kind']) && is_string($payment['kind']) ? $payment['kind'] : null;
+            $kindSource = isset($payment['kind_source']) && is_string($payment['kind_source'])
+                ? $payment['kind_source']
+                : null;
+
+            if (
+                $kind === self::KIND_GIFT_CARD
+                && $kindSource !== 'user'
+                && self::isBareCardEnding($ending)
+            ) {
+                $payment['kind'] = self::KIND_CARD;
+                unset($payment['resolved'], $payment['bank_transaction_id']);
+
+                $lastFour = $payment['last_four'] ?? null;
+
+                if (! is_string($lastFour) || $lastFour === '') {
+                    if (preg_match('/(\d{4})\s*$/', $ending, $matches) === 1) {
+                        $payment['last_four'] = $matches[1];
+                    }
+                }
+
+                $changed = true;
+            }
+
+            $payments[] = $payment;
+        }
+
+        if (! $changed) {
+            return;
+        }
+
+        $metadata['payments'] = $payments;
+        unset($metadata['payment_resolution']);
+
+        $order->update([
+            'metadata' => $metadata,
+            'payment_last_four' => $this->primaryPaymentLastFour(array_map(
+                fn (array $payment): array => [
+                    'last_four' => isset($payment['last_four']) && is_string($payment['last_four']) && $payment['last_four'] !== ''
+                        ? $payment['last_four']
+                        : null,
+                ],
+                $payments,
+            )),
+        ]);
+    }
+
+    public static function isBareCardEnding(string $ending): bool
+    {
+        $lower = Str::of($ending)->lower()->squish()->toString();
+
+        return preg_match('/^ending in \d{4}$/', $lower) === 1;
+    }
+
+    public function canCloseAsGiftCard(Order $order): bool
+    {
+        if ($order->status === 'reconciled') {
+            return false;
+        }
+
+        $order->loadMissing('components.allocations');
+
+        if ($order->components->contains(
+            fn (OrderComponent $component): bool => $component->allocations->isNotEmpty(),
+        )) {
+            return false;
+        }
+
+        if ($order->components->isEmpty()) {
+            return false;
+        }
+
+        if (abs($order->payableComponentSum() - (float) $order->total) >= 0.01) {
+            return false;
+        }
+
+        $payments = $this->normalizedPayments($order);
+
+        if (count($payments) !== 1) {
+            return false;
+        }
+
+        $payment = $payments[0];
+
+        if (! in_array($payment['kind'], [self::KIND_CARD, self::KIND_UNKNOWN], true)) {
+            return false;
+        }
+
+        if ($payment['amount'] !== null && abs((float) $payment['amount'] - (float) $order->total) >= 0.01) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function closeAsGiftCard(Order $order): void
+    {
+        if (! $this->canCloseAsGiftCard($order)) {
+            throw new InvalidArgumentException('This order cannot be closed as a gift card.');
+        }
+
+        $payments = $this->normalizedPayments($order);
+        $amount = $payments[0]['amount'] ?? (float) $order->total;
+
+        $this->resolve($order, [[
+            'index' => 0,
+            'amount' => $amount,
+            'kind' => self::KIND_GIFT_CARD,
+        ]]);
     }
 
     /**
@@ -566,10 +711,6 @@ class OrderPaymentResolutionService
 
         if (preg_match('/\b(mastercard|visa|amex|american express|discover)\b/', $lower) === 1) {
             return 'card';
-        }
-
-        if ($lastFour !== null && preg_match('/^ending in \d{4}$/', $lower) === 1) {
-            return 'gift_card';
         }
 
         if ($lastFour !== null) {

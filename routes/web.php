@@ -241,6 +241,8 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.orders.items.update');
     Route::post('/reconciliation/orders/{order}/resolve-payments', [OrderPaymentResolutionController::class, 'store'])
         ->name('reconciliation.orders.resolve-payments');
+    Route::post('/reconciliation/orders/{order}/close-as-gift-card', [OrderPaymentResolutionController::class, 'closeAsGiftCard'])
+        ->name('reconciliation.orders.close-as-gift-card');
     Route::delete('/reconciliation/orders/{order}/payments/{paymentIndex}', [OrderPaymentResolutionController::class, 'destroy'])
         ->whereNumber('paymentIndex')
         ->name('reconciliation.orders.payments.destroy');

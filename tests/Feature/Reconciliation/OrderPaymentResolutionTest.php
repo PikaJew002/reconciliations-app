@@ -10,8 +10,10 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\User;
 use App\Services\Imports\WalmartOrderImporter;
+use App\Services\Orders\OrderRemovalService;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -32,10 +34,19 @@ class OrderPaymentResolutionTest extends TestCase
             ],
         ]);
 
-        $this->assertSame('gift_card', $payments[0]['kind']);
+        $this->assertSame('card', $payments[0]['kind']);
         $this->assertSame('8723', $payments[0]['last_four']);
         $this->assertSame('card', $payments[1]['kind']);
         $this->assertSame('2195', $payments[1]['last_four']);
+
+        $explicitGift = $method->invoke($importer, [
+            'paymentMethodDetails' => [
+                ['ending' => 'Gift card ending in 5394', 'amount' => ''],
+            ],
+        ]);
+
+        $this->assertSame('gift_card', $explicitGift[0]['kind']);
+        $this->assertSame('5394', $explicitGift[0]['last_four']);
 
         $balancePayments = $method->invoke($importer, [
             'paymentMethodDetails' => [
@@ -219,7 +230,7 @@ class OrderPaymentResolutionTest extends TestCase
 
         $this->assertTrue($service->needsPaymentReview($order));
         $payments = $service->normalizedPayments($order);
-        $this->assertSame('gift_card', $payments[0]['kind']);
+        $this->assertSame('card', $payments[0]['kind']);
         $this->assertSame('card', $payments[1]['kind']);
     }
 
@@ -851,5 +862,95 @@ class OrderPaymentResolutionTest extends TestCase
 
         $this->assertSame('matched', $transaction->fresh()->status);
         $this->assertSame('reconciled', $order->fresh()->status);
+    }
+
+    public function test_close_as_gift_card_stays_a_gift_card_on_a_later_pipeline_run(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '5394',
+        ]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+            'supports_order_import' => true,
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => '200015036869697',
+            'ordered_at' => '2026-09-03',
+            'total' => 262.63,
+            'payment_last_four' => '5394',
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Ending in 5394',
+                        'last_four' => '5394',
+                        'amount' => 262.63,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Groceries',
+            'amount' => 262.63,
+            'order_item_id' => null,
+        ]);
+
+        $charge = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-09-07',
+            'transaction_date' => '2026-09-05',
+            'description' => 'WALMART.COM',
+            'amount' => -262.63,
+            'card_last_four' => '5394',
+            'status' => 'unmatched',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('order.can_close_as_gift_card', true));
+
+        $this->actingAs($user)
+            ->from(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]))
+            ->post(route('reconciliation.orders.close-as-gift-card', $order))
+            ->assertRedirect(route('orders.detail', ['merchant' => 'walmart', 'order' => $order->id]))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+
+        $this->assertSame('reconciled', $order->status);
+        $this->assertSame('gift_card', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('user', $order->metadata['payments'][0]['kind_source']);
+        $this->assertSame('unmatched', $charge->fresh()->status);
+
+        app(OrderRemovalService::class)->unwindAllocations($order->fresh());
+
+        $resolved = app(OrderPaymentResolutionService::class)
+            ->autoResolveNonBankOnlyOrders($user->id);
+
+        $order->refresh();
+        $charge->refresh();
+
+        $this->assertSame(1, $resolved);
+        $this->assertSame('reconciled', $order->status);
+        $this->assertSame('gift_card', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('user', $order->metadata['payments'][0]['kind_source']);
+        $this->assertSame('unmatched', $charge->status);
     }
 }

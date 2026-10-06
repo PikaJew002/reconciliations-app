@@ -800,4 +800,100 @@ class ReconciliationServiceTest extends TestCase
             'status' => 'unmatched',
         ]);
     }
+
+    public function test_bare_ending_in_split_across_charges_matches_the_card_instead_of_a_gift_card(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+        ]);
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'last_four' => '5394',
+        ]);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-09-03',
+            'total' => 262.63,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Ending in 5394',
+                        'last_four' => '5394',
+                        'amount' => 262.63,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 262.63,
+            'category_id' => null,
+        ]);
+
+        $reconciled = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-08-01',
+            'total' => 10,
+            'status' => 'reconciled',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Ending in 5394',
+                        'last_four' => '5394',
+                        'amount' => 10,
+                        'kind' => 'gift_card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $charges = collect([8.86, 238.64, 4.51, 10.62])->map(
+            fn (float $amount) => BankTransaction::factory()->create([
+                'user_id' => $user->id,
+                'import_batch_id' => $batch->id,
+                'account_id' => $account->id,
+                'merchant_id' => $merchant->id,
+                'posted_at' => '2026-09-07',
+                'transaction_date' => '2026-09-05',
+                'description' => 'WALMART.COM',
+                'amount' => -$amount,
+                'card_last_four' => '5394',
+                'status' => 'unmatched',
+            ]),
+        );
+
+        $resolved = app(OrderPaymentResolutionService::class)
+            ->autoResolveNonBankOnlyOrders($user->id);
+        $matched = app(ReconciliationService::class)->reconcileForUser($user->id);
+
+        $order->refresh();
+        $reconciled->refresh();
+
+        $this->assertSame(0, $resolved);
+        $this->assertSame(4, $matched);
+        $this->assertSame('reconciled', $order->status);
+        $this->assertSame('5394', $order->payment_last_four);
+        $this->assertSame('card', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('gift_card', $reconciled->metadata['payments'][0]['kind']);
+        $this->assertSame('reconciled', $reconciled->status);
+
+        foreach ($charges as $charge) {
+            $this->assertSame('matched', $charge->fresh()->status);
+            $this->assertFalse($charge->fresh()->account->isOffBook());
+        }
+    }
 }
