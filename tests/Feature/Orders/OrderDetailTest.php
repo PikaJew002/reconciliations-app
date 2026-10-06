@@ -199,9 +199,105 @@ class OrderDetailTest extends TestCase
                 ->where('components.1.can_edit_quantity', false)
                 ->where('components.1.can_delete', true)
                 ->where('components.1.description', 'Sales Tax')
+                ->where('order.in_vacation_window', false)
+                ->has('order.allocated_transactions', 0)
                 ->has('categories', 1)
                 ->where('categories.0.name', 'Household')
                 ->where('categories.0.kind', 'expense'));
+    }
+
+    public function test_detail_lists_allocated_charges_once_and_labels_non_bank_tenders(): void
+    {
+        $user = User::factory()->create();
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+        $account = Account::factory()->create();
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'AMZ-LINKED',
+            'status' => 'reconciled',
+            'total' => 20,
+        ]);
+        $productComponent = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Carabiner',
+            'amount' => 15,
+            'category_id' => null,
+        ]);
+        $tax = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'tax',
+            'description' => 'Sales Tax',
+            'amount' => 5,
+            'category_id' => null,
+        ]);
+        $card = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $amazon->id,
+            'posted_at' => '2026-08-02',
+            'description' => 'AMAZON',
+            'amount' => -15,
+            'status' => 'matched',
+        ]);
+        $gift = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $amazon->id,
+            'posted_at' => '2026-08-01',
+            'description' => 'Amazon gift card balance',
+            'amount' => -5,
+            'status' => 'matched',
+            'metadata' => [
+                'source' => 'non_bank_tender',
+                'kind' => 'gift_card',
+            ],
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $card->id,
+            'order_component_id' => $productComponent->id,
+            'allocated_amount' => 10,
+            'allocation_type' => 'automatic',
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $card->id,
+            'order_component_id' => $tax->id,
+            'allocated_amount' => 5,
+            'allocation_type' => 'automatic',
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $gift->id,
+            'order_component_id' => $productComponent->id,
+            'allocated_amount' => 5,
+            'allocation_type' => 'automatic',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.detail', ['merchant' => 'amazon', 'order' => $order->id]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('order.allocated_transactions', 2)
+                ->where('order.allocated_transactions.0.id', $gift->id)
+                ->where('order.allocated_transactions.0.description', 'Amazon gift card balance')
+                ->where('order.allocated_transactions.0.posted_at', '2026-08-01')
+                ->where('order.allocated_transactions.0.status', 'matched')
+                ->where('order.allocated_transactions.0.tender_label', 'Gift card')
+                ->where('order.allocated_transactions.1.id', $card->id)
+                ->where('order.allocated_transactions.1.description', 'AMAZON')
+                ->where('order.allocated_transactions.1.tender_label', null)
+                ->where('order.in_vacation_window', false)
+                ->where('components.0.category', null)
+                ->where('components.0.category_id', null));
     }
 
     public function test_amazon_detail_flags_unbalanced_components(): void

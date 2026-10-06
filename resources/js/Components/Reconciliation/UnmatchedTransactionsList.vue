@@ -560,7 +560,8 @@
                         return label;
                     })
                     .join('; ')
-            }}. Categorize those as one-offs.
+            }}. Walmart charges still link to imported orders; set those
+            order lines on the order. Categorize other spend as one-offs.
         </p>
         <div v-if="unmatchedTransactions.length > 0" class="space-y-2">
             <div class="flex flex-wrap gap-2">

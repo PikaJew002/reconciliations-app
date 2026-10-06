@@ -268,6 +268,14 @@
                     <p class="text-xs text-neutral-600">Bank total</p>
                 </div>
             </div>
+            <p
+                v-if="order.in_vacation_window"
+                class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
+                This order is in a vacation window. Product lines stay
+                uncategorized until you set them here. That does not change
+                the product for later orders.
+            </p>
         </div>
 
         <p
@@ -364,6 +372,39 @@
             </ul>
         </section>
 
+        <section
+            v-if="order.allocated_transactions.length > 0"
+            class="space-y-3"
+        >
+            <div>
+                <h2 class="text-base font-semibold">Linked charges</h2>
+                <p class="text-sm text-neutral-600">
+                    Bank transactions allocated to this order.
+                </p>
+            </div>
+            <ul class="divide-y rounded border text-sm">
+                <li
+                    v-for="transaction in order.allocated_transactions"
+                    :key="transaction.id"
+                    class="flex items-start justify-between gap-4 px-4 py-3"
+                >
+                    <div>
+                        <p class="font-medium">{{ transaction.description }}</p>
+                        <p class="text-neutral-600">
+                            {{ transaction.posted_at || 'No date' }}
+                            · {{ transaction.status }}
+                            <template v-if="transaction.tender_label">
+                                · {{ transaction.tender_label }}
+                            </template>
+                        </p>
+                    </div>
+                    <p class="font-medium">
+                        {{ formatMoney(transaction.amount) }}
+                    </p>
+                </li>
+            </ul>
+        </section>
+
         <section class="space-y-3">
             <div>
                 <h2 class="text-base font-semibold">Items</h2>
@@ -421,9 +462,10 @@
                         <p class="font-medium">{{ component.description }}</p>
                         <p class="text-neutral-600">
                             {{ component.type }}
-                            <template v-if="component.category">
-                                · {{ component.category.name }}
-                            </template>
+                            ·
+                            {{
+                                component.category?.name || 'Uncategorized'
+                            }}
                             <template v-if="component.unit_price != null">
                                 · {{ formatMoney(component.unit_price) }}/ea
                             </template>
@@ -465,7 +507,7 @@
                             </button>
                         </form>
                         <form
-                            v-if="order.can_edit && expenseCategories.length > 0"
+                            v-if="expenseCategories.length > 0"
                             class="flex items-center gap-2"
                             @submit.prevent="saveComponentCategory(component)"
                         >

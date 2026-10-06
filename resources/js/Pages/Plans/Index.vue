@@ -1308,9 +1308,11 @@
         >
             <p class="text-sm font-medium">Vacation windows</p>
             <p class="text-sm text-neutral-600">
-                Learned vendor rules and Walmart product categories are skipped
-                for spend in these dates. You categorize those by hand. Bills
-                and income still match as usual.
+                Learned vendor rules are skipped for spend in these dates.
+                Walmart charges still link to imported orders, and those order
+                lines stay uncategorized until you set them on the order. Other
+                spend is categorized by hand as a one-off. Bills and income
+                still match as usual.
             </p>
             <ul
                 v-if="vacation_windows.length > 0"

@@ -8,6 +8,7 @@ use App\Models\Merchant;
 use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
+use App\Services\Plans\VacationWindowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -23,6 +24,7 @@ class OrderBrowseService
     ];
 
     public function __construct(
+        protected VacationWindowService $vacationWindows,
         protected int $preCoverageLookbackDays = 10,
         protected int $listLimit = 50,
     ) {}
@@ -183,7 +185,10 @@ class OrderBrowseService
                 ->orderBy('id')
                 ->with('category:id,name')
                 ->with('orderItem:id,quantity,unit_price')
-                ->with('allocations:id,order_component_id,allocated_amount,allocation_type'),
+                ->with([
+                    'allocations:id,order_component_id,bank_transaction_id,allocated_amount,allocation_type',
+                    'allocations.bankTransaction:id,posted_at,description,amount,status,metadata',
+                ]),
         ]);
 
         $canEdit = $order->status !== 'reconciled';
@@ -252,6 +257,8 @@ class OrderBrowseService
                 'imported_total' => (float) $order->imported_total,
                 'can_edit' => $canEdit,
                 'can_edit_total' => ! $hasAllocations || $reconciled,
+                'in_vacation_window' => $this->vacationWindows->covers($userId, $order->ordered_at),
+                'allocated_transactions' => $this->allocatedTransactions($order),
                 ...$balance,
             ],
             'items' => $order->items
@@ -320,6 +327,69 @@ class OrderBrowseService
             'gap' => $gap,
             'components_balanced' => abs($gap) < 0.01,
         ];
+    }
+
+    /**
+     * Distinct bank transactions allocated to this order, including non-bank tenders.
+     *
+     * @return list<array{
+     *     id: int,
+     *     posted_at: ?string,
+     *     description: string,
+     *     amount: float,
+     *     status: string,
+     *     tender_label: ?string
+     * }>
+     */
+    protected function allocatedTransactions(Order $order): array
+    {
+        $transactions = [];
+
+        foreach ($order->components as $component) {
+            foreach ($component->allocations as $allocation) {
+                $transaction = $allocation->bankTransaction;
+
+                if ($transaction === null) {
+                    continue;
+                }
+
+                $transactions[$transaction->id] = $transaction;
+            }
+        }
+
+        return collect($transactions)
+            ->sortBy(fn (BankTransaction $transaction): string => sprintf(
+                '%s-%010d',
+                $transaction->posted_at?->toDateString() ?? '0000-00-00',
+                $transaction->id,
+            ))
+            ->map(fn (BankTransaction $transaction): array => [
+                'id' => $transaction->id,
+                'posted_at' => $transaction->posted_at?->toDateString(),
+                'description' => $transaction->description,
+                'amount' => (float) $transaction->amount,
+                'status' => $transaction->status,
+                'tender_label' => $this->nonBankTenderLabel($transaction),
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function nonBankTenderLabel(BankTransaction $transaction): ?string
+    {
+        $metadata = $transaction->metadata ?? [];
+
+        if (($metadata['source'] ?? null) !== 'non_bank_tender') {
+            return null;
+        }
+
+        return match ($metadata['kind'] ?? null) {
+            'gift_card' => 'Gift card',
+            'walmart_balance' => 'Walmart balance',
+            'cash' => 'Cash',
+            'other' => 'Other',
+            default => 'Non-bank',
+        };
     }
 
     /**
