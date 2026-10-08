@@ -163,7 +163,8 @@ class AmazonScrapeImportTest extends TestCase
         $this->assertCount(1, $cardOnly->metadata['payments']);
         $this->assertSame('card', $cardOnly->metadata['payments'][0]['kind']);
         $this->assertSame(7.39, $cardOnly->metadata['payments'][0]['amount']);
-        $this->assertSame('Mastercard ending in 1111', $cardOnly->metadata['payments'][0]['ending']);
+        $this->assertSame('Mastercard', $cardOnly->metadata['payments'][0]['ending']);
+        $this->assertSame('1111', $cardOnly->metadata['payments'][0]['last_four']);
 
         $qtyOrder = $orders['111-0000004-0000004'];
         $this->assertSame('77.94', $qtyOrder->subtotal);
@@ -179,6 +180,8 @@ class AmazonScrapeImportTest extends TestCase
         $this->assertNull($giftOnly->payment_last_four);
         $this->assertCount(1, $giftOnly->metadata['payments']);
         $this->assertSame('gift_card', $giftOnly->metadata['payments'][0]['kind']);
+        $this->assertSame('Amazon account balance', $giftOnly->metadata['payments'][0]['ending']);
+        $this->assertNull($giftOnly->metadata['payments'][0]['last_four']);
         $this->assertSame(15.84, $giftOnly->metadata['payments'][0]['amount']);
 
         $split = $orders['111-0000007-0000007'];
@@ -188,9 +191,12 @@ class AmazonScrapeImportTest extends TestCase
         $this->assertNull($split->payment_last_four);
         $this->assertCount(2, $split->metadata['payments']);
         $this->assertSame('card', $split->metadata['payments'][0]['kind']);
+        $this->assertSame('Visa', $split->metadata['payments'][0]['ending']);
         $this->assertSame(7.21, $split->metadata['payments'][0]['amount']);
         $this->assertSame('4444', $split->metadata['payments'][0]['last_four']);
         $this->assertSame('gift_card', $split->metadata['payments'][1]['kind']);
+        $this->assertSame('Amazon account balance', $split->metadata['payments'][1]['ending']);
+        $this->assertNull($split->metadata['payments'][1]['last_four']);
         $this->assertSame(34.16, $split->metadata['payments'][1]['amount']);
 
         $this->assertSame(5, OrderItem::query()->count());
@@ -243,6 +249,121 @@ class AmazonScrapeImportTest extends TestCase
         );
     }
 
+    public function test_null_last_four_on_account_balance_is_accepted(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        Sanctum::actingAs(User::factory()->create(), ['amazon:import']);
+
+        $this->postJson(route('api.amazon.import'), $this->scrapePayload([
+            'details' => [
+                $this->giftOnlyDetail(),
+            ],
+        ]))->assertOk();
+    }
+
+    public function test_account_balance_can_cover_the_grand_total(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $path = 'imports/amazon-account-balance.json';
+
+        Storage::disk('local')->put($path, json_encode($this->scrapePayload([
+            'details' => [
+                [
+                    'success' => true,
+                    'orderNumber' => '111-0000010-0000010',
+                    'data' => [
+                        'orderNumber' => '111-0000010-0000010',
+                        'orderDate' => 'August 2, 2026',
+                        'paymentMethods' => [
+                            ['name' => 'Amazon account balance', 'lastFour' => null],
+                        ],
+                        'summary' => [
+                            'items_subtotal' => 12,
+                            'estimated_tax_to_be_collected' => 0.72,
+                            'grand_total' => 12.72,
+                        ],
+                        'shipments' => [
+                            [
+                                'status' => 'Delivered August 3',
+                                'items' => [
+                                    [
+                                        'title' => 'Notebook',
+                                        'asin' => 'B0NOTEBOOK',
+                                        'quantity' => 1,
+                                        'unitPrice' => 12,
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ])));
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'storage_path' => $path,
+            'status' => 'pending',
+            'metadata' => [
+                'format' => 'scrape_json',
+            ],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $order = Order::query()->where('order_number', '111-0000010-0000010')->first();
+
+        $this->assertNotNull($order);
+        $this->assertSame('12.72', $order->total);
+        $this->assertNull($order->payment_last_four);
+        $this->assertCount(1, $order->metadata['payments']);
+        $this->assertSame('gift_card', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('Amazon account balance', $order->metadata['payments'][0]['ending']);
+        $this->assertNull($order->metadata['payments'][0]['last_four']);
+        $this->assertSame(12.72, $order->metadata['payments'][0]['amount']);
+    }
+
+    public function test_legacy_payment_method_string_still_imports(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $path = 'imports/amazon-legacy-payment.json';
+        $detail = $this->cardOnlyDetail();
+        unset($detail['data']['paymentMethods']);
+        $detail['data']['paymentMethod'] = 'Mastercardending in 1111';
+
+        Storage::disk('local')->put($path, json_encode($this->scrapePayload([
+            'details' => [$detail],
+        ])));
+
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'amazon',
+            'type' => 'orders',
+            'storage_path' => $path,
+            'status' => 'pending',
+            'metadata' => [
+                'format' => 'scrape_json',
+            ],
+        ]);
+
+        (new ProcessImportBatch($batch))->handle(app(ImporterResolver::class));
+
+        $order = Order::query()->where('order_number', '111-0000002-0000002')->first();
+
+        $this->assertNotNull($order);
+        $this->assertSame('1111', $order->payment_last_four);
+        $this->assertSame('Mastercard ending in 1111', $order->metadata['payments'][0]['ending']);
+        $this->assertSame('1111', $order->metadata['payments'][0]['last_four']);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
@@ -274,7 +395,9 @@ class AmazonScrapeImportTest extends TestCase
             'data' => [
                 'orderNumber' => '111-0000002-0000002',
                 'orderDate' => 'August 7, 2026',
-                'paymentMethod' => 'Mastercardending in 1111',
+                'paymentMethods' => [
+                    ['name' => 'Mastercard', 'lastFour' => '1111'],
+                ],
                 'summary' => [
                     'items_subtotal' => 6.97,
                     'estimated_tax_to_be_collected' => 0.42,
@@ -308,7 +431,9 @@ class AmazonScrapeImportTest extends TestCase
             'data' => [
                 'orderNumber' => '111-0000004-0000004',
                 'orderDate' => 'August 5, 2026',
-                'paymentMethod' => 'Mastercardending in 2222',
+                'paymentMethods' => [
+                    ['name' => 'Mastercard', 'lastFour' => '2222'],
+                ],
                 'summary' => [
                     'items_subtotal' => 77.94,
                     'estimated_tax_to_be_collected' => 4.68,
@@ -342,7 +467,9 @@ class AmazonScrapeImportTest extends TestCase
             'data' => [
                 'orderNumber' => '111-0000006-0000006',
                 'orderDate' => 'July 21, 2026',
-                'paymentMethod' => 'Visaending in 4444',
+                'paymentMethods' => [
+                    ['name' => 'Amazon account balance', 'lastFour' => null],
+                ],
                 'summary' => [
                     'items_subtotal' => 14.94,
                     'estimated_tax_to_be_collected' => 0.9,
@@ -377,7 +504,10 @@ class AmazonScrapeImportTest extends TestCase
             'data' => [
                 'orderNumber' => '111-0000007-0000007',
                 'orderDate' => 'July 21, 2026',
-                'paymentMethod' => 'Visaending in 4444',
+                'paymentMethods' => [
+                    ['name' => 'Visa', 'lastFour' => '4444'],
+                    ['name' => 'Amazon account balance', 'lastFour' => null],
+                ],
                 'summary' => [
                     'items_subtotal' => 39.78,
                     'shipping__handling' => 2.99,

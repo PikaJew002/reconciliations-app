@@ -220,34 +220,153 @@ class AmazonScrapeOrderImporter implements Importer
 
     /**
      * @param  array<string, mixed>  $data
-     * @return list<array{ending: string, last_four: string|null, amount: float, kind: string}>
+     * @return list<array{ending: string, last_four: string|null, amount: float|null, kind: string}>
      */
     protected function buildPayments(array $data, float $cardTotal, float $giftTotal): array
     {
-        $method = $this->normalizePaymentMethod((string) ($data['paymentMethod'] ?? ''));
-        $lastFour = $this->extractLastFour($method);
-        $kind = $this->classifyPaymentKind($method, $lastFour);
+        [$cards, $balances] = $this->partitionPaymentMethods($this->parsePaymentMethods($data));
         $payments = [];
 
         if ($cardTotal >= 0.01) {
-            $payments[] = [
-                'ending' => $method !== '' ? $method : 'Card',
-                'last_four' => $lastFour,
-                'amount' => $cardTotal,
-                'kind' => $kind === 'gift_card' ? 'card' : $kind,
-            ];
+            if (count($cards) === 1) {
+                $payments[] = $this->paymentRow($cards[0], $cardTotal);
+            } elseif (count($cards) > 1) {
+                foreach ($cards as $card) {
+                    $payments[] = $this->paymentRow($card, null);
+                }
+            } elseif (count($balances) === 1 && $giftTotal < 0.01) {
+                $payments[] = $this->paymentRow($balances[0], $cardTotal);
+                $balances = [];
+            } else {
+                $payments[] = $this->paymentRow([
+                    'ending' => 'Card',
+                    'last_four' => null,
+                    'kind' => 'card',
+                ], $cardTotal);
+            }
         }
 
         if ($giftTotal >= 0.01) {
-            $payments[] = [
-                'ending' => 'Amazon gift card balance',
-                'last_four' => null,
-                'amount' => $giftTotal,
-                'kind' => 'gift_card',
-            ];
+            if (count($balances) === 1) {
+                $payments[] = $this->paymentRow($balances[0], $giftTotal);
+            } elseif (count($balances) > 1) {
+                foreach ($balances as $balance) {
+                    $payments[] = $this->paymentRow($balance, null);
+                }
+            } else {
+                $payments[] = $this->paymentRow([
+                    'ending' => 'Amazon gift card balance',
+                    'last_four' => null,
+                    'kind' => 'gift_card',
+                ], $giftTotal);
+            }
         }
 
         return $payments;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<array{ending: string, last_four: string|null, kind: string}>
+     */
+    protected function parsePaymentMethods(array $data): array
+    {
+        $methods = $data['paymentMethods'] ?? null;
+
+        if (is_array($methods)) {
+            $parsed = [];
+
+            foreach ($methods as $method) {
+                if (! is_array($method)) {
+                    continue;
+                }
+
+                $row = $this->paymentMethodFromParts(
+                    $method['name'] ?? null,
+                    $method['lastFour'] ?? null,
+                );
+
+                if ($row !== null) {
+                    $parsed[] = $row;
+                }
+            }
+
+            return $parsed;
+        }
+
+        $legacy = $this->normalizePaymentMethod((string) ($data['paymentMethod'] ?? ''));
+
+        if ($legacy === '') {
+            return [];
+        }
+
+        $lastFour = $this->extractLastFour($legacy);
+        $kind = $this->classifyPaymentKind($legacy, $lastFour);
+
+        return [[
+            'ending' => $legacy,
+            'last_four' => $lastFour,
+            'kind' => $kind === 'gift_card' ? 'card' : $kind,
+        ]];
+    }
+
+    /**
+     * @return array{ending: string, last_four: string|null, kind: string}|null
+     */
+    protected function paymentMethodFromParts(mixed $name, mixed $lastFour): ?array
+    {
+        $ending = trim((string) ($name ?? ''));
+        $lastFour = $this->normalizeLastFour($lastFour);
+
+        if ($ending === '' && $lastFour === null) {
+            return null;
+        }
+
+        if ($ending === '') {
+            $ending = 'Card';
+        }
+
+        return [
+            'ending' => $ending,
+            'last_four' => $lastFour,
+            'kind' => $this->classifyPaymentKind($ending, $lastFour),
+        ];
+    }
+
+    /**
+     * @param  list<array{ending: string, last_four: string|null, kind: string}>  $methods
+     * @return array{0: list<array{ending: string, last_four: string|null, kind: string}>, 1: list<array{ending: string, last_four: string|null, kind: string}>}
+     */
+    protected function partitionPaymentMethods(array $methods): array
+    {
+        $cards = [];
+        $balances = [];
+
+        foreach ($methods as $method) {
+            if ($method['kind'] === 'gift_card') {
+                $balances[] = $method;
+
+                continue;
+            }
+
+            $cards[] = $method;
+        }
+
+        return [$cards, $balances];
+    }
+
+    /**
+     * @param  array{ending: string, last_four: string|null, kind: string}  $method
+     * @return array{ending: string, last_four: string|null, amount: float|null, kind: string}
+     */
+    protected function paymentRow(array $method, ?float $amount): array
+    {
+        return [
+            'ending' => $method['ending'],
+            'last_four' => $method['last_four'],
+            'amount' => $amount,
+            'kind' => $method['kind'],
+        ];
     }
 
     protected function normalizePaymentMethod(string $value): string
@@ -265,7 +384,11 @@ class AmazonScrapeOrderImporter implements Importer
     {
         $lower = Str::of($ending)->lower()->squish()->toString();
 
-        if (str_contains($lower, 'gift') || str_contains($lower, 'amazon balance')) {
+        if (
+            str_contains($lower, 'gift')
+            || str_contains($lower, 'amazon balance')
+            || str_contains($lower, 'account balance')
+        ) {
             return 'gift_card';
         }
 
@@ -281,7 +404,7 @@ class AmazonScrapeOrderImporter implements Importer
     }
 
     /**
-     * @param  list<array{ending: string, last_four: string|null, amount: float, kind: string}>  $payments
+     * @param  list<array{ending: string, last_four: string|null, amount: float|null, kind: string}>  $payments
      */
     protected function resolvePaymentLastFour(array $payments): ?string
     {
@@ -304,6 +427,21 @@ class AmazonScrapeOrderImporter implements Importer
         }
 
         return $matches[1];
+    }
+
+    protected function normalizeLastFour(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D/', '', (string) $value) ?? '';
+
+        if (strlen($digits) < 4) {
+            return null;
+        }
+
+        return substr($digits, -4);
     }
 
     /**

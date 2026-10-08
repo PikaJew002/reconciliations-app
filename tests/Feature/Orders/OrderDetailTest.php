@@ -746,7 +746,9 @@ class OrderDetailTest extends TestCase
                     'data' => [
                         'orderNumber' => '111-0000002-0000002',
                         'orderDate' => 'August 7, 2026',
-                        'paymentMethod' => 'Mastercardending in 1111',
+                        'paymentMethods' => [
+                            ['name' => 'Mastercard', 'lastFour' => '1111'],
+                        ],
                         'summary' => [
                             'items_subtotal' => 6.97,
                             'estimated_tax_to_be_collected' => 0.42,
