@@ -89,9 +89,10 @@ class ImportBatch extends Model
     }
 
     /**
+     * @param  array{min: ?string, max: ?string}|null  $dateRange
      * @return array<string, mixed>
      */
-    public function historyPayload(): array
+    public function historyPayload(?array $dateRange = null): array
     {
         return [
             'id' => $this->id,
@@ -104,6 +105,7 @@ class ImportBatch extends Model
             'created_at' => $this->created_at,
             'completed_at' => $this->completed_at,
             'can_revert' => $this->canRevert(),
+            'date_range' => $dateRange,
         ];
     }
 

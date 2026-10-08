@@ -4,6 +4,8 @@ namespace Tests\Feature\Imports;
 
 use App\Jobs\ProcessImportBatch;
 use App\Models\ImportBatch;
+use App\Models\Merchant;
+use App\Models\Order;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -105,6 +107,58 @@ class WalmartOrderImportTest extends TestCase
                 ->where('breadcrumbs.3.label', 'Import batch')
                 ->where('can_revert', true)
                 ->where('revert_url', route('orders.imports.destroy', ['walmart', $batch])));
+    }
+
+    public function test_walmart_import_batch_shows_date_range_and_orders_list(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'walmart',
+            'type' => 'orders',
+            'original_filename' => 'walmart.json',
+        ]);
+
+        $order1 = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-10001',
+            'ordered_at' => '2026-09-01 10:00:00',
+            'total' => 15.50,
+        ]);
+
+        $order2 = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'import_batch_id' => $batch->id,
+            'order_number' => 'W-10002',
+            'ordered_at' => '2026-09-05 14:00:00',
+            'total' => 88.20,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.imports.show', ['walmart', $batch]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Imports/Show')
+                ->where('batch.id', $batch->id)
+                ->where('date_range.min', '2026-09-01')
+                ->where('date_range.max', '2026-09-05')
+                ->where('date_range.span_days', 4)
+                ->has('orders', 2)
+                ->where('orders.0.id', $order2->id)
+                ->where('orders.0.order_number', 'W-10002')
+                ->where('orders.0.detail_url', route('orders.detail', ['walmart', $order2->id]))
+                ->where('orders.1.id', $order1->id)
+                ->where('orders.1.order_number', 'W-10001')
+                ->where('orders.1.detail_url', route('orders.detail', ['walmart', $order1->id]))
+                ->where('pagination.total', 2));
     }
 
     public function test_walmart_imports_lists_only_walmart_batches(): void
