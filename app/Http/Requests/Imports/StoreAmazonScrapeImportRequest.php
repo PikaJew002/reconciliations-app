@@ -23,6 +23,10 @@ class StoreAmazonScrapeImportRequest extends FormRequest
             'details.*.success' => ['sometimes', 'boolean'],
             'details.*.orderNumber' => ['nullable', 'string'],
             'details.*.data' => ['nullable', 'array'],
+            'details.*.data.paymentMethods' => ['sometimes', 'array'],
+            'details.*.data.paymentMethods.*' => ['array'],
+            'details.*.data.paymentMethods.*.name' => ['nullable', 'string'],
+            'details.*.data.paymentMethods.*.lastFour' => ['nullable'],
         ];
     }
 }

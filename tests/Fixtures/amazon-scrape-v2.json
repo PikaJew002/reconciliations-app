@@ -89,7 +89,12 @@
                 "scrapedAt": "2026-08-17T03:28:51.780Z",
                 "orderNumber": "111-0000001-0000001",
                 "orderDate": "August 9, 2026",
-                "paymentMethod": "Mastercardending in 1111",
+                "paymentMethods": [
+                    {
+                        "name": "Mastercard",
+                        "lastFour": "1111"
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 43.98,
                     "shipping__handling": 0,
@@ -125,7 +130,12 @@
                 "scrapedAt": "2026-08-17T03:28:55.780Z",
                 "orderNumber": "111-0000002-0000002",
                 "orderDate": "August 7, 2026",
-                "paymentMethod": "Mastercardending in 1111",
+                "paymentMethods": [
+                    {
+                        "name": "Mastercard",
+                        "lastFour": "1111"
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 6.97,
                     "shipping__handling": 0,
@@ -161,7 +171,12 @@
                 "scrapedAt": "2026-08-17T03:29:00.579Z",
                 "orderNumber": "111-0000003-0000003",
                 "orderDate": "August 7, 2026",
-                "paymentMethod": "Mastercardending in 1111",
+                "paymentMethods": [
+                    {
+                        "name": "Mastercard",
+                        "lastFour": "1111"
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 39.9,
                     "shipping__handling": 2.99,
@@ -198,7 +213,12 @@
                 "scrapedAt": "2026-08-17T03:29:04.880Z",
                 "orderNumber": "111-0000004-0000004",
                 "orderDate": "August 5, 2026",
-                "paymentMethod": "Mastercardending in 2222",
+                "paymentMethods": [
+                    {
+                        "name": "Mastercard",
+                        "lastFour": "2222"
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 77.94,
                     "shipping__handling": 0,
@@ -234,7 +254,12 @@
                 "scrapedAt": "2026-08-17T03:29:08.986Z",
                 "orderNumber": "112-0000005-0000005",
                 "orderDate": "August 1, 2026",
-                "paymentMethod": "Mastercardending in 3333",
+                "paymentMethods": [
+                    {
+                        "name": "Mastercard",
+                        "lastFour": "3333"
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 25.12,
                     "shipping__handling": 0,
@@ -270,7 +295,12 @@
                 "scrapedAt": "2026-08-17T03:29:13.128Z",
                 "orderNumber": "111-0000006-0000006",
                 "orderDate": "July 21, 2026",
-                "paymentMethod": "Visaending in 4444",
+                "paymentMethods": [
+                    {
+                        "name": "Amazon account balance",
+                        "lastFour": null
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 14.94,
                     "shipping__handling": 0,
@@ -307,7 +337,16 @@
                 "scrapedAt": "2026-08-17T03:29:18.379Z",
                 "orderNumber": "111-0000007-0000007",
                 "orderDate": "July 21, 2026",
-                "paymentMethod": "Visaending in 4444",
+                "paymentMethods": [
+                    {
+                        "name": "Visa",
+                        "lastFour": "4444"
+                    },
+                    {
+                        "name": "Amazon account balance",
+                        "lastFour": null
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 39.78,
                     "shipping__handling": 2.99,
@@ -346,7 +385,12 @@
                 "scrapedAt": "2026-08-17T03:29:22.993Z",
                 "orderNumber": "111-0000008-0000008",
                 "orderDate": "July 21, 2026",
-                "paymentMethod": "Mastercardending in 3333",
+                "paymentMethods": [
+                    {
+                        "name": "Mastercard",
+                        "lastFour": "3333"
+                    }
+                ],
                 "summary": {
                     "items_subtotal": 39.88,
                     "shipping__handling": 2.99,
