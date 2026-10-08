@@ -5,6 +5,7 @@ namespace Tests\Feature\Imports;
 use App\Jobs\ProcessImportBatch;
 use App\Models\ImportBatch;
 use App\Models\User;
+use App\Models\VenmoActivity;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -87,6 +88,49 @@ class VenmoActivityImportTest extends TestCase
                 ->where('breadcrumbs.2.label', 'Import batch')
                 ->where('can_revert', true)
                 ->where('revert_url', route('venmo.imports.destroy', $batch)));
+    }
+
+    public function test_venmo_import_batch_shows_date_range_and_activities_list(): void
+    {
+        $user = User::factory()->create();
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'venmo',
+            'type' => 'activity',
+            'original_filename' => 'venmo.csv',
+        ]);
+
+        $act1 = VenmoActivity::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'occurred_at' => '2026-06-01 10:00:00',
+            'note' => 'Lunch',
+            'amount' => -15.50,
+        ]);
+
+        $act2 = VenmoActivity::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'occurred_at' => '2026-06-10 14:00:00',
+            'note' => 'Dinner',
+            'amount' => -45.00,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('venmo.imports.show', $batch))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Imports/Show')
+                ->where('batch.id', $batch->id)
+                ->where('date_range.min', '2026-06-01')
+                ->where('date_range.max', '2026-06-10')
+                ->where('date_range.span_days', 9)
+                ->has('activities', 2)
+                ->where('activities.0.id', $act2->id)
+                ->where('activities.0.note', 'Dinner')
+                ->where('activities.1.id', $act1->id)
+                ->where('activities.1.note', 'Lunch')
+                ->where('pagination.total', 2));
     }
 
     public function test_venmo_import_batch_show_rejects_bank_batches(): void

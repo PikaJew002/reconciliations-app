@@ -125,6 +125,11 @@
                         </p>
                         <p class="text-sm text-neutral-600">
                             {{ batch.source }} / {{ batch.type }}
+                            <template
+                                v-if="batch.date_range && (batch.date_range.min || batch.date_range.max)"
+                            >
+                                · {{ batch.date_range.min }} → {{ batch.date_range.max }}
+                            </template>
                         </p>
                     </Link>
                     <div class="flex items-center gap-3">

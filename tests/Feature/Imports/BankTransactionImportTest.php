@@ -203,6 +203,58 @@ class BankTransactionImportTest extends TestCase
                 ->where('revert_url', route('accounts.imports.destroy', [$account, $batch])));
     }
 
+    public function test_account_import_batch_shows_date_range_and_transactions_list(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Checking',
+        ]);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'source' => 'bank',
+            'type' => 'transactions',
+            'original_filename' => 'chase.csv',
+            'metadata' => ['account_id' => (string) $account->id],
+        ]);
+
+        $tx1 = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'posted_at' => '2026-08-01',
+            'description' => 'Grocery store',
+            'amount' => 45.50,
+        ]);
+
+        $tx2 = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'import_batch_id' => $batch->id,
+            'posted_at' => '2026-08-15',
+            'description' => 'Gas station',
+            'amount' => 30.00,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.imports.show', [$account, $batch]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Imports/Show')
+                ->where('batch.id', $batch->id)
+                ->where('date_range.min', '2026-08-01')
+                ->where('date_range.max', '2026-08-15')
+                ->where('date_range.span_days', 14)
+                ->has('transactions', 2)
+                ->where('transactions.0.id', $tx2->id)
+                ->where('transactions.0.description', 'Gas station')
+                ->where('transactions.0.posted_at', '2026-08-15')
+                ->where('transactions.1.id', $tx1->id)
+                ->where('transactions.1.description', 'Grocery store')
+                ->where('transactions.1.posted_at', '2026-08-01')
+                ->where('pagination.total', 2));
+    }
+
     public function test_account_import_batch_show_rejects_batches_for_other_accounts(): void
     {
         $user = User::factory()->create();
