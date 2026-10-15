@@ -466,6 +466,70 @@ class OrderBrowseTest extends TestCase
                 ->where('filters.to', ''));
     }
 
+    public function test_show_search_ignores_hyphens_in_order_numbers(): void
+    {
+        $user = User::factory()->create();
+
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'order_number' => '200013093198585',
+            'ordered_at' => '2026-07-01 00:00:00',
+            'total' => 25.00,
+            'status' => 'imported',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'order_number' => '111-0000001-0000001',
+            'ordered_at' => '2026-07-02 00:00:00',
+            'total' => 30.00,
+            'status' => 'imported',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'order_number' => '999-0000000-0000000',
+            'ordered_at' => '2026-07-03 00:00:00',
+            'total' => 40.00,
+            'status' => 'imported',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'q' => '2000130-93198585']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Show')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', '200013093198585')
+                ->where('filters.q', '2000130-93198585'));
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'q' => '11100000010000001']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Show')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', '111-0000001-0000001')
+                ->where('filters.q', '11100000010000001'));
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'q' => '111-0000001-0000001']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Orders/Show')
+                ->has('orders', 1)
+                ->where('orders.0.order_number', '111-0000001-0000001'));
+    }
+
     public function test_show_allows_merchants_with_no_orders(): void
     {
         $user = User::factory()->create();

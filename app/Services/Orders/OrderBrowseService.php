@@ -144,7 +144,7 @@ class OrderBrowseService
             ->when($q !== '', function (Builder $query) use ($q): void {
                 $query->where(function (Builder $builder) use ($q): void {
                     $builder
-                        ->where('order_number', 'like', "%{$q}%")
+                        ->whereOrderNumberContains($q)
                         ->orWhere('total', 'like', "%{$q}%");
                 });
             })
