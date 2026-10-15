@@ -33,11 +33,12 @@ class OrderController extends Controller
 
     public function show(Request $request, string $merchant, OrderBrowseService $browse): Response
     {
-        $data = $browse->show(
-            $request->user()->id,
-            $merchant,
-            $request->string('q')->toString() ?: null,
-        );
+        $data = $browse->show($request->user()->id, $merchant, [
+            'q' => $request->query('q'),
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
+            'page' => $request->integer('page') ?: 1,
+        ]);
 
         return Inertia::render('Orders/Show', $data);
     }
