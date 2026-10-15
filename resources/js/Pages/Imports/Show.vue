@@ -1,4 +1,5 @@
 <script setup>
+    import UncategorizeTransactionButton from '../../Components/UncategorizeTransactionButton.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { Link, router, usePage } from '@inertiajs/vue3';
     import { computed, onMounted, onUnmounted, ref } from 'vue';
@@ -566,9 +567,15 @@
                             </template>
                         </p>
                     </div>
-                    <p class="shrink-0 font-medium">
-                        {{ formatMoney(transaction.amount) }}
-                    </p>
+                    <div class="flex shrink-0 flex-col items-end gap-2">
+                        <p class="font-medium">
+                            {{ formatMoney(transaction.amount) }}
+                        </p>
+                        <UncategorizeTransactionButton
+                            v-if="transaction.can_uncategorize"
+                            :transaction-id="transaction.id"
+                        />
+                    </div>
                 </li>
             </ul>
 

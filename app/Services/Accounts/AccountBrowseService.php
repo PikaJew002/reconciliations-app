@@ -183,6 +183,7 @@ class AccountBrowseService
                     'name' => $transaction->category->name,
                     'kind' => $transaction->category->kind,
                 ] : null,
+                'can_uncategorize' => $transaction->isCategorizedForRelease(),
                 'venmo_summary' => $transaction->venmoSummary(),
             ])->values()->all(),
             'pagination' => [

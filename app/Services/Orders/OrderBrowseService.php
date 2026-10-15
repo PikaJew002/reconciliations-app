@@ -91,78 +91,129 @@ class OrderBrowseService
     }
 
     /**
+     * @param  array{q?: ?string, from?: ?string, to?: ?string, state?: ?string, page?: int}|string|null  $filters
      * @return array{
-     *     merchant: array{name: string, normalized_name: string},
+     *     merchant: array{name: string, normalized_name: string, order_count: int, min_ordered_at: ?string, max_ordered_at: ?string, coverage_span_days: ?int},
      *     orders: list<array<string, mixed>>,
-     *     ordersTruncated: bool,
+     *     pagination: array{
+     *         current_page: int,
+     *         last_page: int,
+     *         per_page: int,
+     *         total: int,
+     *         first_item: ?int,
+     *         last_item: ?int
+     *     },
      *     orderCoverage: array{min: ?string, max: ?string}|null,
      *     bankCoverage: array{min: ?string, max: ?string}|null,
      *     nearImportEdge: bool,
-     *     filters: array{q: string, merchant: string}
+     *     filters: array{q: string, from: string, to: string, state: string, merchant: string}
      * }
      */
-    public function show(int $userId, string $merchantNormalized, ?string $query = null): array
+    public function show(int $userId, string $merchantNormalized, array|string|null $filters = []): array
     {
         $vendor = $this->resolveBrowsableMerchant($merchantNormalized);
 
-        $query = trim((string) $query);
+        if (is_string($filters) || $filters === null) {
+            $filters = ['q' => $filters];
+        }
+
+        $q = trim((string) ($filters['q'] ?? ''));
+        $from = $this->dateFilter($filters['from'] ?? null);
+        $to = $this->dateFilter($filters['to'] ?? null);
+        $state = $this->stateFilter($filters['state'] ?? null);
+        $page = max(1, (int) ($filters['page'] ?? 1));
+
         $merchantNormalized = $vendor['normalized_name'];
 
         $bankCoverage = $this->bankCoverage($userId);
-        $ordersQuery = $this->baseOrdersQuery($userId, $merchantNormalized);
+        $baseOrdersQuery = $this->baseOrdersQuery($userId, $merchantNormalized);
 
-        if ($query !== '') {
-            $ordersQuery->where(function (Builder $builder) use ($query): void {
-                $builder
-                    ->where('order_number', 'like', "%{$query}%")
-                    ->orWhere('total', 'like', "%{$query}%");
-            });
-        }
+        $coverage = (clone $baseOrdersQuery)
+            ->whereNotNull('ordered_at')
+            ->selectRaw('MIN(ordered_at) as min_ordered_at, MAX(ordered_at) as max_ordered_at, COUNT(*) as order_count')
+            ->first();
+
+        $merchantMin = $coverage?->min_ordered_at
+            ? Carbon::parse($coverage->min_ordered_at)->toDateString()
+            : null;
+        $merchantMax = $coverage?->max_ordered_at
+            ? Carbon::parse($coverage->max_ordered_at)->toDateString()
+            : null;
+
+        $ordersQuery = (clone $baseOrdersQuery)
+            ->when($q !== '', function (Builder $query) use ($q): void {
+                $query->where(function (Builder $builder) use ($q): void {
+                    $builder
+                        ->where('order_number', 'like', "%{$q}%")
+                        ->orWhere('total', 'like', "%{$q}%");
+                });
+            })
+            ->when($from !== null, fn (Builder $query) => $query->whereDate('ordered_at', '>=', $from))
+            ->when($to !== null, fn (Builder $query) => $query->whereDate('ordered_at', '<=', $to))
+            ->when($state !== '', fn (Builder $query) => $this->applyStateFilter($query, $state))
+            ->orderByDesc('ordered_at')
+            ->orderByDesc('id');
 
         $orderCoverage = $this->orderCoverage(clone $ordersQuery);
         $nearImportEdge = $this->coverageNearImportEdge($orderCoverage, $bankCoverage);
 
-        $totalMatching = (clone $ordersQuery)->count();
-
-        $orders = $ordersQuery
+        $paginator = $ordersQuery
             ->with('merchant:id,name,normalized_name')
             ->with(['components:id,order_id,amount,refund_amount,refund_kind'])
-            ->orderByDesc('ordered_at')
-            ->orderByDesc('id')
-            ->limit($this->listLimit)
-            ->get()
-            ->map(function (Order $order) use ($bankCoverage): array {
-                $orderDate = $this->orderDate($order);
-                $balance = $this->componentBalance(
-                    (float) $order->total,
-                    $order->payableComponentSum(),
-                );
+            ->paginate(
+                perPage: $this->listLimit,
+                page: $page,
+            );
 
-                return [
-                    'id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'ordered_at' => optional($order->ordered_at)?->toDateString(),
-                    'delivered_at' => optional($order->delivered_at)?->toDateString(),
-                    'total' => (float) $order->total,
-                    'status' => $order->status,
-                    'payment_last_four' => $order->payment_last_four,
-                    'merchant' => $order->merchant?->only(['id', 'name', 'normalized_name']),
-                    'near_import_edge' => $this->orderNearImportEdge($orderDate, $bankCoverage),
-                    ...$balance,
-                ];
-            })
+        $orders = $paginator->getCollection()->map(function (Order $order) use ($bankCoverage): array {
+            $orderDate = $this->orderDate($order);
+            $balance = $this->componentBalance(
+                (float) $order->total,
+                $order->payableComponentSum(),
+            );
+
+            return [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'ordered_at' => optional($order->ordered_at)?->toDateString(),
+                'delivered_at' => optional($order->delivered_at)?->toDateString(),
+                'total' => (float) $order->total,
+                'status' => $order->status,
+                'payment_last_four' => $order->payment_last_four,
+                'merchant' => $order->merchant?->only(['id', 'name', 'normalized_name']),
+                'near_import_edge' => $this->orderNearImportEdge($orderDate, $bankCoverage),
+                ...$balance,
+            ];
+        })
             ->values()
             ->all();
 
         return [
-            'merchant' => $vendor,
+            'merchant' => [
+                'name' => $vendor['name'],
+                'normalized_name' => $vendor['normalized_name'],
+                'order_count' => (int) ($coverage?->order_count ?? 0),
+                'min_ordered_at' => $merchantMin,
+                'max_ordered_at' => $merchantMax,
+                'coverage_span_days' => $this->spanDays($merchantMin, $merchantMax),
+            ],
             'orders' => $orders,
-            'ordersTruncated' => $totalMatching > $this->listLimit,
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'first_item' => $paginator->firstItem(),
+                'last_item' => $paginator->lastItem(),
+            ],
             'orderCoverage' => $orderCoverage,
             'bankCoverage' => $bankCoverage,
             'nearImportEdge' => $nearImportEdge,
             'filters' => [
-                'q' => $query,
+                'q' => $q,
+                'from' => $from ?? '',
+                'to' => $to ?? '',
+                'state' => $state,
                 'merchant' => $merchantNormalized,
             ],
         ];
@@ -552,5 +603,53 @@ class OrderBrowseService
         }
 
         return (int) abs(Carbon::parse($min)->startOfDay()->diffInDays(Carbon::parse($max)->startOfDay(), false));
+    }
+
+    protected function dateFilter(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return null;
+        }
+
+        try {
+            $date = Carbon::createFromFormat('Y-m-d', $value);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($date === false || $date->format('Y-m-d') !== $value) {
+            return null;
+        }
+
+        return $date->toDateString();
+    }
+
+    protected function stateFilter(mixed $value): string
+    {
+        $value = strtolower(trim((string) $value));
+
+        return in_array($value, ['imported', 'unbalanced'], true) ? $value : '';
+    }
+
+    protected function applyStateFilter(Builder $query, string $state): void
+    {
+        if ($state === 'imported') {
+            $query->where('orders.status', 'imported');
+
+            return;
+        }
+
+        if ($state !== 'unbalanced') {
+            return;
+        }
+
+        $payableSum = '(SELECT COALESCE(SUM(CASE WHEN order_components.refund_kind = ? THEN order_components.amount - COALESCE(order_components.refund_amount, 0) ELSE order_components.amount END), 0) FROM order_components WHERE order_components.order_id = orders.id)';
+
+        $query->whereRaw(
+            "ABS(ROUND(orders.total - {$payableSum}, 2)) >= 0.01",
+            [OrderComponent::REFUND_KIND_BANK],
+        );
     }
 }
