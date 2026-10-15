@@ -154,6 +154,10 @@ class ReconciliationReviewTest extends TestCase
                 ->has('unbalancedOrders', 1)
                 ->has('paymentReviewOrders', 0)
                 ->where('unbalancedOrders.0.id', $unbalancedOrder->id)
+                ->where(
+                    'unbalancedOrders.0.detail_url',
+                    route('orders.detail', ['walmart', $unbalancedOrder->id]),
+                )
                 ->where('unbalancedOrders.0.gap', 5)
                 ->where('unbalancedOrders.0.components.0.order_item_id', $unbalancedItem->id)
                 ->where('unbalancedOrders.0.components.0.quantity', 2)
