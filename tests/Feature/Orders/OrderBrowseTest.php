@@ -963,6 +963,150 @@ class OrderBrowseTest extends TestCase
                 ->where('filters.state', 'imported'));
     }
 
+    public function test_show_fulfillment_filter_matches_walmart_order_types(): void
+    {
+        $user = User::factory()->create();
+
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-10-08 00:00:00',
+            'order_number' => 'PICKUP',
+            'metadata' => [
+                'orderType' => 'GLASS',
+                'fulfillmentTypes' => 'SC_PICKUP',
+            ],
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-10-07 00:00:00',
+            'order_number' => 'IN-STORE',
+            'metadata' => [
+                'orderType' => 'IN_STORE',
+                'fulfillmentTypes' => 'IN_STORE',
+            ],
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-10-04 00:00:00',
+            'order_number' => 'DELIVERED',
+            'metadata' => [
+                'orderType' => 'GLASS',
+                'fulfillmentTypes' => 'SC_DELIVERY',
+            ],
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-09-22 00:00:00',
+            'order_number' => 'MIXED',
+            'metadata' => [
+                'orderType' => 'GLASS',
+                'fulfillmentTypes' => 'FC_DELIVERY, SC_DELIVERY',
+            ],
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-09-01 00:00:00',
+            'order_number' => 'SHIPPED',
+            'metadata' => [
+                'orderType' => 'GLASS',
+                'fulfillmentTypes' => 'FC_DELIVERY',
+            ],
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-08-01 00:00:00',
+            'order_number' => 'UNKNOWN',
+            'metadata' => [],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'fulfillment' => 'shipped']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 2)
+                ->where('orders.0.order_number', 'MIXED')
+                ->where('orders.0.fulfillment', ['Shipped', 'Delivered'])
+                ->where('orders.1.order_number', 'SHIPPED')
+                ->where('orders.1.fulfillment', ['Shipped'])
+                ->where('filters.fulfillment', 'shipped'));
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'fulfillment' => 'delivered']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 2)
+                ->where('orders.0.order_number', 'DELIVERED')
+                ->where('orders.1.order_number', 'MIXED')
+                ->where('filters.fulfillment', 'delivered'));
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'fulfillment' => 'pickup']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'PICKUP')
+                ->where('orders.0.fulfillment', ['Picked up']));
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'fulfillment' => 'in_store']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'IN-STORE')
+                ->where('orders.0.fulfillment', ['In-store']));
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'fulfillment' => 'closed']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 6)
+                ->where('filters.fulfillment', ''));
+    }
+
+    public function test_show_ignores_fulfillment_filter_for_amazon(): void
+    {
+        $user = User::factory()->create();
+
+        $amazon = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Amazon',
+            'normalized_name' => 'amazon',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $amazon->id,
+            'order_number' => 'AMZ-1',
+            'metadata' => [
+                'fulfillmentTypes' => 'FC_DELIVERY',
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'amazon', 'fulfillment' => 'shipped']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 1)
+                ->where('filters.fulfillment', ''));
+    }
+
     public function test_show_ignores_invalid_state_filter(): void
     {
         $user = User::factory()->create();

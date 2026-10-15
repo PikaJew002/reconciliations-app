@@ -42,6 +42,7 @@
     let fromDate = ref(props.filters.from ?? '');
     let toDate = ref(props.filters.to ?? '');
     let state = ref(props.filters.state ?? '');
+    let fulfillment = ref(props.filters.fulfillment ?? '');
 
     watch(
         () => props.filters.q,
@@ -71,12 +72,24 @@
         },
     );
 
+    watch(
+        () => props.filters.fulfillment,
+        (value) => {
+            fulfillment.value = value ?? '';
+        },
+    );
+
     let hasFilters = computed(
         () =>
             Boolean(props.filters.q) ||
             Boolean(props.filters.from) ||
             Boolean(props.filters.to) ||
-            Boolean(props.filters.state),
+            Boolean(props.filters.state) ||
+            Boolean(props.filters.fulfillment),
+    );
+
+    let showFulfillmentFilter = computed(
+        () => props.merchant.normalized_name === 'walmart',
     );
 
     let queryParams = (overrides = {}) => {
@@ -85,6 +98,7 @@
             from: fromDate.value || undefined,
             to: toDate.value || undefined,
             state: state.value || undefined,
+            fulfillment: fulfillment.value || undefined,
             ...overrides,
         };
 
@@ -121,6 +135,7 @@
         fromDate.value = '';
         toDate.value = '';
         state.value = '';
+        fulfillment.value = '';
 
         router.get(
             `/orders/${props.merchant.normalized_name}`,
@@ -149,6 +164,10 @@
 
         if (props.filters.state) {
             params.set('state', props.filters.state);
+        }
+
+        if (props.filters.fulfillment) {
+            params.set('fulfillment', props.filters.fulfillment);
         }
 
         if (page > 1) {
@@ -287,6 +306,19 @@
                     <option value="unbalanced">Unbalanced</option>
                 </select>
             </label>
+            <label v-if="showFulfillmentFilter" class="text-sm">
+                <span class="mb-1 block text-neutral-600">Type</span>
+                <select
+                    v-model="fulfillment"
+                    class="rounded border px-3 text-sm"
+                >
+                    <option value="">All types</option>
+                    <option value="shipped">Shipped</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="pickup">Picked up</option>
+                    <option value="in_store">In-store</option>
+                </select>
+            </label>
             <button type="submit" class="btn rounded border px-4 text-sm">
                 Apply
             </button>
@@ -319,6 +351,9 @@
                             Ordered {{ formatDate(order.ordered_at) }} · Delivered
                             {{ formatDate(order.delivered_at) }} ·
                             {{ order.status }}
+                            <template v-if="order.fulfillment?.length">
+                                · {{ order.fulfillment.join(', ') }}
+                            </template>
                             <template v-if="order.payment_last_four">
                                 · •••• {{ order.payment_last_four }}
                             </template>
