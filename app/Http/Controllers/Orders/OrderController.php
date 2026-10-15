@@ -37,6 +37,7 @@ class OrderController extends Controller
             'q' => $request->query('q'),
             'from' => $request->query('from'),
             'to' => $request->query('to'),
+            'state' => $request->query('state'),
             'page' => $request->integer('page') ?: 1,
         ]);
 

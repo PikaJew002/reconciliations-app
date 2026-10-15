@@ -91,7 +91,7 @@ class OrderBrowseService
     }
 
     /**
-     * @param  array{q?: ?string, from?: ?string, to?: ?string, page?: int}|string|null  $filters
+     * @param  array{q?: ?string, from?: ?string, to?: ?string, state?: ?string, page?: int}|string|null  $filters
      * @return array{
      *     merchant: array{name: string, normalized_name: string, order_count: int, min_ordered_at: ?string, max_ordered_at: ?string, coverage_span_days: ?int},
      *     orders: list<array<string, mixed>>,
@@ -106,7 +106,7 @@ class OrderBrowseService
      *     orderCoverage: array{min: ?string, max: ?string}|null,
      *     bankCoverage: array{min: ?string, max: ?string}|null,
      *     nearImportEdge: bool,
-     *     filters: array{q: string, from: string, to: string, merchant: string}
+     *     filters: array{q: string, from: string, to: string, state: string, merchant: string}
      * }
      */
     public function show(int $userId, string $merchantNormalized, array|string|null $filters = []): array
@@ -120,6 +120,7 @@ class OrderBrowseService
         $q = trim((string) ($filters['q'] ?? ''));
         $from = $this->dateFilter($filters['from'] ?? null);
         $to = $this->dateFilter($filters['to'] ?? null);
+        $state = $this->stateFilter($filters['state'] ?? null);
         $page = max(1, (int) ($filters['page'] ?? 1));
 
         $merchantNormalized = $vendor['normalized_name'];
@@ -149,6 +150,7 @@ class OrderBrowseService
             })
             ->when($from !== null, fn (Builder $query) => $query->whereDate('ordered_at', '>=', $from))
             ->when($to !== null, fn (Builder $query) => $query->whereDate('ordered_at', '<=', $to))
+            ->when($state !== '', fn (Builder $query) => $this->applyStateFilter($query, $state))
             ->orderByDesc('ordered_at')
             ->orderByDesc('id');
 
@@ -183,8 +185,8 @@ class OrderBrowseService
                 ...$balance,
             ];
         })
-        ->values()
-        ->all();
+            ->values()
+            ->all();
 
         return [
             'merchant' => [
@@ -211,6 +213,7 @@ class OrderBrowseService
                 'q' => $q,
                 'from' => $from ?? '',
                 'to' => $to ?? '',
+                'state' => $state,
                 'merchant' => $merchantNormalized,
             ],
         ];
@@ -621,5 +624,32 @@ class OrderBrowseService
         }
 
         return $date->toDateString();
+    }
+
+    protected function stateFilter(mixed $value): string
+    {
+        $value = strtolower(trim((string) $value));
+
+        return in_array($value, ['imported', 'unbalanced'], true) ? $value : '';
+    }
+
+    protected function applyStateFilter(Builder $query, string $state): void
+    {
+        if ($state === 'imported') {
+            $query->where('orders.status', 'imported');
+
+            return;
+        }
+
+        if ($state !== 'unbalanced') {
+            return;
+        }
+
+        $payableSum = '(SELECT COALESCE(SUM(CASE WHEN order_components.refund_kind = ? THEN order_components.amount - COALESCE(order_components.refund_amount, 0) ELSE order_components.amount END), 0) FROM order_components WHERE order_components.order_id = orders.id)';
+
+        $query->whereRaw(
+            "ABS(ROUND(orders.total - {$payableSum}, 2)) >= 0.01",
+            [OrderComponent::REFUND_KIND_BANK],
+        );
     }
 }

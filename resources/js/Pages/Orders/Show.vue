@@ -41,6 +41,7 @@
     let search = ref(props.filters.q ?? '');
     let fromDate = ref(props.filters.from ?? '');
     let toDate = ref(props.filters.to ?? '');
+    let state = ref(props.filters.state ?? '');
 
     watch(
         () => props.filters.q,
@@ -63,11 +64,19 @@
         },
     );
 
+    watch(
+        () => props.filters.state,
+        (value) => {
+            state.value = value ?? '';
+        },
+    );
+
     let hasFilters = computed(
         () =>
             Boolean(props.filters.q) ||
             Boolean(props.filters.from) ||
-            Boolean(props.filters.to),
+            Boolean(props.filters.to) ||
+            Boolean(props.filters.state),
     );
 
     let queryParams = (overrides = {}) => {
@@ -75,6 +84,7 @@
             q: search.value || undefined,
             from: fromDate.value || undefined,
             to: toDate.value || undefined,
+            state: state.value || undefined,
             ...overrides,
         };
 
@@ -110,6 +120,7 @@
         search.value = '';
         fromDate.value = '';
         toDate.value = '';
+        state.value = '';
 
         router.get(
             `/orders/${props.merchant.normalized_name}`,
@@ -134,6 +145,10 @@
 
         if (props.filters.to) {
             params.set('to', props.filters.to);
+        }
+
+        if (props.filters.state) {
+            params.set('state', props.filters.state);
         }
 
         if (page > 1) {
@@ -260,6 +275,17 @@
                     :min="fromDate || merchant.min_ordered_at || undefined"
                     :max="merchant.max_ordered_at ?? undefined"
                 />
+            </label>
+            <label class="text-sm">
+                <span class="mb-1 block text-neutral-600">Show</span>
+                <select
+                    v-model="state"
+                    class="rounded border px-3 text-sm"
+                >
+                    <option value="">All orders</option>
+                    <option value="imported">Imported</option>
+                    <option value="unbalanced">Unbalanced</option>
+                </select>
             </label>
             <button type="submit" class="btn rounded border px-4 text-sm">
                 Apply

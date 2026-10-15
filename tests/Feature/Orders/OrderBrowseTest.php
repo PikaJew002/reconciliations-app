@@ -317,6 +317,7 @@ class OrderBrowseTest extends TestCase
                 ->where('pagination.per_page', 50)
                 ->where('filters.from', '')
                 ->where('filters.to', '')
+                ->where('filters.state', '')
                 ->missing('ordersTruncated'));
     }
 
@@ -732,6 +733,204 @@ class OrderBrowseTest extends TestCase
                 ->where('pagination.last_item', 51)
                 ->where('filters.from', '2026-01-01')
                 ->where('filters.to', '2026-02-28'));
+    }
+
+    public function test_show_imported_state_excludes_reconciled_orders(): void
+    {
+        $user = User::factory()->create();
+
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-02 00:00:00',
+            'order_number' => 'IMPORTED',
+            'status' => 'imported',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-03 00:00:00',
+            'order_number' => 'RECONCILED',
+            'status' => 'reconciled',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'state' => 'imported']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 1)
+                ->where('orders.0.order_number', 'IMPORTED')
+                ->where('orders.0.status', 'imported')
+                ->where('pagination.total', 1)
+                ->where('filters.state', 'imported'));
+    }
+
+    public function test_show_unbalanced_state_matches_payable_component_gap(): void
+    {
+        $user = User::factory()->create();
+
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+
+        $balanced = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-01 00:00:00',
+            'order_number' => 'BALANCED',
+            'total' => 10.00,
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $balanced->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 10.00,
+        ]);
+
+        $bankRefundBalances = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-02 00:00:00',
+            'order_number' => 'BANK-REFUND',
+            'total' => 8.00,
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $bankRefundBalances->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 10.00,
+            'refund_amount' => 2.00,
+            'refund_kind' => OrderComponent::REFUND_KIND_BANK,
+        ]);
+
+        $offBookStillUnbalanced = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-03 00:00:00',
+            'order_number' => 'OFF-BOOK',
+            'total' => 8.00,
+            'status' => 'reconciled',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $offBookStillUnbalanced->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'amount' => 10.00,
+            'refund_amount' => 2.00,
+            'refund_kind' => OrderComponent::REFUND_KIND_OFF_BOOK,
+        ]);
+
+        $missingComponents = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-04 00:00:00',
+            'order_number' => 'NO-COMPONENTS',
+            'total' => 12.00,
+            'status' => 'imported',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'state' => 'unbalanced']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 2)
+                ->where('orders.0.order_number', 'NO-COMPONENTS')
+                ->where('orders.0.id', $missingComponents->id)
+                ->where('orders.0.components_balanced', false)
+                ->where('orders.1.order_number', 'OFF-BOOK')
+                ->where('orders.1.components_balanced', false)
+                ->where('pagination.total', 2)
+                ->where('filters.state', 'unbalanced'));
+    }
+
+    public function test_show_state_filter_combines_with_dates_and_is_kept_on_later_pages(): void
+    {
+        $user = User::factory()->create();
+
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-06-01 00:00:00',
+            'order_number' => 'JUNE-IMPORTED',
+            'status' => 'imported',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-15 00:00:00',
+            'order_number' => 'JULY-RECONCILED',
+            'status' => 'reconciled',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', [
+                'merchant' => 'walmart',
+                'from' => '2026-07-01',
+                'state' => 'imported',
+                'page' => 2,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 0)
+                ->where('pagination.total', 0)
+                ->where('pagination.current_page', 2)
+                ->where('filters.from', '2026-07-01')
+                ->where('filters.state', 'imported'));
+    }
+
+    public function test_show_ignores_invalid_state_filter(): void
+    {
+        $user = User::factory()->create();
+
+        $walmart = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-15 00:00:00',
+            'order_number' => 'IMPORTED',
+            'status' => 'imported',
+        ]);
+
+        Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $walmart->id,
+            'ordered_at' => '2026-07-16 00:00:00',
+            'order_number' => 'RECONCILED',
+            'status' => 'reconciled',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('orders.show', ['merchant' => 'walmart', 'state' => 'closed']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('orders', 2)
+                ->where('filters.state', ''));
     }
 
     public function test_show_rejects_unknown_merchants(): void
