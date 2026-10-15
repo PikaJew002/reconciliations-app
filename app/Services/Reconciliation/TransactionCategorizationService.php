@@ -182,6 +182,7 @@ class TransactionCategorizationService
             'classification_confidence' => 100,
             'category_id' => $category->id,
             'status' => 'ignored',
+            'metadata' => $this->metadataWithCategorizationRelease($transaction, false),
         ]);
 
         if ($matchMode === TransactionCategorizationRule::MATCH_ONCE) {
@@ -189,6 +190,53 @@ class TransactionCategorizationService
         }
 
         $this->upsertRule($transaction, $category, $classification, $matchMode, $normalizedPattern);
+    }
+
+    public function uncategorizeTransaction(BankTransaction $transaction): void
+    {
+        $reason = $this->uncategorizeBlockReason($transaction);
+
+        if ($reason !== null) {
+            throw new InvalidArgumentException($reason);
+        }
+
+        $transaction->update([
+            'classification' => null,
+            'classification_source' => null,
+            'classification_confidence' => null,
+            'category_id' => null,
+            'status' => 'unmatched',
+            'metadata' => $this->metadataWithCategorizationRelease($transaction, true),
+        ]);
+    }
+
+    public function uncategorizeBlockReason(BankTransaction $transaction): ?string
+    {
+        if ($transaction->canBeUncategorized()) {
+            return null;
+        }
+
+        if ($transaction->allocations()->exists()) {
+            return 'This transaction is allocated to an order. Undo that match before releasing it.';
+        }
+
+        if ($transaction->isInReimbursementGroup()) {
+            return 'Remove this transaction from its reimbursement group before releasing it.';
+        }
+
+        if ($transaction->plannedOccurrence()->exists()) {
+            return 'This transaction is linked to a planned bill or paycheck. Unlink that plan before releasing it.';
+        }
+
+        if ($transaction->pendingSpend()->exists()) {
+            return 'This transaction is linked to pending spend. Unlink that before releasing it.';
+        }
+
+        if ($transaction->debitTransferLink()->exists() || $transaction->creditTransferLink()->exists()) {
+            return 'This transaction is part of a transfer. Reject that link before releasing it.';
+        }
+
+        return 'Only categorized bills, expenses, and income can be released.';
     }
 
     /**
@@ -248,6 +296,7 @@ class TransactionCategorizationService
             'classification_confidence' => 100,
             'category_id' => $category->id,
             'status' => 'ignored',
+            'metadata' => $this->metadataWithCategorizationRelease($transaction, false),
         ]);
 
         if ($matchMode === TransactionCategorizationRule::MATCH_ONCE) {
@@ -271,6 +320,10 @@ class TransactionCategorizationService
         int &$applied,
         int &$ambiguous,
     ): void {
+        if (($transaction->metadata[BankTransaction::METADATA_CATEGORIZATION_RELEASED] ?? false) === true) {
+            return;
+        }
+
         $matches = $this->matchingRules($transaction, $rules);
 
         if ($matches->isEmpty()) {
@@ -449,5 +502,21 @@ class TransactionCategorizationService
     protected function isCheckDescription(string $normalized): bool
     {
         return app(TransactionMatchEvaluator::class)->isCheckDescription($normalized);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function metadataWithCategorizationRelease(BankTransaction $transaction, bool $released): array
+    {
+        $metadata = $transaction->metadata ?? [];
+
+        if ($released) {
+            $metadata[BankTransaction::METADATA_CATEGORIZATION_RELEASED] = true;
+        } else {
+            unset($metadata[BankTransaction::METADATA_CATEGORIZATION_RELEASED]);
+        }
+
+        return $metadata;
     }
 }

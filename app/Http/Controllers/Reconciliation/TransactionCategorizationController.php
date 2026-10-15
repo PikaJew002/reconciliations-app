@@ -138,6 +138,26 @@ class TransactionCategorizationController extends Controller
             ->with('success', 'Transaction categorized. Applying rule to similar transactions…');
     }
 
+    public function destroy(
+        Request $request,
+        BankTransaction $transaction,
+        TransactionCategorizationService $categorization,
+    ): RedirectResponse {
+        abort_unless($transaction->user_id === $request->user()->id, 403);
+
+        try {
+            $categorization->uncategorizeTransaction($transaction);
+        } catch (InvalidArgumentException $exception) {
+            return redirect()
+                ->back(fallback: route('reconciliation.unmatched-transactions'))
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->back(fallback: route('reconciliation.unmatched-transactions'))
+            ->with('success', 'Transaction released. It is unmatched again.');
+    }
+
     /**
      * @param  array{category_id?: int|null, category_name?: string|null}  $validated
      */

@@ -13,8 +13,11 @@ use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\TransactionAllocation;
 use App\Models\TransactionCategorizationRule;
 use App\Models\User;
+use App\Services\Reconciliation\ReconciliationService;
+use App\Services\Reconciliation\ReimbursementGroupService;
 use App\Services\Reconciliation\TransactionCategorizationService;
 use App\Support\CategoryColor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -654,6 +657,239 @@ class TransactionCategorizationTest extends TestCase
             'cm alliance ach draft',
             $service->suggestDescriptionPrefix('cm alliance ach draft 12345678'),
         );
+    }
+
+    public function test_user_can_release_a_categorized_transaction_back_to_unmatched(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Groceries']);
+        $transaction = $this->debitTransaction($user, [
+            'amount' => -42.18,
+            'description' => 'WALMART.COM',
+            'normalized_description' => 'walmart.com',
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
+            'classification_confidence' => 100,
+            'category_id' => $category->id,
+            'metadata' => ['import_note' => 'kept'],
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('accounts.show', $transaction->account_id))
+            ->delete(route('reconciliation.transactions.uncategorize', $transaction))
+            ->assertRedirect(route('accounts.show', $transaction->account_id))
+            ->assertSessionHas('success');
+
+        $transaction->refresh();
+        $this->assertSame('unmatched', $transaction->status);
+        $this->assertNull($transaction->classification);
+        $this->assertNull($transaction->classification_source);
+        $this->assertNull($transaction->classification_confidence);
+        $this->assertNull($transaction->category_id);
+        $this->assertTrue($transaction->metadata[BankTransaction::METADATA_CATEGORIZATION_RELEASED]);
+        $this->assertSame('kept', $transaction->metadata['import_note']);
+        $this->assertTrue(
+            BankTransaction::query()->whereKey($transaction->id)->availableForExpenseMatching()->exists(),
+        );
+    }
+
+    public function test_released_transaction_is_skipped_by_automatic_rules_until_categorized_again(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'supports_order_import' => false,
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Dining']);
+        $first = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -18.5,
+            'description' => 'CHIPOTLE 123',
+            'normalized_description' => 'chipotle 123',
+        ]);
+        $released = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -12.0,
+            'description' => 'CHIPOTLE 456',
+            'normalized_description' => 'chipotle 456',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $first), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_MERCHANT,
+            ])
+            ->assertRedirect();
+
+        $categorization = app(TransactionCategorizationService::class);
+        $categorization->categorizeForUser($user->id);
+
+        $released->refresh();
+        $this->assertSame('ignored', $released->status);
+        $this->assertSame($category->id, $released->category_id);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.transactions.uncategorize', $released))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $later = $this->debitTransaction($user, [
+            'merchant_id' => $merchant->id,
+            'amount' => -9.0,
+            'description' => 'CHIPOTLE 789',
+            'normalized_description' => 'chipotle 789',
+        ]);
+
+        $categorization->categorizeForUser($user->id);
+
+        $released->refresh();
+        $later->refresh();
+        $this->assertSame('unmatched', $released->status);
+        $this->assertNull($released->classification);
+        $this->assertNull($released->category_id);
+        $this->assertSame('ignored', $later->status);
+        $this->assertSame($category->id, $later->category_id);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.transactions.categorize', $released), [
+                'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+                'category_id' => $category->id,
+                'match_mode' => TransactionCategorizationRule::MATCH_ONCE,
+            ])
+            ->assertRedirect();
+
+        $released->refresh();
+        $this->assertSame('ignored', $released->status);
+        $this->assertArrayNotHasKey(
+            BankTransaction::METADATA_CATEGORIZATION_RELEASED,
+            $released->metadata ?? [],
+        );
+    }
+
+    public function test_uncategorize_forbids_other_users(): void
+    {
+        $owner = User::factory()->create();
+        $other = User::factory()->create();
+        $category = Category::factory()->for($owner)->expense()->create();
+        $transaction = $this->debitTransaction($owner, [
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($other)
+            ->delete(route('reconciliation.transactions.uncategorize', $transaction))
+            ->assertForbidden();
+
+        $this->assertSame('ignored', $transaction->fresh()->status);
+    }
+
+    public function test_uncategorize_rejects_allocated_and_reimbursement_transactions(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->for($user)->expense()->create();
+        $allocated = $this->debitTransaction($user, [
+            'amount' => -20.0,
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'category_id' => $category->id,
+        ]);
+        TransactionAllocation::factory()->create([
+            'bank_transaction_id' => $allocated->id,
+            'allocated_amount' => 20.0,
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.transactions.uncategorize', $allocated))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame($category->id, $allocated->fresh()->category_id);
+
+        $grouped = $this->debitTransaction($user, [
+            'amount' => -30.0,
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
+            'category_id' => $category->id,
+        ]);
+        $credit = $this->debitTransaction($user, [
+            'amount' => 30.0,
+            'description' => 'VENMO CREDIT',
+            'status' => 'unmatched',
+        ]);
+
+        app(ReimbursementGroupService::class)->create($user->id, [$grouped->id, $credit->id]);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.transactions.uncategorize', $grouped))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame($category->id, $grouped->fresh()->category_id);
+    }
+
+    public function test_released_walmart_charge_can_be_reconciled_to_an_order(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'walmart',
+            'supports_order_import' => true,
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Household']);
+        $batch = ImportBatch::factory()->create(['user_id' => $user->id]);
+
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-25',
+            'total' => 71.98,
+            'payment_last_four' => '2195',
+            'status' => 'imported',
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => null,
+            'type' => 'product',
+            'description' => 'Groceries',
+            'amount' => 71.98,
+            'category_id' => null,
+        ]);
+
+        $transaction = $this->debitTransaction($user, [
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-07-27',
+            'transaction_date' => '2026-07-25',
+            'amount' => -71.98,
+            'card_last_four' => '2195',
+            'description' => 'WALMART.COM',
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
+            'classification_confidence' => 100,
+            'category_id' => $category->id,
+        ]);
+
+        $reconciliation = app(ReconciliationService::class);
+        $this->assertSame(0, $reconciliation->reconcileForUser($user->id));
+        $this->assertSame('imported', $order->fresh()->status);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.transactions.uncategorize', $transaction))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame(1, $reconciliation->reconcileForUser($user->id));
+        $this->assertSame('matched', $transaction->fresh()->status);
+        $this->assertSame('reconciled', $order->fresh()->status);
     }
 
     /**

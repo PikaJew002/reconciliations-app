@@ -1,6 +1,7 @@
 <script setup>
+    import UncategorizeTransactionButton from '../../Components/UncategorizeTransactionButton.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
-    import { Link, router } from '@inertiajs/vue3';
+    import { Link, router, usePage } from '@inertiajs/vue3';
     import { computed, ref, watch } from 'vue';
 
     defineOptions({ layout: AuthenticatedLayout });
@@ -23,6 +24,10 @@
             required: true,
         },
     });
+
+    let page = usePage();
+    let flashSuccess = computed(() => page.props.flash?.success);
+    let flashError = computed(() => page.props.flash?.error);
 
     let search = ref(props.filters.q ?? '');
     let fromDate = ref(props.filters.from ?? '');
@@ -301,6 +306,19 @@
             </div>
         </div>
 
+        <p
+            v-if="flashSuccess"
+            class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
+        >
+            {{ flashSuccess }}
+        </p>
+        <p
+            v-if="flashError"
+            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+            {{ flashError }}
+        </p>
+
         <div class="rounded border px-4 py-3 text-sm">
             <p class="font-medium">Posted-date coverage</p>
             <p class="text-neutral-600">
@@ -432,9 +450,15 @@
                         </template>
                     </p>
                 </div>
-                <p class="shrink-0 font-medium">
-                    {{ formatMoney(transaction.amount) }}
-                </p>
+                <div class="flex shrink-0 flex-col items-end gap-2">
+                    <p class="font-medium">
+                        {{ formatMoney(transaction.amount) }}
+                    </p>
+                    <UncategorizeTransactionButton
+                        v-if="transaction.can_uncategorize"
+                        :transaction-id="transaction.id"
+                    />
+                </div>
             </li>
         </ul>
 

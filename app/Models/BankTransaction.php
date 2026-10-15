@@ -27,6 +27,8 @@ class BankTransaction extends Model
 
     public const CLASSIFICATION_SOURCE_MANUAL = 'manual';
 
+    public const METADATA_CATEGORIZATION_RELEASED = 'categorization_released';
+
     protected $fillable = [
         'user_id',
         'import_batch_id',
@@ -163,6 +165,47 @@ class BankTransaction extends Model
             self::CLASSIFICATION_BILL,
             self::CLASSIFICATION_EXPENSE,
         ], true) && $this->category_id !== null;
+    }
+
+    /**
+     * A categorized bill, expense, or income that can be released back to unmatched.
+     * Relation blockers (order allocations, transfers, plans) are enforced when releasing.
+     */
+    public function isCategorizedForRelease(): bool
+    {
+        return $this->status === 'ignored'
+            && $this->category_id !== null
+            && in_array($this->classification, [
+                self::CLASSIFICATION_BILL,
+                self::CLASSIFICATION_EXPENSE,
+                self::CLASSIFICATION_INCOME,
+            ], true);
+    }
+
+    public function canBeUncategorized(): bool
+    {
+        if (! $this->isCategorizedForRelease()) {
+            return false;
+        }
+
+        if ($this->allocations()->exists()) {
+            return false;
+        }
+
+        if ($this->isInReimbursementGroup()) {
+            return false;
+        }
+
+        if ($this->plannedOccurrence()->exists()) {
+            return false;
+        }
+
+        if ($this->pendingSpend()->exists()) {
+            return false;
+        }
+
+        return ! $this->debitTransferLink()->exists()
+            && ! $this->creditTransferLink()->exists();
     }
 
     public function scopeAvailableForExpenseMatching($query)

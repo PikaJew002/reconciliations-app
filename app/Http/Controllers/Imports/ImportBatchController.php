@@ -185,6 +185,7 @@ class ImportBatchController extends Controller
                     'name' => $transaction->category->name,
                     'kind' => $transaction->category->kind,
                 ] : null,
+                'can_uncategorize' => $transaction->isCategorizedForRelease(),
                 'venmo_summary' => $transaction->venmoSummary(),
             ])->values()->all();
 

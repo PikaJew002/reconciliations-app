@@ -4,6 +4,7 @@ namespace Tests\Feature\Accounts;
 
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\Category;
 use App\Models\ImportBatch;
 use App\Models\User;
 use App\Models\VenmoActivity;
@@ -246,11 +247,43 @@ class AccountBrowseTest extends TestCase
                 ->where('transactions.0.description', 'TARGET STORE')
                 ->where('transactions.0.classification', BankTransaction::CLASSIFICATION_EXPENSE)
                 ->where('transactions.0.classification_source', BankTransaction::CLASSIFICATION_SOURCE_MANUAL)
+                ->where('transactions.0.can_uncategorize', false)
+                ->where('transactions.1.can_uncategorize', false)
                 ->where('pagination.total', 2)
                 ->where('pagination.current_page', 1)
                 ->where('pagination.last_page', 1)
                 ->where('pagination.per_page', 50)
                 ->missing('transactionsTruncated'));
+    }
+
+    public function test_show_marks_categorized_transactions_as_releasable(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+        $category = Category::factory()->for($user)->expense()->create(['name' => 'Household']);
+
+        BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'posted_at' => '2026-08-04',
+            'description' => 'WALMART.COM',
+            'amount' => -42.18,
+            'status' => 'ignored',
+            'classification' => BankTransaction::CLASSIFICATION_EXPENSE,
+            'classification_source' => BankTransaction::CLASSIFICATION_SOURCE_MANUAL,
+            'classification_confidence' => 100,
+            'category_id' => $category->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('accounts.show', $account))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('transactions.0.can_uncategorize', true)
+                ->where('transactions.0.category.name', 'Household'));
     }
 
     public function test_show_search_filters_transactions(): void

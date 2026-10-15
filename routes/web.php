@@ -261,6 +261,8 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.venmo.assign');
     Route::post('/reconciliation/transactions/{transaction}/categorize', [TransactionCategorizationController::class, 'store'])
         ->name('reconciliation.transactions.categorize');
+    Route::delete('/reconciliation/transactions/{transaction}/categorize', [TransactionCategorizationController::class, 'destroy'])
+        ->name('reconciliation.transactions.uncategorize');
     Route::patch('/reconciliation/orders/{order}/components/{component}/category', [OrderComponentCategoryController::class, 'update'])
         ->name('reconciliation.orders.components.category.update');
     Route::patch('/reconciliation/orders/{order}/total', [OrderTotalController::class, 'update'])

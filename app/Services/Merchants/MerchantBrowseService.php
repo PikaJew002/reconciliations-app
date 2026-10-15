@@ -147,7 +147,10 @@ class MerchantBrowseService
         $transactionsQuery = BankTransaction::query()
             ->where('user_id', $userId)
             ->where('merchant_id', $merchant->id)
-            ->with('account:id,name,institution_name,last_four')
+            ->with([
+                'account:id,name,institution_name,last_four',
+                'category:id,name',
+            ])
             ->orderByDesc('posted_at')
             ->orderByDesc('id');
 
@@ -196,6 +199,8 @@ class MerchantBrowseService
                 'status' => $transaction->status,
                 'card_last_four' => $transaction->card_last_four,
                 'account' => $transaction->account?->only(['id', 'name', 'institution_name', 'last_four']),
+                'category' => $transaction->category?->only(['id', 'name']),
+                'can_uncategorize' => $transaction->isCategorizedForRelease(),
                 'suggested_rule' => $this->suggestRule($transaction),
             ])->values()->all(),
             'transactionsTruncated' => $totalMatching > $this->listLimit,

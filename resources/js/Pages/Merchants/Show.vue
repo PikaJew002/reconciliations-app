@@ -1,4 +1,5 @@
 <script setup>
+    import UncategorizeTransactionButton from '../../Components/UncategorizeTransactionButton.vue';
     import AuthenticatedLayout from '../../Layouts/AuthenticatedLayout.vue';
     import { Link, router, useForm, usePage } from '@inertiajs/vue3';
     import axios from 'axios';
@@ -31,6 +32,7 @@
 
     let page = usePage();
     let flashSuccess = computed(() => page.props.flash?.success);
+    let flashError = computed(() => page.props.flash?.error);
 
     let search = ref(props.filters.q ?? '');
 
@@ -219,6 +221,12 @@
             class="rounded border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800"
         >
             {{ flashSuccess }}
+        </p>
+        <p
+            v-if="flashError"
+            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+            {{ flashError }}
         </p>
 
         <form class="space-y-2 rounded border px-4 py-3" @submit.prevent="submitName">
@@ -587,6 +595,9 @@
                         <template v-if="transaction.account">
                             · {{ transaction.account.name }}
                         </template>
+                        <template v-if="transaction.category">
+                            · {{ transaction.category.name }}
+                        </template>
                         <template v-if="transaction.card_last_four">
                             · •••• {{ transaction.card_last_four }}
                         </template>
@@ -600,9 +611,15 @@
                         Add rule from this description
                     </button>
                 </div>
-                <p class="shrink-0 font-medium">
-                    {{ formatMoney(transaction.amount) }}
-                </p>
+                <div class="flex shrink-0 flex-col items-end gap-2">
+                    <p class="font-medium">
+                        {{ formatMoney(transaction.amount) }}
+                    </p>
+                    <UncategorizeTransactionButton
+                        v-if="transaction.can_uncategorize"
+                        :transaction-id="transaction.id"
+                    />
+                </div>
             </li>
         </ul>
 
