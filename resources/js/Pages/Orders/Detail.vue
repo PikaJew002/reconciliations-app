@@ -50,8 +50,15 @@
     let page = usePage();
 
     let flashSuccess = computed(() => page.props.flash?.success);
+    let flashError = computed(() => page.props.flash?.error);
+    let paymentErrors = computed(() => page.props.errors ?? {});
     let deleting = ref(false);
     let closingAsGiftCard = ref(false);
+    let savingPayment = ref(false);
+    let paymentForm = ref({
+        kind: 'card_rewards',
+        amount: '',
+    });
     let componentForm = ref(null);
     let quantityForms = reactive({});
     let componentCategoryForms = reactive({});
@@ -145,6 +152,56 @@
                 preserveScroll: true,
                 onFinish: () => {
                     savingQuantityKey.value = null;
+                },
+            },
+        );
+    }
+
+    function firstError(error) {
+        if (Array.isArray(error)) {
+            return error[0] ?? '';
+        }
+
+        return error || '';
+    }
+
+    function paymentKindLabel(kind) {
+        return (
+            {
+                card: 'Card',
+                gift_card: 'Gift card',
+                cash: 'Cash',
+                other: 'Other',
+                card_rewards: 'Card rewards',
+                walmart_balance: 'Walmart Balance',
+                unknown: 'Unknown',
+            }[kind] || kind
+        );
+    }
+
+    function addPayment() {
+        if (!props.order.can_edit || savingPayment.value) {
+            return;
+        }
+
+        savingPayment.value = true;
+
+        router.post(
+            `/reconciliation/orders/${props.order.id}/payments`,
+            {
+                kind: paymentForm.value.kind,
+                amount: Number(paymentForm.value.amount),
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    paymentForm.value = {
+                        kind: 'card_rewards',
+                        amount: '',
+                    };
+                },
+                onFinish: () => {
+                    savingPayment.value = false;
                 },
             },
         );
@@ -564,6 +621,12 @@
         >
             {{ flashSuccess }}
         </p>
+        <p
+            v-if="flashError"
+            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+            {{ flashError }}
+        </p>
         <div>
             <p class="text-sm text-neutral-600">
                 <Link href="/orders" class="underline">Orders</Link>
@@ -676,9 +739,15 @@
             </div>
         </div>
 
-        <section v-if="order.payments.length > 0" class="space-y-3">
+        <section
+            v-if="order.payments.length > 0 || order.can_edit"
+            class="space-y-3"
+        >
             <h2 class="text-base font-semibold">Payments</h2>
-            <ul class="divide-y rounded border text-sm">
+            <ul
+                v-if="order.payments.length > 0"
+                class="divide-y rounded border text-sm"
+            >
                 <li
                     v-for="(payment, index) in order.payments"
                     :key="`${payment.kind}-${index}`"
@@ -689,7 +758,7 @@
                             {{ payment.ending || 'Payment' }}
                         </p>
                         <p class="text-neutral-600">
-                            {{ payment.kind || 'unknown' }}
+                            {{ paymentKindLabel(payment.kind) }}
                             <template v-if="payment.last_four">
                                 · •••• {{ payment.last_four }}
                             </template>
@@ -700,6 +769,54 @@
                     </p>
                 </li>
             </ul>
+            <form
+                v-if="order.can_edit"
+                class="flex flex-wrap items-end gap-3 text-sm"
+                @submit.prevent="addPayment"
+            >
+                <label class="block space-y-1">
+                    <span class="text-neutral-600">Tender</span>
+                    <select
+                        v-model="paymentForm.kind"
+                        class="rounded border px-2 py-1"
+                    >
+                        <option value="card_rewards">Card rewards</option>
+                        <option value="gift_card">Gift card</option>
+                        <option value="cash">Cash</option>
+                        <option value="other">Other</option>
+                    </select>
+                </label>
+                <label class="block space-y-1">
+                    <span class="text-neutral-600">Amount</span>
+                    <input
+                        v-model="paymentForm.amount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        class="w-28 rounded border px-2 py-1"
+                        required
+                    />
+                </label>
+                <button
+                    type="submit"
+                    class="btn rounded bg-brand px-3 text-white hover:bg-brand-hover disabled:opacity-50"
+                    :disabled="savingPayment"
+                >
+                    {{ savingPayment ? 'Adding…' : 'Add payment' }}
+                </button>
+                <p
+                    v-if="
+                        firstError(paymentErrors.kind) ||
+                        firstError(paymentErrors.amount)
+                    "
+                    class="w-full text-red-700"
+                >
+                    {{
+                        firstError(paymentErrors.kind) ||
+                            firstError(paymentErrors.amount)
+                    }}
+                </p>
+            </form>
             <button
                 v-if="order.can_close_as_gift_card"
                 type="button"

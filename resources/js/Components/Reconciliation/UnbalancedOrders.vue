@@ -2,7 +2,7 @@
     import OrderBankTotalForm from './OrderBankTotalForm.vue';
     import OrderComponentRefundForm from './OrderComponentRefundForm.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
-    import { router } from '@inertiajs/vue3';
+    import { Link, router } from '@inertiajs/vue3';
     import { computed, reactive, ref, watch } from 'vue';
 
     let props = defineProps({
@@ -164,9 +164,16 @@
                     <div>
                         <p class="font-medium">
                             {{ order.merchant || 'Unknown merchant' }}
-                            <span class="font-normal text-neutral-600"
-                                >#{{ order.order_number }}</span
+                            <Link
+                                v-if="order.detail_url"
+                                :href="order.detail_url"
+                                class="font-normal text-neutral-800 underline hover:text-neutral-950"
                             >
+                                #{{ order.order_number }}
+                            </Link>
+                            <span v-else class="font-normal text-neutral-600">
+                                #{{ order.order_number }}
+                            </span>
                         </p>
                         <p class="text-neutral-600">
                             {{ order.ordered_at || 'No date' }}

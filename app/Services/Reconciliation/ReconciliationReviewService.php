@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\ReimbursementGroup;
 use App\Models\TransactionTransferLink;
 use App\Models\VenmoActivity;
+use App\Services\Orders\OrderBrowseService;
 use App\Services\Plans\VacationWindowService;
 
 class ReconciliationReviewService
@@ -236,6 +237,7 @@ class ReconciliationReviewService
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
+                    'detail_url' => $this->orderDetailUrl($order),
                     'ordered_at' => $order->ordered_at?->toDateString(),
                     'total' => $total,
                     'imported_total' => round((float) $order->imported_total, 2),
@@ -276,6 +278,18 @@ class ReconciliationReviewService
             ->take($this->listLimit)
             ->values()
             ->all();
+    }
+
+    protected function orderDetailUrl(Order $order): ?string
+    {
+        $normalized = $order->merchant?->normalized_name;
+        $browsable = array_column(OrderBrowseService::BROWSABLE_MERCHANTS, 'normalized_name');
+
+        if ($normalized === null || ! in_array($normalized, $browsable, true)) {
+            return null;
+        }
+
+        return route('orders.detail', [$normalized, $order->id]);
     }
 
     /**

@@ -1072,6 +1072,277 @@ class OrderPaymentResolutionTest extends TestCase
         $this->assertSame(0, app(OrderPaymentResolutionService::class)->correctBankLinkedGiftCardPayments($user->id));
     }
 
+    public function test_user_can_add_card_rewards_without_changing_the_card_amount(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'total' => 50.00,
+            'payment_last_four' => '4242',
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 4242',
+                        'last_four' => '4242',
+                        'amount' => 50.00,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('orders.detail', ['amazon', $order]))
+            ->post(route('reconciliation.orders.payments.store', $order), [
+                'kind' => 'card_rewards',
+                'amount' => 10,
+            ])
+            ->assertRedirect(route('orders.detail', ['amazon', $order]))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+
+        $this->assertSame(50.0, (float) $order->total);
+        $this->assertNull($order->payment_last_four);
+        $this->assertCount(2, $order->metadata['payments']);
+        $this->assertSame(50.0, (float) $order->metadata['payments'][0]['amount']);
+        $this->assertSame('card', $order->metadata['payments'][0]['kind']);
+        $this->assertSame('Card rewards', $order->metadata['payments'][1]['ending']);
+        $this->assertNull($order->metadata['payments'][1]['last_four']);
+        $this->assertSame(10.0, (float) $order->metadata['payments'][1]['amount']);
+        $this->assertSame('card_rewards', $order->metadata['payments'][1]['kind']);
+        $this->assertSame('user', $order->metadata['payments'][1]['kind_source']);
+        $this->assertTrue(app(OrderPaymentResolutionService::class)->needsPaymentReview($order));
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.needs-review'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('paymentReviewOrders.0.id', $order->id)
+                ->where('paymentReviewOrders.0.payments.1.kind', 'card_rewards')
+                ->where('paymentReviewOrders.0.payments.1.requires_bank_transaction', false)
+            );
+    }
+
+    public function test_resolving_card_rewards_matches_the_card_and_creates_an_off_book_charge(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->create([
+            'user_id' => $user->id,
+            'is_active' => true,
+        ]);
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'normalized_name' => 'amazon',
+            'supports_order_import' => true,
+        ]);
+        $batch = ImportBatch::factory()->create([
+            'user_id' => $user->id,
+            'metadata' => ['account_id' => $account->id],
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'merchant_id' => $merchant->id,
+            'ordered_at' => '2026-07-18',
+            'total' => 50.00,
+            'payment_last_four' => null,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 4242',
+                        'last_four' => '4242',
+                        'amount' => 50.00,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'ending' => 'Card rewards',
+                        'last_four' => null,
+                        'amount' => 10.00,
+                        'kind' => 'card_rewards',
+                        'kind_source' => 'user',
+                    ],
+                ],
+            ],
+        ]);
+
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Item',
+            'amount' => 50.00,
+            'order_item_id' => null,
+        ]);
+
+        $cardTx = BankTransaction::factory()->create([
+            'user_id' => $user->id,
+            'import_batch_id' => $batch->id,
+            'account_id' => $account->id,
+            'merchant_id' => $merchant->id,
+            'posted_at' => '2026-07-20',
+            'transaction_date' => '2026-07-18',
+            'amount' => -40.00,
+            'card_last_four' => '4242',
+            'status' => 'unmatched',
+            'description' => 'AMAZON',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.orders.resolve-payments', $order), [
+                'payments' => [
+                    [
+                        'index' => 0,
+                        'amount' => 40.00,
+                        'bank_transaction_id' => $cardTx->id,
+                        'kind' => 'card',
+                    ],
+                    [
+                        'index' => 1,
+                        'amount' => 10.00,
+                        'bank_transaction_id' => null,
+                        'kind' => 'card_rewards',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+        $cardTx->refresh();
+
+        $this->assertSame('reconciled', $order->status);
+        $this->assertSame('4242', $order->payment_last_four);
+        $this->assertSame('matched', $cardTx->status);
+        $this->assertSame(40.0, (float) $order->metadata['payments'][0]['amount']);
+        $this->assertSame(10.0, (float) $order->metadata['payments'][1]['amount']);
+        $this->assertSame('card_rewards', $order->metadata['payments'][1]['kind']);
+
+        $rewardsTx = BankTransaction::query()
+            ->where('user_id', $user->id)
+            ->where('description', 'Card rewards')
+            ->first();
+
+        $this->assertNotNull($rewardsTx);
+        $this->assertSame(-10.0, (float) $rewardsTx->amount);
+        $this->assertSame('matched', $rewardsTx->status);
+        $this->assertSame('non_bank_tender', $rewardsTx->metadata['source']);
+        $this->assertSame('card_rewards', $rewardsTx->metadata['kind']);
+        $this->assertTrue($rewardsTx->account->isOffBook());
+        $this->assertNotSame($account->id, $rewardsTx->account_id);
+    }
+
+    public function test_cannot_add_a_payment_to_a_reconciled_order(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'total' => 50.00,
+            'status' => 'reconciled',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 4242',
+                        'last_four' => '4242',
+                        'amount' => 50.00,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('reconciliation.needs-review'))
+            ->post(route('reconciliation.orders.payments.store', $order), [
+                'kind' => 'card_rewards',
+                'amount' => 10,
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHas('error');
+
+        $order->refresh();
+
+        $this->assertCount(1, $order->metadata['payments']);
+    }
+
+    public function test_cannot_add_a_card_payment_line(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'total' => 50.00,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 4242',
+                        'last_four' => '4242',
+                        'amount' => 50.00,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('reconciliation.needs-review'))
+            ->post(route('reconciliation.orders.payments.store', $order), [
+                'kind' => 'card',
+                'amount' => 10,
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHasErrors('kind');
+
+        $order->refresh();
+
+        $this->assertCount(1, $order->metadata['payments']);
+    }
+
+    public function test_cannot_add_a_payment_greater_than_the_order_total(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'total' => 50.00,
+            'status' => 'imported',
+            'metadata' => [
+                'payments' => [
+                    [
+                        'ending' => 'Visa ending in 4242',
+                        'last_four' => '4242',
+                        'amount' => 50.00,
+                        'kind' => 'card',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('reconciliation.needs-review'))
+            ->post(route('reconciliation.orders.payments.store', $order), [
+                'kind' => 'gift_card',
+                'amount' => 50.01,
+            ])
+            ->assertRedirect(route('reconciliation.needs-review'))
+            ->assertSessionHas('error', 'Payment amount cannot be greater than the order total.');
+
+        $order->refresh();
+
+        $this->assertCount(1, $order->metadata['payments']);
+    }
+
     /**
      * @param  array<string, mixed>  $extraPayment
      */

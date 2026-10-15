@@ -51,7 +51,7 @@ class OrderCategorizationBrowseService
         if ($query !== '') {
             $ordersQuery->where(function (Builder $builder) use ($query): void {
                 $builder
-                    ->where('order_number', 'like', "%{$query}%")
+                    ->whereOrderNumberContains($query)
                     ->orWhere('total', 'like', "%{$query}%");
             });
         }

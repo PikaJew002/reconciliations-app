@@ -91,7 +91,7 @@ class OrderBrowseService
     }
 
     /**
-     * @param  array{q?: ?string, from?: ?string, to?: ?string, state?: ?string, page?: int}|string|null  $filters
+     * @param  array{q?: ?string, from?: ?string, to?: ?string, state?: ?string, fulfillment?: ?string, page?: int}|string|null  $filters
      * @return array{
      *     merchant: array{name: string, normalized_name: string, order_count: int, min_ordered_at: ?string, max_ordered_at: ?string, coverage_span_days: ?int},
      *     orders: list<array<string, mixed>>,
@@ -106,7 +106,7 @@ class OrderBrowseService
      *     orderCoverage: array{min: ?string, max: ?string}|null,
      *     bankCoverage: array{min: ?string, max: ?string}|null,
      *     nearImportEdge: bool,
-     *     filters: array{q: string, from: string, to: string, state: string, merchant: string}
+     *     filters: array{q: string, from: string, to: string, state: string, fulfillment: string, merchant: string}
      * }
      */
     public function show(int $userId, string $merchantNormalized, array|string|null $filters = []): array
@@ -121,6 +121,7 @@ class OrderBrowseService
         $from = $this->dateFilter($filters['from'] ?? null);
         $to = $this->dateFilter($filters['to'] ?? null);
         $state = $this->stateFilter($filters['state'] ?? null);
+        $fulfillment = $this->fulfillmentFilter($filters['fulfillment'] ?? null, $vendor['normalized_name']);
         $page = max(1, (int) ($filters['page'] ?? 1));
 
         $merchantNormalized = $vendor['normalized_name'];
@@ -144,13 +145,14 @@ class OrderBrowseService
             ->when($q !== '', function (Builder $query) use ($q): void {
                 $query->where(function (Builder $builder) use ($q): void {
                     $builder
-                        ->where('order_number', 'like', "%{$q}%")
+                        ->whereOrderNumberContains($q)
                         ->orWhere('total', 'like', "%{$q}%");
                 });
             })
             ->when($from !== null, fn (Builder $query) => $query->whereDate('ordered_at', '>=', $from))
             ->when($to !== null, fn (Builder $query) => $query->whereDate('ordered_at', '<=', $to))
             ->when($state !== '', fn (Builder $query) => $this->applyStateFilter($query, $state))
+            ->when($fulfillment !== '', fn (Builder $query) => $this->applyFulfillmentFilter($query, $fulfillment))
             ->orderByDesc('ordered_at')
             ->orderByDesc('id');
 
@@ -179,6 +181,7 @@ class OrderBrowseService
                 'delivered_at' => optional($order->delivered_at)?->toDateString(),
                 'total' => (float) $order->total,
                 'status' => $order->status,
+                'fulfillment' => WalmartOrderFulfillment::labels($order->metadata),
                 'payment_last_four' => $order->payment_last_four,
                 'merchant' => $order->merchant?->only(['id', 'name', 'normalized_name']),
                 'near_import_edge' => $this->orderNearImportEdge($orderDate, $bankCoverage),
@@ -214,6 +217,7 @@ class OrderBrowseService
                 'from' => $from ?? '',
                 'to' => $to ?? '',
                 'state' => $state,
+                'fulfillment' => $fulfillment,
                 'merchant' => $merchantNormalized,
             ],
         ];
@@ -449,6 +453,7 @@ class OrderBrowseService
 
         return match ($metadata['kind'] ?? null) {
             'gift_card' => 'Gift card',
+            'card_rewards' => 'Card rewards',
             'walmart_balance' => 'Walmart balance',
             'cash' => 'Cash',
             'other' => 'Other',
@@ -631,6 +636,30 @@ class OrderBrowseService
         $value = strtolower(trim((string) $value));
 
         return in_array($value, ['imported', 'unbalanced'], true) ? $value : '';
+    }
+
+    protected function fulfillmentFilter(mixed $value, string $merchantNormalized): string
+    {
+        if ($merchantNormalized !== 'walmart') {
+            return '';
+        }
+
+        $value = strtolower(trim((string) $value));
+
+        return array_key_exists($value, WalmartOrderFulfillment::FILTERS) ? $value : '';
+    }
+
+    protected function applyFulfillmentFilter(Builder $query, string $fulfillment): void
+    {
+        $token = WalmartOrderFulfillment::TOKENS[$fulfillment];
+
+        $query->where(function (Builder $builder) use ($fulfillment, $token): void {
+            $builder->where('metadata->fulfillmentTypes', 'like', '%'.$token.'%');
+
+            if ($fulfillment === WalmartOrderFulfillment::IN_STORE) {
+                $builder->orWhere('metadata->orderType', 'IN_STORE');
+            }
+        });
     }
 
     protected function applyStateFilter(Builder $query, string $state): void

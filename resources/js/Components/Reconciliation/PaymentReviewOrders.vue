@@ -1,8 +1,8 @@
 <script setup>
     import TransactionPicker from '../TransactionPicker.vue';
     import { formatMoney } from '../../Composables/useReconciliationFormatting.js';
-    import { router } from '@inertiajs/vue3';
-    import { reactive, ref, watch } from 'vue';
+    import { router, usePage } from '@inertiajs/vue3';
+    import { computed, reactive, ref, watch } from 'vue';
 
     let props = defineProps({
         paymentReviewOrders: {
@@ -14,10 +14,30 @@
     let paymentForms = reactive({});
     let resolvingOrderId = ref(null);
     let removingPaymentKey = ref(null);
+    let addingPaymentOrderId = ref(null);
+    let paymentErrorOrderId = ref(null);
+    let paymentAddForms = reactive({});
+    let page = usePage();
+    let paymentAddErrors = computed(() => page.props.errors ?? {});
 
     function syncPaymentForms(orders) {
         for (let order of orders) {
-            if (paymentForms[order.id]) {
+            let existing = paymentForms[order.id];
+            let samePayments =
+                existing &&
+                existing.length === order.payments.length &&
+                existing.every(
+                    (row, index) => row.index === order.payments[index].index,
+                );
+
+            if (samePayments) {
+                if (!paymentAddForms[order.id]) {
+                    paymentAddForms[order.id] = {
+                        kind: 'card_rewards',
+                        amount: '',
+                    };
+                }
+
                 continue;
             }
 
@@ -27,6 +47,13 @@
                 bank_transaction_id: '',
                 kind: payment.kind,
             }));
+
+            if (!paymentAddForms[order.id]) {
+                paymentAddForms[order.id] = {
+                    kind: 'card_rewards',
+                    amount: '',
+                };
+            }
         }
     }
 
@@ -37,6 +64,7 @@
                 gift_card: 'Gift card',
                 cash: 'Cash',
                 other: 'Other',
+                card_rewards: 'Card rewards',
                 walmart_balance: 'Walmart Balance',
                 unknown: 'Unknown',
             }[kind] || kind
@@ -44,7 +72,9 @@
     }
 
     function isOffBookKind(kind) {
-        return ['gift_card', 'cash', 'other', 'walmart_balance'].includes(kind);
+        return ['gift_card', 'cash', 'other', 'card_rewards', 'walmart_balance'].includes(
+            kind,
+        );
     }
 
     function canChooseTenderKind(payment) {
@@ -214,6 +244,46 @@
         );
     }
 
+    function addPayment(order) {
+        let form = paymentAddForms[order.id];
+
+        if (!form || addingPaymentOrderId.value !== null) {
+            return;
+        }
+
+        addingPaymentOrderId.value = order.id;
+
+        router.post(
+            `/reconciliation/orders/${order.id}/payments`,
+            {
+                kind: form.kind,
+                amount: Number(form.amount),
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    paymentErrorOrderId.value = null;
+                    form.kind = 'card_rewards';
+                    form.amount = '';
+                },
+                onError: () => {
+                    paymentErrorOrderId.value = order.id;
+                },
+                onFinish: () => {
+                    addingPaymentOrderId.value = null;
+                },
+            },
+        );
+    }
+
+    function firstError(error) {
+        if (Array.isArray(error)) {
+            return error[0] ?? '';
+        }
+
+        return error || '';
+    }
+
     function removePayment(order, paymentIndex) {
         if (order.payments.length < 2) {
             return;
@@ -249,8 +319,8 @@
             <h2 class="text-base font-semibold">Multi-payment orders</h2>
             <p class="text-sm text-neutral-600">
                 Orders paid with more than one method. Match the bank card
-                charge, or mark a tender as gift card, cash, or other if it did
-                not post to an imported account.
+                charge, or mark a tender as gift card, cash, card rewards, or
+                other if it did not post to an imported account.
             </p>
         </div>
 
@@ -345,6 +415,9 @@
                                             </option>
                                         </optgroup>
                                         <optgroup label="Off-book">
+                                            <option value="card_rewards">
+                                                Card rewards
+                                            </option>
                                             <option value="gift_card">
                                                 Gift card
                                             </option>
@@ -458,6 +531,59 @@
                                 : 'Resolve payments'
                         }}
                     </button>
+                </form>
+                <form
+                    v-if="paymentAddForms[order.id]"
+                    class="flex flex-wrap items-end gap-3"
+                    @submit.prevent="addPayment(order)"
+                >
+                    <label class="block space-y-1">
+                        <span class="text-neutral-600">Tender</span>
+                        <select
+                            v-model="paymentAddForms[order.id].kind"
+                            class="rounded border px-2 py-1"
+                        >
+                            <option value="card_rewards">Card rewards</option>
+                            <option value="gift_card">Gift card</option>
+                            <option value="cash">Cash</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </label>
+                    <label class="block space-y-1">
+                        <span class="text-neutral-600">Amount</span>
+                        <input
+                            v-model="paymentAddForms[order.id].amount"
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            class="w-28 rounded border px-2 py-1"
+                            required
+                        />
+                    </label>
+                    <button
+                        type="submit"
+                        class="text-sm underline disabled:opacity-50"
+                        :disabled="addingPaymentOrderId === order.id"
+                    >
+                        {{
+                            addingPaymentOrderId === order.id
+                                ? 'Adding…'
+                                : 'Add payment'
+                        }}
+                    </button>
+                    <p
+                        v-if="
+                            paymentErrorOrderId === order.id &&
+                            (firstError(paymentAddErrors.kind) ||
+                                firstError(paymentAddErrors.amount))
+                        "
+                        class="w-full text-red-700"
+                    >
+                        {{
+                            firstError(paymentAddErrors.kind) ||
+                                firstError(paymentAddErrors.amount)
+                        }}
+                    </p>
                 </form>
             </li>
         </ul>

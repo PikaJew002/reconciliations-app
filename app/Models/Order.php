@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -141,6 +142,25 @@ class Order extends Model
         $this->update([
             'status' => 'reconciled',
         ]);
+    }
+
+    /**
+     * Match an order number with hyphens ignored on both the query and the stored value.
+     */
+    public function scopeWhereOrderNumberContains(Builder $query, string $term): Builder
+    {
+        $normalized = str_replace('-', '', $term);
+
+        if ($normalized === '') {
+            return $query->whereRaw('0 = 1');
+        }
+
+        $column = $query->qualifyColumn('order_number');
+
+        return $query->whereRaw(
+            "REPLACE({$column}, '-', '') LIKE ?",
+            ['%'.$normalized.'%'],
+        );
     }
 
     public function validationRules(): array

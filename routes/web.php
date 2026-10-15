@@ -244,6 +244,8 @@ Route::middleware('auth')->group(function () {
         ->name('reconciliation.orders.tax-reconciliation');
     Route::post('/reconciliation/orders/{order}/resolve-payments', [OrderPaymentResolutionController::class, 'store'])
         ->name('reconciliation.orders.resolve-payments');
+    Route::post('/reconciliation/orders/{order}/payments', [OrderPaymentResolutionController::class, 'storePayment'])
+        ->name('reconciliation.orders.payments.store');
     Route::post('/reconciliation/orders/{order}/close-as-gift-card', [OrderPaymentResolutionController::class, 'closeAsGiftCard'])
         ->name('reconciliation.orders.close-as-gift-card');
     Route::delete('/reconciliation/orders/{order}/payments/{paymentIndex}', [OrderPaymentResolutionController::class, 'destroy'])

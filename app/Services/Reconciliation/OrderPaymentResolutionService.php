@@ -22,6 +22,8 @@ class OrderPaymentResolutionService
 
     public const KIND_OTHER = 'other';
 
+    public const KIND_CARD_REWARDS = 'card_rewards';
+
     public const KIND_WALMART_BALANCE = 'walmart_balance';
 
     public const KIND_UNKNOWN = 'unknown';
@@ -36,6 +38,7 @@ class OrderPaymentResolutionService
             self::KIND_GIFT_CARD,
             self::KIND_CASH,
             self::KIND_OTHER,
+            self::KIND_CARD_REWARDS,
             self::KIND_WALMART_BALANCE,
             self::KIND_UNKNOWN,
         ];
@@ -50,8 +53,38 @@ class OrderPaymentResolutionService
             self::KIND_GIFT_CARD,
             self::KIND_CASH,
             self::KIND_OTHER,
+            self::KIND_CARD_REWARDS,
             self::KIND_WALMART_BALANCE,
         ];
+    }
+
+    /**
+     * Off-book tenders a user can add as a new payment line.
+     *
+     * @return list<string>
+     */
+    public static function addableOffBookKinds(): array
+    {
+        return [
+            self::KIND_CARD_REWARDS,
+            self::KIND_GIFT_CARD,
+            self::KIND_CASH,
+            self::KIND_OTHER,
+        ];
+    }
+
+    public static function paymentKindLabel(string $kind): string
+    {
+        return match ($kind) {
+            self::KIND_CARD => 'Card',
+            self::KIND_GIFT_CARD => 'Gift card',
+            self::KIND_CASH => 'Cash',
+            self::KIND_OTHER => 'Other',
+            self::KIND_CARD_REWARDS => 'Card rewards',
+            self::KIND_WALMART_BALANCE => 'Walmart Balance',
+            self::KIND_UNKNOWN => 'Unknown',
+            default => $kind,
+        };
     }
 
     public static function isOffBookKind(string $kind): bool
@@ -240,6 +273,44 @@ class OrderPaymentResolutionService
 
         unset($payments[$index]);
         $payments = array_values($payments);
+
+        $metadata = $order->metadata ?? [];
+        $metadata['payments'] = $payments;
+
+        $order->update([
+            'payment_last_four' => $this->primaryPaymentLastFour($payments),
+            'metadata' => $metadata,
+        ]);
+    }
+
+    public function addPayment(Order $order, string $kind, float $amount): void
+    {
+        if ($order->status === 'reconciled') {
+            throw new InvalidArgumentException('Reconciled orders cannot be edited.');
+        }
+
+        if (! in_array($kind, self::addableOffBookKinds(), true)) {
+            throw new InvalidArgumentException('Payment kind must be an off-book tender.');
+        }
+
+        $amount = round($amount, 2);
+
+        if ($amount < 0.01) {
+            throw new InvalidArgumentException('Payment amount must be greater than zero.');
+        }
+
+        if ($amount - (float) $order->total > 0.009) {
+            throw new InvalidArgumentException('Payment amount cannot be greater than the order total.');
+        }
+
+        $payments = $this->normalizedPayments($order);
+        $payments[] = [
+            'ending' => self::paymentKindLabel($kind),
+            'last_four' => null,
+            'amount' => $amount,
+            'kind' => $kind,
+            'kind_source' => 'user',
+        ];
 
         $metadata = $order->metadata ?? [];
         $metadata['payments'] = $payments;
@@ -840,14 +911,20 @@ class OrderPaymentResolutionService
             return;
         }
 
-        $offBookChoices = [self::KIND_GIFT_CARD, self::KIND_CASH, self::KIND_OTHER];
+        $offBookChoices = [
+            self::KIND_GIFT_CARD,
+            self::KIND_CASH,
+            self::KIND_OTHER,
+            self::KIND_CARD_REWARDS,
+        ];
 
         $allowedOverrides = [
             self::KIND_CARD => $offBookChoices,
             self::KIND_UNKNOWN => [...$offBookChoices, self::KIND_CARD],
-            self::KIND_GIFT_CARD => [self::KIND_CARD, self::KIND_CASH, self::KIND_OTHER],
-            self::KIND_CASH => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_OTHER],
-            self::KIND_OTHER => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_CASH],
+            self::KIND_GIFT_CARD => [self::KIND_CARD, self::KIND_CASH, self::KIND_OTHER, self::KIND_CARD_REWARDS],
+            self::KIND_CASH => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_OTHER, self::KIND_CARD_REWARDS],
+            self::KIND_OTHER => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_CASH, self::KIND_CARD_REWARDS],
+            self::KIND_CARD_REWARDS => [self::KIND_CARD, self::KIND_GIFT_CARD, self::KIND_CASH, self::KIND_OTHER],
         ];
 
         $allowed = $allowedOverrides[$currentKind] ?? [];
