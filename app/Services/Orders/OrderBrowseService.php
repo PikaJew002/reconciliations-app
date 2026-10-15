@@ -449,6 +449,7 @@ class OrderBrowseService
 
         return match ($metadata['kind'] ?? null) {
             'gift_card' => 'Gift card',
+            'card_rewards' => 'Card rewards',
             'walmart_balance' => 'Walmart balance',
             'cash' => 'Cash',
             'other' => 'Other',

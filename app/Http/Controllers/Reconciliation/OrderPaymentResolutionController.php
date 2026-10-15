@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Reconciliation;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Reconciliation\ResolveOrderPaymentsRequest;
+use App\Http\Requests\Reconciliation\StoreOrderPaymentRequest;
 use App\Models\Order;
 use App\Services\Reconciliation\OrderPaymentResolutionService;
 use Illuminate\Http\RedirectResponse;
@@ -31,6 +32,30 @@ class OrderPaymentResolutionController extends Controller
         return redirect()
             ->route('reconciliation.needs-review')
             ->with('success', 'Multi-payment order reconciled.');
+    }
+
+    public function storePayment(
+        StoreOrderPaymentRequest $request,
+        Order $order,
+        OrderPaymentResolutionService $resolution,
+    ): RedirectResponse {
+        abort_unless($order->user_id === $request->user()->id, 403);
+
+        try {
+            $resolution->addPayment(
+                $order,
+                $request->string('kind')->toString(),
+                (float) $request->input('amount'),
+            );
+        } catch (InvalidArgumentException $exception) {
+            return redirect()
+                ->back(fallback: route('reconciliation.needs-review'))
+                ->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->back(fallback: route('reconciliation.needs-review'))
+            ->with('success', 'Payment method added.');
     }
 
     public function destroy(
