@@ -8,6 +8,7 @@ use App\Http\Requests\Accounts\UpdateAccountRequest;
 use App\Jobs\RunReconciliation;
 use App\Models\Account;
 use App\Models\BankTransaction;
+use App\Models\PlaidItem;
 use App\Models\TillerConnection;
 use App\Services\Accounts\AccountBrowseService;
 use App\Services\Imports\TillerSheetSync;
@@ -26,6 +27,11 @@ class AccountController extends Controller
             $request->user()->id,
             $request->string('q')->toString() ?: null,
         );
+
+        $data['plaidEnabled'] = (bool) $request->user()->plaid_enabled;
+        $data['plaidItems'] = $request->user()->plaid_enabled
+            ? $this->plaidItems($request->user()->id)
+            : [];
 
         return Inertia::render('Accounts/Index', $data);
     }
@@ -168,5 +174,32 @@ class AccountController extends Controller
         }
 
         return "Tiller sync sent {$sent} transactions.";
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function plaidItems(int $userId): array
+    {
+        return PlaidItem::query()
+            ->where('user_id', $userId)
+            ->with('accounts')
+            ->orderBy('institution_name')
+            ->get()
+            ->map(fn (PlaidItem $item): array => [
+                'id' => $item->id,
+                'institution_name' => $item->institution_name ?: 'Bank',
+                'error_code' => $item->error_code,
+                'needs_reconnect' => $item->needsReconnect(),
+                'last_synced_at' => $item->last_synced_at?->toIso8601String(),
+                'importing_history' => $item->cursor !== null
+                    && $item->transactions_update_status !== 'HISTORICAL_UPDATE_COMPLETE',
+                'accounts' => $item->accounts->map(fn ($account): array => [
+                    'name' => $account->name,
+                    'mask' => $account->mask,
+                    'mapped' => $account->account_id !== null,
+                ])->values()->all(),
+            ])
+            ->all();
     }
 }

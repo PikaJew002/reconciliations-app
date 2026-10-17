@@ -41,6 +41,7 @@ class User extends Authenticatable
             'leftover_starts_on' => 'date',
             'leftover_carry_over' => 'decimal:2',
             'sales_tax_rate' => 'decimal:5',
+            'plaid_enabled' => 'boolean',
         ];
     }
 
@@ -62,5 +63,10 @@ class User extends Authenticatable
     public function tillerConnection(): HasOne
     {
         return $this->hasOne(TillerConnection::class);
+    }
+
+    public function plaidItems()
+    {
+        return $this->hasMany(PlaidItem::class);
     }
 }
