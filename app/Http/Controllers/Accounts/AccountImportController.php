@@ -28,9 +28,23 @@ class AccountImportController extends Controller
 
         $batches = ImportBatch::query()
             ->where('user_id', $request->user()->id)
-            ->whereIn('source', ['bank', 'tiller'])
             ->where('type', 'transactions')
-            ->where('metadata->account_id', $accountId)
+            ->where(function ($query) use ($accountId): void {
+                $query
+                    ->where(function ($bank) use ($accountId): void {
+                        $bank->whereIn('source', ['bank', 'tiller'])
+                            ->where('metadata->account_id', $accountId);
+                    })
+                    ->orWhere(function ($plaid) use ($accountId): void {
+                        $plaid->where('source', 'plaid')
+                            ->whereExists(function ($exists) use ($accountId): void {
+                                $exists->selectRaw('1')
+                                    ->from('bank_transactions')
+                                    ->whereColumn('bank_transactions.import_batch_id', 'import_batches.id')
+                                    ->where('bank_transactions.account_id', $accountId);
+                            });
+                    });
+            })
             ->latest()
             ->get([
                 'id',

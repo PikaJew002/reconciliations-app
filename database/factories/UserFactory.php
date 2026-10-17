@@ -42,4 +42,11 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    public function plaidEnabled(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            $user->forceFill(['plaid_enabled' => true])->save();
+        });
+    }
 }

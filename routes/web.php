@@ -19,6 +19,9 @@ use App\Http\Controllers\Orders\OrderCategorizationController;
 use App\Http\Controllers\Orders\OrderController;
 use App\Http\Controllers\Orders\OrderItemCategorizationController;
 use App\Http\Controllers\Orders\RetailerImportController;
+use App\Http\Controllers\Plaid\PlaidItemController;
+use App\Http\Controllers\Plaid\PlaidLinkController;
+use App\Http\Controllers\Plaid\PlaidWebhookController;
 use App\Http\Controllers\Plans\PlannedOccurrenceController;
 use App\Http\Controllers\Plans\PlannedTemplateController;
 use App\Http\Controllers\Plans\VacationWindowController;
@@ -46,6 +49,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/extension/auth', [ExtensionAuthController::class, 'start'])
     ->name('extension.auth');
+
+Route::post('/plaid/webhook', [PlaidWebhookController::class, 'store'])
+    ->name('plaid.webhook');
 
 Route::middleware('guest')->group(function () {
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
@@ -117,6 +123,29 @@ Route::middleware('auth')->group(function () {
     Route::delete('/accounts/{account}/imports/{importBatch}', [ImportBatchController::class, 'destroyForAccount'])
         ->name('accounts.imports.destroy');
     Route::get('/accounts/{account}', [AccountController::class, 'show'])->name('accounts.show');
+
+    Route::middleware('plaid')->group(function () {
+        Route::post('/plaid/link-token', [PlaidLinkController::class, 'store'])
+            ->name('plaid.link-token');
+        Route::post('/plaid/link/exit', [PlaidLinkController::class, 'exit'])
+            ->name('plaid.link.exit');
+        Route::get('/plaid/oauth', [PlaidLinkController::class, 'oauth'])
+            ->name('plaid.oauth');
+        Route::post('/plaid/items', [PlaidItemController::class, 'store'])
+            ->name('plaid.items.store');
+        Route::get('/plaid/items/{item}/accounts', [PlaidItemController::class, 'accounts'])
+            ->name('plaid.items.accounts');
+        Route::put('/plaid/items/{item}/accounts', [PlaidItemController::class, 'updateAccounts'])
+            ->name('plaid.items.accounts.update');
+        Route::post('/plaid/items/{item}/sync', [PlaidItemController::class, 'sync'])
+            ->name('plaid.items.sync');
+        Route::post('/plaid/items/{item}/link-token', [PlaidLinkController::class, 'update'])
+            ->name('plaid.items.link-token');
+        Route::post('/plaid/items/{item}/repaired', [PlaidItemController::class, 'repaired'])
+            ->name('plaid.items.repaired');
+        Route::delete('/plaid/items/{item}', [PlaidItemController::class, 'destroy'])
+            ->name('plaid.items.destroy');
+    });
 
     Route::get('/venmo/imports', [VenmoImportController::class, 'index'])
         ->name('venmo.imports.index');

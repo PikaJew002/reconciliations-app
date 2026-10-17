@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsurePlaidEnabled;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
@@ -11,8 +12,8 @@ use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
-        web: __DIR__.'/../routes/web.php',
-        api: __DIR__.'/../routes/api.php',
+        web: __DIR__ . '/../routes/web.php',
+        api: __DIR__ . '/../routes/api.php',
         health: '/up',
     )
     ->withSchedule(function (Schedule $schedule): void {
@@ -35,10 +36,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
+            'plaid' => EnsurePlaidEnabled::class,
+        ]);
+
+        $middleware->preventRequestForgery(except: [
+            'plaid/webhook',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn(Request $request) => $request->is('api/*'),
         );
     })->create();

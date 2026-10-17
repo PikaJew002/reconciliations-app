@@ -336,6 +336,17 @@ class ImportBatchController extends Controller
     {
         $accountId = $importBatch->metadata['account_id'] ?? null;
 
+        if ($importBatch->source === 'plaid' && $importBatch->type === 'transactions') {
+            $belongs = $importBatch->user_id === $account->user_id
+                && $importBatch->bankTransactions()->where('account_id', $account->id)->exists();
+
+            if (! $belongs) {
+                throw new NotFoundHttpException;
+            }
+
+            return;
+        }
+
         if (
             ! in_array($importBatch->source, ['bank', 'tiller'], true)
             || $importBatch->type !== 'transactions'
