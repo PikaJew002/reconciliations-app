@@ -502,7 +502,7 @@ class OrderDetailTest extends TestCase
             ->assertRedirect($detail);
     }
 
-    public function test_reconciled_detail_locks_component_editing(): void
+    public function test_reconciled_detail_allows_component_edits_that_release_the_match(): void
     {
         $user = User::factory()->create();
         $amazon = Merchant::factory()->create([
@@ -523,7 +523,7 @@ class OrderDetailTest extends TestCase
             'unit_price' => 7.39,
             'extended_price' => 7.39,
         ]);
-        OrderComponent::factory()->create([
+        $component = OrderComponent::factory()->create([
             'order_id' => $order->id,
             'order_item_id' => $item->id,
             'type' => 'product',
@@ -531,16 +531,23 @@ class OrderDetailTest extends TestCase
             'amount' => 7.39,
             'category_id' => null,
         ]);
+        TransactionAllocation::factory()->create([
+            'order_component_id' => $component->id,
+            'allocated_amount' => 7.39,
+        ]);
 
         $this->actingAs($user)
             ->get(route('orders.detail', ['merchant' => 'amazon', 'order' => $order->id]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('order.can_edit', false)
+                ->where('order.can_edit_components', true)
                 ->where('order.can_edit_total', true)
-                ->where('components.0.can_edit_quantity', false)
-                ->where('components.0.can_delete', false)
-                ->where('components.0.can_refund', true));
+                ->where('has_allocations', true)
+                ->where('components.0.can_edit_quantity', true)
+                ->where('components.0.can_delete', true)
+                ->where('components.0.can_refund', true)
+                ->where('component_rows.0.can_delete', true));
     }
 
     public function test_destroy_removes_order_and_unwinds_bank_matches(): void

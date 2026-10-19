@@ -7,19 +7,24 @@ use App\Http\Requests\Reconciliation\UpdateOrderItemRequest;
 use App\Models\Order;
 use App\Models\OrderComponent;
 use App\Models\OrderItem;
+use App\Services\Orders\OrderRemovalService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 
 class OrderItemController extends Controller
 {
-    public function update(UpdateOrderItemRequest $request, Order $order, OrderItem $item): RedirectResponse
-    {
+    public function update(
+        UpdateOrderItemRequest $request,
+        Order $order,
+        OrderItem $item,
+        OrderRemovalService $removal,
+    ): RedirectResponse {
         abort_unless($order->user_id === $request->user()->id, 403);
         abort_unless($item->order_id === $order->id, 404);
-        abort_if($order->status === 'reconciled', 422, 'Reconciled orders cannot be edited.');
 
         $quantity = round((float) $request->input('quantity'), 3);
         $extendedPrice = round((float) $item->unit_price * $quantity, 2);
+        $releasedMatch = $order->status === 'reconciled';
 
         $productComponents = OrderComponent::query()
             ->where('order_id', $order->id)
@@ -28,13 +33,19 @@ class OrderItemController extends Controller
             ->withCount('allocations')
             ->get();
 
-        abort_if(
-            $productComponents->contains(fn (OrderComponent $component): bool => (int) $component->allocations_count > 0),
-            422,
-            'Allocated line items cannot be edited.',
-        );
+        if (! $releasedMatch) {
+            abort_if(
+                $productComponents->contains(fn (OrderComponent $component): bool => (int) $component->allocations_count > 0),
+                422,
+                'Allocated line items cannot be edited.',
+            );
+        }
 
-        DB::transaction(function () use ($item, $quantity, $extendedPrice, $productComponents): void {
+        DB::transaction(function () use ($item, $quantity, $extendedPrice, $productComponents, $order, $removal, $releasedMatch): void {
+            if ($releasedMatch) {
+                $removal->unwindAllocations($order);
+            }
+
             $item->update([
                 'quantity' => $quantity,
                 'extended_price' => $extendedPrice,
@@ -50,6 +61,8 @@ class OrderItemController extends Controller
 
         return redirect()
             ->back(fallback: route('reconciliation.needs-review'))
-            ->with('success', 'Item quantity updated. Re-run reconciliation when ready.');
+            ->with('success', $releasedMatch
+                ? 'Item quantity updated. The bank match was released so reconciliation can run again.'
+                : 'Item quantity updated. Re-run reconciliation when ready.');
     }
 }

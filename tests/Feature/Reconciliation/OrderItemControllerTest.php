@@ -124,13 +124,14 @@ class OrderItemControllerTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_cannot_update_item_on_reconciled_order(): void
+    public function test_updating_item_on_reconciled_order_releases_the_match(): void
     {
         $user = User::factory()->create();
         $merchant = Merchant::factory()->create(['user_id' => $user->id]);
         $order = Order::factory()->create([
             'user_id' => $user->id,
             'merchant_id' => $merchant->id,
+            'total' => 10.00,
             'status' => 'reconciled',
         ]);
         $item = OrderItem::factory()->create([
@@ -139,11 +140,39 @@ class OrderItemControllerTest extends TestCase
             'unit_price' => 5.00,
             'extended_price' => 10.00,
         ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'order_item_id' => $item->id,
+            'type' => 'product',
+            'amount' => 10.00,
+        ]);
+        $allocation = TransactionAllocation::factory()->create([
+            'order_component_id' => $component->id,
+            'allocated_amount' => 10.00,
+        ]);
+        $allocation->bankTransaction->update([
+            'user_id' => $user->id,
+            'status' => 'matched',
+        ]);
 
         $this->actingAs($user)
             ->patch(route('reconciliation.orders.items.update', [$order, $item]), [
                 'quantity' => 1,
             ])
-            ->assertStatus(422);
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Item quantity updated. The bank match was released so reconciliation can run again.');
+
+        $this->assertSame('imported', $order->fresh()->status);
+        $this->assertSame('unmatched', $allocation->bankTransaction->fresh()->status);
+        $this->assertDatabaseMissing('transaction_allocations', ['id' => $allocation->id]);
+        $this->assertDatabaseHas('order_items', [
+            'id' => $item->id,
+            'quantity' => 1,
+            'extended_price' => 5.00,
+        ]);
+        $this->assertDatabaseHas('order_components', [
+            'id' => $component->id,
+            'amount' => 5.00,
+        ]);
     }
 }
