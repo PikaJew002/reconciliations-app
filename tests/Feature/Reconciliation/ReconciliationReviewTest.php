@@ -275,4 +275,57 @@ class ReconciliationReviewTest extends TestCase
                 ->where('unmatchedTransactions.0.account_default_classification', 'bill')
             );
     }
+
+    public function test_reconciled_unbalanced_orders_stay_on_the_review_list(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Walmart',
+            'normalized_name' => 'walmart',
+        ]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'order_number' => 'WM-MATCHED-UNBALANCED',
+            'total' => 20.00,
+            'status' => 'reconciled',
+            'ordered_at' => '2026-08-01',
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'fee',
+            'description' => 'Extra fee',
+            'amount' => 4.00,
+            'order_item_id' => null,
+        ]);
+        OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'type' => 'product',
+            'description' => 'Groceries',
+            'amount' => 20.00,
+            'order_item_id' => null,
+        ]);
+        $allocation = TransactionAllocation::factory()->create([
+            'order_component_id' => $component->id,
+            'allocated_amount' => 4.00,
+        ]);
+        $allocation->bankTransaction->update([
+            'user_id' => $user->id,
+            'status' => 'matched',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reconciliation.needs-review'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('summary.unbalanced_orders', 1)
+                ->has('unbalancedOrders', 1)
+                ->where('unbalancedOrders.0.id', $order->id)
+                ->where('unbalancedOrders.0.status', 'reconciled')
+                ->where('unbalancedOrders.0.gap', -4)
+                ->where('unbalancedOrders.0.can_edit_total', true)
+                ->where('unbalancedOrders.0.components.0.can_delete', true)
+                ->where('unbalancedOrders.0.components.0.can_refund', true));
+    }
 }

@@ -253,11 +253,11 @@ class OrderBrowseService
                 ]),
         ]);
 
-        $canEdit = $order->status !== 'reconciled';
         $reconciled = $order->status === 'reconciled';
+        $canEdit = ! $reconciled;
 
         $components = $order->components
-            ->map(function (OrderComponent $component) use ($canEdit, $reconciled): array {
+            ->map(function (OrderComponent $component) use ($reconciled): array {
                 $hasAllocations = $component->allocations->isNotEmpty();
                 $allocated = round((float) $component->allocations
                     ->where('allocation_type', '!=', 'refund')
@@ -266,6 +266,7 @@ class OrderBrowseService
                 $item = $component->orderItem;
                 $unallocated = ! $hasAllocations;
                 $showItemPrice = $component->type === 'product' && $item !== null;
+                $canChange = $unallocated || $reconciled;
 
                 return [
                     'id' => $component->id,
@@ -281,12 +282,12 @@ class OrderBrowseService
                     'is_user_modified' => (bool) $component->is_user_modified,
                     'allocated_amount' => $allocated,
                     'remaining_amount' => round($amount - $allocated, 2),
-                    'can_refund' => $unallocated || $reconciled,
-                    'can_delete' => $canEdit && $unallocated,
+                    'can_refund' => $canChange,
+                    'can_delete' => $canChange,
                     'order_item_id' => $component->order_item_id,
                     'quantity' => $showItemPrice ? (float) $item->quantity : null,
                     'unit_price' => $showItemPrice ? (float) $item->unit_price : null,
-                    'can_edit_quantity' => $canEdit && $showItemPrice && $unallocated,
+                    'can_edit_quantity' => $showItemPrice && $canChange,
                 ];
             })
             ->values()
@@ -331,6 +332,7 @@ class OrderBrowseService
                 'total' => (float) $order->total,
                 'imported_total' => (float) $order->imported_total,
                 'can_edit' => $canEdit,
+                'can_edit_components' => true,
                 'can_edit_total' => ! $hasAllocations || $reconciled,
                 'can_close_as_gift_card' => $this->paymentResolution->canCloseAsGiftCard($order),
                 'in_vacation_window' => $this->vacationWindows->covers($userId, $order->ordered_at),
@@ -339,7 +341,7 @@ class OrderBrowseService
             ],
             'items' => $items,
             'components' => $components,
-            'component_rows' => $this->componentRows->rows($components, $items, $canEdit),
+            'component_rows' => $this->componentRows->rows($components, $items, $canEdit || $reconciled),
             'categories' => $this->categoriesForUser($userId),
             'can_delete' => true,
             'has_allocations' => $hasAllocations,

@@ -81,7 +81,7 @@
     }
 
     function syncComponentForms() {
-        if (props.order.can_edit && componentForm.value === null) {
+        if (props.order.can_edit_components && componentForm.value === null) {
             componentForm.value = defaultComponentForm();
         }
 
@@ -115,7 +115,7 @@
     }
 
     function addComponent() {
-        if (!props.order.can_edit || !componentForm.value || savingComponent.value) {
+        if (!props.order.can_edit_components || !componentForm.value || savingComponent.value) {
             return;
         }
 
@@ -956,6 +956,10 @@
                     discount. The same item shows once with its quantity. Edit
                     a quantity, assign a category, mark a refund, or add a
                     missing fee here.
+                    <template v-if="order.status === 'reconciled'">
+                        Changing a component releases the bank match so the
+                        order can be reconciled again.
+                    </template>
                     <template v-if="!order.components_balanced">
                         Sum {{ formatMoney(order.component_sum) }} vs bank total
                         {{ formatMoney(order.total) }}.
@@ -1096,7 +1100,7 @@
                 </li>
             </ul>
             <form
-                v-if="order.can_edit && componentForm"
+                v-if="order.can_edit_components && componentForm"
                 class="grid gap-3 sm:grid-cols-4"
                 @submit.prevent="addComponent"
             >

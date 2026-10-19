@@ -110,6 +110,85 @@ class OrderComponentControllerTest extends TestCase
         $this->assertSame('unmatched', $allocation->bankTransaction->fresh()->status);
     }
 
+    public function test_adding_a_component_to_a_reconciled_order_releases_the_match(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'reconciled',
+            'total' => 10.00,
+        ]);
+        $component = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'amount' => 12.00,
+            'order_item_id' => null,
+        ]);
+        $allocation = TransactionAllocation::factory()->create([
+            'order_component_id' => $component->id,
+            'allocated_amount' => 10.00,
+        ]);
+        $allocation->bankTransaction->update(['status' => 'matched']);
+
+        $this->actingAs($user)
+            ->post(route('reconciliation.orders.components.store', $order), [
+                'type' => 'other',
+                'description' => 'Adjustment',
+                'amount' => -2.00,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Component added. The bank match was released so reconciliation can run again.');
+
+        $this->assertSame('imported', $order->fresh()->status);
+        $this->assertSame('unmatched', $allocation->bankTransaction->fresh()->status);
+        $this->assertDatabaseMissing('transaction_allocations', ['id' => $allocation->id]);
+        $this->assertDatabaseHas('order_components', [
+            'order_id' => $order->id,
+            'description' => 'Adjustment',
+            'amount' => -2.00,
+        ]);
+    }
+
+    public function test_deleting_one_component_releases_every_allocation_on_a_reconciled_order(): void
+    {
+        $user = User::factory()->create();
+        $merchant = Merchant::factory()->create(['user_id' => $user->id]);
+        $order = Order::factory()->create([
+            'user_id' => $user->id,
+            'merchant_id' => $merchant->id,
+            'status' => 'reconciled',
+            'total' => 10.00,
+        ]);
+        $remove = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'amount' => 4.00,
+            'description' => 'Extra fee',
+            'order_item_id' => null,
+        ]);
+        $keep = OrderComponent::factory()->create([
+            'order_id' => $order->id,
+            'amount' => 10.00,
+            'order_item_id' => null,
+        ]);
+        $allocation = TransactionAllocation::factory()->create([
+            'order_component_id' => $keep->id,
+            'allocated_amount' => 10.00,
+        ]);
+        $allocation->bankTransaction->update(['status' => 'matched']);
+
+        $this->actingAs($user)
+            ->delete(route('reconciliation.orders.components.destroy', [$order, $remove]))
+            ->assertRedirect()
+            ->assertSessionHas('success', 'Component removed. The bank match was released so reconciliation can run again.');
+
+        $this->assertDatabaseMissing('order_components', ['id' => $remove->id]);
+        $this->assertDatabaseHas('order_components', ['id' => $keep->id]);
+        $this->assertDatabaseMissing('transaction_allocations', ['id' => $allocation->id]);
+        $this->assertSame('imported', $order->fresh()->status);
+        $this->assertSame('unmatched', $allocation->bankTransaction->fresh()->status);
+    }
+
     public function test_cannot_edit_another_users_order(): void
     {
         $user = User::factory()->create();

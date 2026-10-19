@@ -210,7 +210,6 @@ class ReconciliationReviewService
     {
         return Order::query()
             ->where('user_id', $userId)
-            ->where('status', '!=', 'reconciled')
             ->with([
                 'merchant:id,name,normalized_name',
                 'components' => fn ($query) => $query
@@ -233,6 +232,7 @@ class ReconciliationReviewService
                 $hasAllocations = $order->components->contains(
                     fn ($component): bool => (int) $component->allocations_count > 0,
                 );
+                $reconciled = $order->status === 'reconciled';
 
                 return [
                     'id' => $order->id,
@@ -243,14 +243,15 @@ class ReconciliationReviewService
                     'imported_total' => round((float) $order->imported_total, 2),
                     'component_sum' => $componentSum,
                     'gap' => $gap,
-                    'can_edit_total' => ! $hasAllocations,
+                    'can_edit_total' => ! $hasAllocations || $reconciled,
                     'payment_last_four' => $order->payment_last_four,
                     'status' => $order->status,
                     'merchant' => $order->merchant?->name,
                     'components' => $order->components
-                        ->map(function ($component): array {
+                        ->map(function ($component) use ($reconciled): array {
                             $unallocated = (int) $component->allocations_count === 0;
                             $item = $component->orderItem;
+                            $canChange = $unallocated || $reconciled;
 
                             return [
                                 'id' => $component->id,
@@ -261,14 +262,14 @@ class ReconciliationReviewService
                                     ? (float) $component->refund_amount
                                     : null,
                                 'refund_kind' => $component->refund_kind,
-                                'can_refund' => $unallocated,
+                                'can_refund' => $canChange,
                                 'category_id' => $component->category_id,
                                 'is_user_modified' => (bool) $component->is_user_modified,
-                                'can_delete' => $unallocated,
+                                'can_delete' => $canChange,
                                 'order_item_id' => $component->order_item_id,
                                 'quantity' => $item !== null ? (float) $item->quantity : null,
                                 'unit_price' => $item !== null ? (float) $item->unit_price : null,
-                                'can_edit_quantity' => $item !== null && $unallocated,
+                                'can_edit_quantity' => $item !== null && $canChange,
                             ];
                         })
                         ->all(),

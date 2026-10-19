@@ -193,6 +193,13 @@
                         <p class="font-medium text-amber-800">
                             Gap {{ formatMoney(order.gap) }}
                         </p>
+                        <p
+                            v-if="order.status === 'reconciled'"
+                            class="text-neutral-600"
+                        >
+                            Matched. Editing a component releases the bank
+                            match.
+                        </p>
                     </div>
                 </div>
 
