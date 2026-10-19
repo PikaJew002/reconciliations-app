@@ -8,6 +8,7 @@ use App\Models\PlannedTemplate;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Collection;
 
 class PlannedOccurrenceGenerator
 {
@@ -15,29 +16,21 @@ class PlannedOccurrenceGenerator
 
     public function ensureForUser(int $userId): void
     {
-        $templates = PlannedTemplate::query()
-            ->where('user_id', $userId)
-            ->where('is_active', true)
-            ->get();
-
-        foreach ($templates as $template) {
-            $this->syncTemplate($template);
-        }
+        $this->syncActiveTemplates($userId);
     }
 
     public function ensureAll(?int $userId = null): int
     {
-        $query = PlannedTemplate::query()->where('is_active', true);
-
-        if ($userId !== null) {
-            $query->where('user_id', $userId);
-        }
+        $userIds = PlannedTemplate::query()
+            ->where('is_active', true)
+            ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
+            ->distinct()
+            ->pluck('user_id');
 
         $synced = 0;
 
-        foreach ($query->cursor() as $template) {
-            $this->syncTemplate($template);
-            $synced++;
+        foreach ($userIds as $id) {
+            $synced += $this->syncActiveTemplates((int) $id);
         }
 
         return $synced;
@@ -45,15 +38,66 @@ class PlannedOccurrenceGenerator
 
     public function syncTemplate(PlannedTemplate $template): void
     {
+        $this->syncTemplateOccurrences($template);
+    }
+
+    protected function syncActiveTemplates(int $userId): int
+    {
+        $templates = PlannedTemplate::query()
+            ->where('user_id', $userId)
+            ->where('is_active', true)
+            ->get();
+
+        if ($templates->isEmpty()) {
+            return 0;
+        }
+
+        $leftoverStartsOn = User::query()
+            ->whereKey($userId)
+            ->value('leftover_starts_on');
+        $leftoverStartsOn = $leftoverStartsOn !== null
+            ? Carbon::parse($leftoverStartsOn)->startOfMonth()->startOfDay()
+            : null;
+
+        $occurrencesByTemplateId = PlannedOccurrence::query()
+            ->where('user_id', $userId)
+            ->whereIn('template_id', $templates->modelKeys())
+            ->get()
+            ->groupBy(fn (PlannedOccurrence $occurrence): int => (int) $occurrence->template_id);
+
+        foreach ($templates as $template) {
+            $this->syncTemplateOccurrences(
+                $template,
+                $occurrencesByTemplateId->get((int) $template->id, collect()),
+                leftoverStartsOnKnown: true,
+                leftoverStartsOn: $leftoverStartsOn,
+            );
+        }
+
+        return $templates->count();
+    }
+
+    /**
+     * @param  Collection<int, PlannedOccurrence>|null  $occurrences
+     */
+    protected function syncTemplateOccurrences(
+        PlannedTemplate $template,
+        ?Collection $occurrences = null,
+        bool $leftoverStartsOnKnown = false,
+        ?CarbonInterface $leftoverStartsOn = null,
+    ): void {
         if (! $template->is_active) {
             return;
         }
 
-        foreach ($this->monthsFrom($this->historyStartForTemplate($template), self::horizonLastMonth()) as $month) {
-            $this->syncOccurrenceForMonth($template, $month, updateExisting: true);
+        foreach ($this->monthsFrom(
+            $this->historyStartForTemplate($template, $leftoverStartsOnKnown, $leftoverStartsOn),
+            self::horizonLastMonth(),
+        ) as $month) {
+            $this->syncOccurrenceForMonth($template, $month, updateExisting: true, occurrences: $occurrences);
         }
 
-        $this->pruneNonDuePlannedOccurrences($template);
+        $this->pruneNonDuePlannedOccurrences($template, $occurrences);
     }
 
     /**
@@ -163,8 +207,11 @@ class PlannedOccurrenceGenerator
      * occurrences_starts_on. Paycheck plans fall back to leftover tracking
      * start or the month before the plan was created.
      */
-    protected function historyStartForTemplate(PlannedTemplate $template): CarbonInterface
-    {
+    protected function historyStartForTemplate(
+        PlannedTemplate $template,
+        bool $leftoverStartsOnKnown = false,
+        ?CarbonInterface $leftoverStartsOn = null,
+    ): CarbonInterface {
         if ($template->occurrences_starts_on !== null) {
             return Carbon::parse($template->occurrences_starts_on)->startOfMonth()->startOfDay();
         }
@@ -175,17 +222,20 @@ class PlannedOccurrenceGenerator
 
         $start = $created->copy()->subMonth()->startOfDay();
 
-        $leftoverStartsOn = User::query()
-            ->whereKey($template->user_id)
-            ->value('leftover_starts_on');
+        if (! $leftoverStartsOnKnown) {
+            $leftoverStartsOn = User::query()
+                ->whereKey($template->user_id)
+                ->value('leftover_starts_on');
+            $leftoverStartsOn = $leftoverStartsOn !== null
+                ? Carbon::parse($leftoverStartsOn)->startOfMonth()->startOfDay()
+                : null;
+        }
 
-        if ($leftoverStartsOn === null) {
+        if ($leftoverStartsOn === null || ! $leftoverStartsOn->lt($start)) {
             return $start;
         }
 
-        $leftoverStart = Carbon::parse($leftoverStartsOn)->startOfMonth()->startOfDay();
-
-        return $leftoverStart->lt($start) ? $leftoverStart : $start;
+        return $leftoverStartsOn->copy();
     }
 
     /**
@@ -210,10 +260,14 @@ class PlannedOccurrenceGenerator
         return $months;
     }
 
+    /**
+     * @param  Collection<int, PlannedOccurrence>|null  $occurrences
+     */
     protected function syncOccurrenceForMonth(
         PlannedTemplate $template,
         CarbonInterface $month,
         bool $updateExisting,
+        ?Collection $occurrences = null,
     ): bool {
         if (! $template->isDueInMonth($month)) {
             return false;
@@ -221,10 +275,7 @@ class PlannedOccurrenceGenerator
 
         $scheduledDate = PlannedOccurrence::expectedDateForMonth($month, (int) $template->expected_day);
 
-        $existing = PlannedOccurrence::query()
-            ->where('template_id', $template->id)
-            ->forPeriod($month)
-            ->first();
+        $existing = $this->existingOccurrenceForMonth($template, $month, $occurrences);
 
         if ($existing?->isResolved()) {
             return false;
@@ -254,28 +305,63 @@ class PlannedOccurrenceGenerator
             return false;
         }
 
-        PlannedOccurrence::query()->create([
+        $created = PlannedOccurrence::query()->create([
             ...$attributes,
             'expected_date' => $scheduledDate->toDateString(),
             'date_customized' => false,
             'amount_customized' => false,
         ]);
+        $occurrences?->push($created);
 
         return true;
     }
 
-    protected function pruneNonDuePlannedOccurrences(PlannedTemplate $template): void
-    {
-        PlannedOccurrence::query()
-            ->where('template_id', $template->id)
-            ->where('status', PlannedOccurrence::STATUS_PLANNED)
-            ->get()
-            ->each(function (PlannedOccurrence $occurrence) use ($template): void {
-                $period = ($occurrence->scheduled_date ?? $occurrence->expected_date)->copy()->startOfMonth();
+    /**
+     * @param  Collection<int, PlannedOccurrence>|null  $occurrences
+     */
+    protected function existingOccurrenceForMonth(
+        PlannedTemplate $template,
+        CarbonInterface $month,
+        ?Collection $occurrences,
+    ): ?PlannedOccurrence {
+        if ($occurrences !== null) {
+            return $occurrences->first(
+                fn (PlannedOccurrence $occurrence): bool => $occurrence->belongsToMonth($month),
+            );
+        }
 
-                if (! $template->isDueInMonth($period)) {
-                    $occurrence->delete();
-                }
-            });
+        return PlannedOccurrence::query()
+            ->where('template_id', $template->id)
+            ->forPeriod($month)
+            ->first();
+    }
+
+    /**
+     * Monthly plans are due every month, so the planned-row scan cannot delete
+     * anything. Longer recurrences still drop planned rows in months that are
+     * no longer due.
+     *
+     * @param  Collection<int, PlannedOccurrence>|null  $occurrences
+     */
+    protected function pruneNonDuePlannedOccurrences(PlannedTemplate $template, ?Collection $occurrences = null): void
+    {
+        if ((int) $template->recurrence_months <= 1) {
+            return;
+        }
+
+        $planned = $occurrences !== null
+            ? $occurrences->filter(fn (PlannedOccurrence $occurrence): bool => $occurrence->isPlanned())
+            : PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->where('status', PlannedOccurrence::STATUS_PLANNED)
+                ->get();
+
+        $planned->each(function (PlannedOccurrence $occurrence) use ($template): void {
+            $period = ($occurrence->scheduled_date ?? $occurrence->expected_date)->copy()->startOfMonth();
+
+            if (! $template->isDueInMonth($period)) {
+                $occurrence->delete();
+            }
+        });
     }
 }
