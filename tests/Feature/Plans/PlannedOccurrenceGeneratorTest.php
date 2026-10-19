@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Plans\PlannedOccurrenceGenerator;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PlannedOccurrenceGeneratorTest extends TestCase
@@ -308,6 +309,71 @@ class PlannedOccurrenceGeneratorTest extends TestCase
 
         $template->update(['recurrence_months' => 3]);
         app(PlannedOccurrenceGenerator::class)->syncTemplate($template->fresh());
+
+        $this->assertSame(
+            ['2026-01-01', '2026-04-01'],
+            $this->occurrenceDates($template),
+        );
+    }
+
+    public function test_ensure_for_user_reads_occurrences_once_across_templates(): void
+    {
+        $user = User::factory()->create([
+            'leftover_starts_on' => '2026-01-01',
+        ]);
+        $this->templateFor($user);
+        $this->templateFor($user);
+        $this->templateFor($user);
+
+        $generator = app(PlannedOccurrenceGenerator::class);
+        $generator->ensureForUser($user->id);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $generator->ensureForUser($user->id);
+
+        $queries = collect(DB::getQueryLog())->pluck('query');
+        DB::disableQueryLog();
+
+        $occurrenceSelects = $queries->filter(
+            fn (string $sql): bool => str_contains($sql, 'planned_occurrences')
+                && str_starts_with(strtolower($sql), 'select'),
+        );
+
+        $this->assertCount(1, $occurrenceSelects);
+        $this->assertFalse(
+            $occurrenceSelects->contains(fn (string $sql): bool => str_contains($sql, 'limit 1')),
+        );
+        $this->assertSame(1, $queries->filter(
+            fn (string $sql): bool => str_contains($sql, 'leftover_starts_on'),
+        )->count());
+    }
+
+    public function test_ensure_for_user_prunes_non_due_occurrences_from_preloaded_rows(): void
+    {
+        $user = User::factory()->create();
+        $billCategory = Category::factory()->for($user)->bill()->create();
+        $template = PlannedTemplate::factory()->bill()->create([
+            'user_id' => $user->id,
+            'category_id' => $billCategory->id,
+            'recurrence_months' => 1,
+            'occurrences_starts_on' => '2026-01-01',
+            'expected_day' => 1,
+        ]);
+
+        $generator = app(PlannedOccurrenceGenerator::class);
+        $generator->ensureForUser($user->id);
+
+        $this->assertTrue(
+            PlannedOccurrence::query()
+                ->where('template_id', $template->id)
+                ->whereDate('scheduled_date', '2026-02-01')
+                ->exists(),
+        );
+
+        $template->update(['recurrence_months' => 3]);
+        $generator->ensureForUser($user->id);
 
         $this->assertSame(
             ['2026-01-01', '2026-04-01'],
